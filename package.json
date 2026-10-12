@@ -1,0 +1,55 @@
+{
+  "name": "mii-hub",
+  "productName": "Mii Hub",
+  "version": "1.0.0",
+  "description": "Watch your 3D Miis walk around, chat and become friends.",
+  "main": "electron/main.js",
+  "author": "sneekyedd",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never",
+    "test": "node tests/glb.test.js && node tests/nav.test.js"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "com.sneekyedd.miihub",
+    "productName": "Mii Hub",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": [
+      "index.html",
+      "css/**/*",
+      "js/**/*",
+      "fonts/**/*",
+      "build/icon.png",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "artifactName": "Mii-Hub-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Mii Hub"
+    },
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["universal"] }],
+      "category": "public.app-category.entertainment",
+      "artifactName": "Mii-Hub-${version}-mac.${ext}",
+      "identity": null
+    },
+    "linux": {
+      "target": [{ "target": "AppImage", "arch": ["x64"] }],
+      "category": "Game",
+      "artifactName": "Mii-Hub-${version}-linux.${ext}"
+    }
+  }
+}

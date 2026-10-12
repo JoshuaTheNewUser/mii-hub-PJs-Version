@@ -47,6 +47,11 @@
     { name: "Max", look: { skin: "#ffd3ad", hair: "#5c1812", shirt: "#007830", pants: "#5a6b3a", eyes: "#4870a0", beard: true } },
   ];
 
+  // Wait for the rounded font, so signs and posters drawn in 3D use it too.
+  try {
+    await Promise.all(["400", "700", "800"].map((w) => document.fonts.load(w + " 20px Nunito")));
+  } catch (e) { /* the font is optional */ }
+
   // ---------- the hub ----------
   const hub = new window.MiiHub3D.Hub3D($("hub"), $("overlay"));
   const settings = S.loadSettings();

@@ -4,14 +4,36 @@ A 3D web app where your Miis walk around, chat and become friends, a bit like th
 
 ## How to run it
 
-You don't need to install anything:
+### Option 1: Install the desktop app (recommended)
 
-1. Download the project and unzip it.
-2. Double-click `index.html`. It opens in your web browser.
+1. Go to the **[latest release](https://github.com/sneekyedd/mii-hub/releases/latest)**.
+2. Under **Assets**, download the file for your computer:
+   - **Windows:** `Mii-Hub-Setup-….exe`. Run it to install. If Windows says *"Windows protected your PC"*, click **More info** → **Run anyway**.
+   - **Mac:** `Mii-Hub-…-mac.dmg`. Open it and drag **Mii Hub** into **Applications**. The first time, right-click the app → **Open** → **Open**. If macOS still blocks it, go to **System Settings → Privacy & Security** → **Open Anyway**.
+   - **Linux:** `Mii-Hub-…-linux.AppImage`. Make it executable (`chmod +x`), then double-click it.
+3. Open **Mii Hub** from your desktop or Start menu / Applications folder.
 
-On first launch you'll see **Joe** (from `samples/Joe.glb`) plus a few demo friends.
+The warnings appear because the app isn't signed with a paid developer certificate. They're normal for small hobby apps.
 
-The 3D library (Three.js) is included in the project, so it works offline. It needs a browser with WebGL, which almost every modern browser has.
+Inside the app, **F11** switches full screen on and off.
+
+### Option 2: Open it in a web browser
+
+Download the project, unzip it, and double-click `index.html`. You don't need to install anything.
+
+On first launch you'll see **Joe** (from `samples/Joe.glb`) plus a few demo friends. Everything works offline: the 3D library (Three.js) and the font are included in the project.
+
+### How the installers are made
+
+Every time code is pushed, GitHub Actions (`.github/workflows/desktop.yml`) builds the Windows, Mac and Linux versions on GitHub's computers and publishes them as a new release.
+
+To run or build the desktop app yourself, install [Node.js](https://nodejs.org), then:
+
+```
+npm install
+npm start        # opens Mii Hub in its own window
+npm run dist     # builds an installer for your computer into dist/
+```
 
 ## Adding your own Miis
 
@@ -91,6 +113,10 @@ js/nav.js             route-finding, so Miis walk around obstacles
 js/dialogue.js        what Miis say and the activities they do together
 js/hub3d.js           moves the Miis around, camera, clicking & dragging
 js/storage.js         saves Miis in the browser
+electron/main.js      runs Mii Hub as a desktop app (Electron)
+build/icon.png        the app icon
+fonts/                the Nunito font (works offline)
+package.json          desktop app settings (version, installers)
 js/app.js             connects buttons and side panels to the hub
 js/sampleGlb.js       Joe.glb stored as text so it loads without a web server
 samples/Joe.glb       the sample Mii
@@ -103,8 +129,7 @@ tests/nav.test.js     checks that routes go around obstacles and water
 If you have [Node.js](https://nodejs.org) installed:
 
 ```
-node tests/glb.test.js
-node tests/nav.test.js
+npm test
 ```
 
 ## Ideas for adding your own stuff
