@@ -113,9 +113,21 @@
       if (this.lift <= this.hub.baseLift(this) + 0.05) this.liftVel = power || 4;
     }
 
+    // Plans a route to (x, z) around obstacles and starts walking.
     goTo(x, z) {
-      this.target = { x, z };
+      const path = this.hub.nav.findPath(this.x, this.z, x, z);
+      if (!path) { this.state = "idle"; this.timer = rnd(0.5, 1.5); this.spot = null; return false; }
+      this.path = path;
+      this.target = path[path.length - 1];
       this.state = "walk";
+      this.resetStuck();
+      return true;
+    }
+
+    resetStuck() {
+      this.stuckTime = 0;
+      this.repaths = 0;
+      this.bestDist = Infinity;
     }
 
     remove() {
@@ -204,6 +216,7 @@
         window.World3D.dispose(this.world);
       }
       this.world = window.World3D.build(id);
+      this.nav = new window.MiiNav.Nav(this.world.bounds, this.world.obstacles);
       this.scene.add(this.world.group);
       this.scene.background = new THREE.Color(this.world.background);
       this.scene.fog = this.world.fog ? new THREE.Fog(...this.world.fog) : null;
@@ -213,7 +226,7 @@
         this.endInteraction(w);
         const p = this.randomFloorPoint();
         w.x = p.x; w.z = p.z;
-        w.state = "idle"; w.timer = rnd(0.3, 1.5); w.spot = null; w.target = null;
+        w.state = "idle"; w.timer = rnd(0.3, 1.5); w.spot = null; w.target = null; w.path = null; w.seat = null;
         w.lift = this.baseLift(w); w.liftVel = 0;
         w.appear = 0;
         w.helmet.visible = this.world.helmet;
@@ -234,33 +247,24 @@
       return 0.35 + Math.sin(this.time * 1.3 + w.x * 0.7) * 0.15;
     }
 
+    // A random open spot that no other Mii is standing on.
     randomFloorPoint() {
-      const b = this.world.bounds;
-      for (let i = 0; i < 40; i++) {
-        const x = rnd(b.minX + 1, b.maxX - 1), z = rnd(b.minZ + 1, b.maxZ - 1);
-        if (!this.blocked(x, z, 0.5)) return { x, z };
+      for (let i = 0; i < 20; i++) {
+        const p = this.nav.randomFree();
+        if (!this.walkers.some((o) => Math.hypot(o.x - p.x, o.z - p.z) < 1.5)) return p;
       }
-      return { x: 0, z: 0 };
-    }
-
-    blocked(x, z, pad, ignore) {
-      for (const o of this.world.obstacles) {
-        if (o === ignore) continue;
-        if (Math.hypot(x - o.x, z - o.z) < o.r + (pad || 0)) return o;
-      }
-      return null;
+      return this.nav.randomFree();
     }
 
     // ---------- adding / removing Miis ----------
     addWalker(record, template, look, silent) {
       const w = new Walker(this, record, template, look);
-      const b = this.world.bounds;
-      const fromLeft = Math.random() < 0.5;
+      // pop in at an open spot, then wander off
       const p = this.randomFloorPoint();
-      w.x = fromLeft ? b.minX - 1 : b.maxX + 1;
-      w.z = p.z;
-      w.goTo(fromLeft ? rnd(b.minX + 2, -2) : rnd(2, b.maxX - 2), p.z);
-      w.lift = this.baseLift(w);
+      w.x = p.x; w.z = p.z;
+      w.yaw = w.targetYaw = 0;
+      w.lift = this.baseLift(w) + 1.2;
+      w.timer = rnd(1, 2.5);
       this.walkers.push(w);
       if (!silent) {
         setTimeout(() => w.say(D.pick(["Hi everyone!", "Hello! I'm {A}!", "I'm here!", "What's this place?"]), 2.5), 900);
@@ -449,8 +453,22 @@
           const min = 1.2;
           if (d > 0.001 && d < min) {
             const push = (min - d) / d * 0.5;
-            if (a.state !== "activity" && a.state !== "interact") { a.x -= dx * push; a.z -= dz * push; }
-            if (b.state !== "activity" && b.state !== "interact") { b.x += dx * push; b.z += dz * push; }
+            // Two Miis walking into each other: step to the side (like people
+            // passing in a hallway) instead of pushing head-on forever.
+            const walkingA = a.state === "walk" || a.state === "approach";
+            const walkingB = b.state === "walk" || b.state === "approach";
+            const nudge = (m, sx, sz) => {
+              if (m.state === "activity" || m.state === "interact") return;
+              // never push a Mii into a tree, a desk or the water
+              if (!this.nav.isBlocked(m.x + sx, m.z + sz)) { m.x += sx; m.z += sz; }
+            };
+            if (walkingA && walkingB) {
+              const side = 0.6 * push;
+              nudge(a, dz * side, -dx * side);
+              nudge(b, -dz * side, dx * side);
+            }
+            nudge(a, -dx * push, -dz * push);
+            nudge(b, dx * push, dz * push);
           }
         }
       }
@@ -471,8 +489,7 @@
             const spot = D.pick(this.world.spots);
             if (!this.walkers.some((o) => o !== w && o.spot === spot)) {
               w.spot = spot;
-              w.goTo(spot.x, spot.z);
-              break;
+              if (w.goTo(spot.x, spot.z)) break;
             }
           }
           if (roll < 0.85) {
@@ -485,13 +502,19 @@
           break;
         }
 
-        case "walk":
-          if (this.moveToward(w, w.target.x, w.target.z, dt) || this.stuckFor(w, dt) > 12) {
-            w.stuck = 0;
+        case "walk": {
+          const result = this.followPath(w, dt);
+          if (result === "lost") {
+            // couldn't get there: give up and try something else
+            w.spot = null;
+            w.state = "idle";
+            w.timer = rnd(0.5, 1.5);
+          } else if (result === "arrived") {
             if (w.spot) {
               w.state = "activity";
               w.timer = rnd(6, 11);
-              w.x = w.spot.x; w.z = w.spot.z;
+              // sitting spots move the Mii onto the seat
+              if (w.spot.seat) w.seat = w.spot.seat;
               w.targetYaw = w.spot.yaw || 0;
               w.showEmote(w.spot.emoji, w.timer);
               if (Math.random() < 0.6) w.say(D.pick(w.spot.lines));
@@ -502,6 +525,7 @@
             }
           }
           break;
+        }
 
         case "activity":
           w.timer -= dt;
@@ -509,7 +533,7 @@
           if (w.timer <= 0) {
             w.arms = "down";
             w.emote = null; w.uiEmote.classList.remove("show");
-            // step away from the spot before doing anything else
+            w.seat = null; // stand back up
             const back = this.randomFloorPoint();
             w.spot = null;
             w.goTo(back.x, back.z);
@@ -519,11 +543,20 @@
         case "approach": {
           const B = w.partner;
           if (!B) { w.state = "idle"; break; }
-          const side = w.x < B.x ? -1 : 1;
-          const tx = B.x + side * 1.8, tz = B.z;
           B.targetYaw = Math.atan2(w.x - B.x, w.z - B.z);
-          if (this.moveToward(w, tx, tz, dt) || this.stuckFor(w, dt) > 8) {
-            w.stuck = 0;
+          // plan (or re-plan) a route to a free spot next to the other Mii
+          w.replanIn = (w.replanIn || 0) - dt;
+          if (!w.path || w.replanIn <= 0) {
+            const meet = this.meetingPoint(w, B);
+            w.path = this.nav.findPath(w.x, w.z, meet.x, meet.z);
+            w.replanIn = 1.5;
+            if (!w.path) { this.endInteraction(w); break; }
+          }
+          const result = this.followPath(w, dt);
+          const close = Math.hypot(w.x - B.x, w.z - B.z) < 2.3;
+          if (result === "arrived" || (close && result !== "lost") || result === "lost") {
+            if (result === "lost" && !close) { this.endInteraction(w); break; }
+            w.path = null;
             w.state = "interact";
             B.state = "interact";
             w.step = -1;
@@ -551,9 +584,67 @@
       }
     }
 
-    stuckFor(w, dt) {
-      w.stuck = (w.stuck || 0) + dt;
-      return w.stuck;
+    // Where should A stand to talk to B? Next to B, on whichever side is free.
+    meetingPoint(A, B) {
+      const sides = A.x < B.x ? [-1, 1] : [1, -1];
+      for (const sx of sides) {
+        for (const [ox, oz] of [[1.8, 0], [1.4, 0.9], [1.4, -0.9]]) {
+          const x = B.x + sx * ox, z = B.z + oz;
+          if (!this.nav.isBlocked(x, z)) return { x, z };
+        }
+      }
+      return this.nav.nearestFree(B.x + sides[0] * 1.8, B.z);
+    }
+
+    // Walks a Mii along its planned route.
+    // Returns "walking", "arrived", or "lost" (stuck and can't find a way).
+    followPath(w, dt) {
+      if (!w.path || !w.path.length) return "arrived";
+      const next = w.path[0];
+      const d = Math.hypot(next.x - w.x, next.z - w.z);
+      if (d < 0.12) {
+        w.path.shift();
+        w.bestDist = Infinity;
+        return w.path.length ? "walking" : "arrived";
+      }
+      // If another Mii nudged us off our route, the straight line to the next
+      // point might now go through something: if so, plan a new route.
+      w.lineCheckIn = (w.lineCheckIn || 0) - dt;
+      if (w.lineCheckIn <= 0) {
+        w.lineCheckIn = 0.2;
+        if (!this.nav.clearLine(w.x, w.z, next.x, next.z)) {
+          // re-plan once; if the new route still isn't clear, just carry on carefully
+          // (the stuck check below gives up if we really can't get anywhere)
+          if (!w.justReplanned) {
+            w.justReplanned = true;
+            const goal = w.path[w.path.length - 1];
+            const path = this.nav.findPath(w.x, w.z, goal.x, goal.z);
+            if (!path) return "lost";
+            w.path = path;
+            return "walking";
+          }
+        } else {
+          w.justReplanned = false;
+        }
+      }
+      // never take a step into an obstacle
+      const before = { x: w.x, z: w.z };
+      this.stepToward(w, next.x, next.z, dt);
+      if (this.nav.isBlocked(w.x, w.z) && !this.nav.isBlocked(before.x, before.z)) { w.x = before.x; w.z = before.z; }
+      // stuck check: if we haven't got any closer for a while, plan a new route
+      if (d < w.bestDist - 0.05) { w.bestDist = d; w.stuckTime = 0; }
+      else w.stuckTime = (w.stuckTime || 0) + dt;
+      if (w.stuckTime > 0.9) {
+        w.repaths = (w.repaths || 0) + 1;
+        w.stuckTime = 0;
+        w.bestDist = Infinity;
+        if (w.repaths > 2) return "lost";
+        const goal = w.path[w.path.length - 1];
+        const path = this.nav.findPath(w.x, w.z, goal.x, goal.z);
+        if (!path) return "lost";
+        w.path = path;
+      }
+      return "walking";
     }
 
     // Runs a conversation one step at a time (the "A" Mii is in charge).
@@ -568,8 +659,11 @@
       if (!step) { this.finishInteraction(A); return; }
       const actors = step.who === "both" ? [A, B] : step.who === "A" ? [A] : [B];
       const floaty = this.world.floaty;
+      // {A} is always the Mii who started the chat and {B} the other one,
+      // no matter who is speaking (so B says "Hi Joe! I'm Sam!", not the other way round)
+      const line = step.say ? step.say.replace(/\{A\}/g, A.look.name).replace(/\{B\}/g, B.look.name) : null;
       for (const m of actors) {
-        if (step.say) m.say(step.say, Math.max(step.dur + 0.4, 1.4));
+        if (line) m.say(line, Math.max(step.dur + 0.4, 1.4));
         if (step.emote) m.showEmote(step.emote, Math.max(step.dur, 1.5));
         if (step.arms) m.arms = step.arms;
         if (step.hop) m.hop(floaty ? 1.8 : 4.5);
@@ -585,42 +679,37 @@
       A.stepTimer = step.dur;
     }
 
-    // Moves a Mii towards (tx, tz). Returns true once it has arrived.
-    moveToward(w, tx, tz, dt) {
+    // Takes one step towards (tx, tz).
+    stepToward(w, tx, tz, dt) {
       const dx = tx - w.x, dz = tz - w.z;
       const d = Math.hypot(dx, dz);
-      if (d < 0.08) return true;
+      if (d < 0.001) return;
       const speed = w.speed * (this.world.floaty ? 0.6 : 1);
       const step = Math.min(d, speed * dt);
-      let nx = w.x + (dx / d) * step;
-      let nz = w.z + (dz / d) * step;
-      // walk around obstacles (but not ones the target is inside, like a bench we want to sit on)
-      const goal = this.blocked(tx, tz, 0);
-      const o = this.blocked(nx, nz, 0.35, goal);
-      if (o) {
-        // slide along the edge of the obstacle
-        const ax = w.x - o.x, az = w.z - o.z;
-        const len = Math.hypot(ax, az) || 1;
-        const turn = (dx * az - dz * ax) > 0 ? 1 : -1;
-        nx = w.x + (-az / len) * turn * step;
-        nz = w.z + (ax / len) * turn * step;
-      }
-      w.targetYaw = Math.atan2(nx - w.x, nz - w.z); // face the way we're actually moving
-      w.x = nx; w.z = nz;
+      w.x += (dx / d) * step;
+      w.z += (dz / d) * step;
+      w.targetYaw = Math.atan2(dx, dz);
       w.phase += dt * speed * 5.5;
-      return false;
     }
 
     // Copies the Mii's position and movement onto its 3D model.
     applyPose(w, dt) {
       const holder = w.inst.holder;
-      const sitting = w.state === "activity" && w.spot && w.spot.sit;
+      const sitting = w.state === "activity" && !!w.seat;
       const walking = (w.state === "walk" || w.state === "approach") && !w.held;
       w.walkAmt += ((walking ? 1 : 0) - w.walkAmt) * Math.min(1, dt * 8);
       w.yaw = turnToward(w.yaw, w.targetYaw, dt * 8);
       if (w.shake) w.yaw += Math.sin(this.time * 20) * 0.04;
 
-      holder.position.set(w.x, w.lift + (sitting ? 0.1 : 0), w.z);
+      // sitting Mii slides onto the seat; everyone else stands where they are
+      w.seatBlend = clamp((w.seatBlend || 0) + (sitting ? dt : -dt) * 4, 0, 1);
+      const seat = w.seat || w.lastSeat;
+      if (w.seat) w.lastSeat = w.seat;
+      const k = w.seatBlend;
+      const px = seat ? w.x + (seat.x - w.x) * k : w.x;
+      const pz = seat ? w.z + (seat.z - w.z) * k : w.z;
+      const py = seat ? (seat.y || 0) * k : 0;
+      holder.position.set(px, w.lift + py, pz);
       holder.rotation.y = w.yaw;
       const pop = w.appear < 1 ? 0.3 + 0.7 * (1 - Math.pow(1 - w.appear, 3)) : 1;
       holder.scale.setScalar(w.sizeScale * pop);
@@ -636,7 +725,7 @@
         nod: (w.sleep ? 0.45 + Math.sin(this.time * 2) * 0.05 : 0) + (w.nod || 0),
         lookYaw: w.shake ? Math.sin(this.time * 14) * 0.4 : 0,
         lookUp: w.state === "activity" && w.spot && w.spot.lookUp ? w.spot.lookUp : 0,
-        sit: sitting,
+        sit: w.seatBlend > 0.5,
       });
     }
 
@@ -756,8 +845,19 @@
           w.held = false;
           w.liftVel = 0;
           w.timer = rnd(1, 2);
-          setTimeout(() => w.say(D.pick(D.DROP_LINES), 1.6), 350);
           this.dragging = null;
+          if (this.nav.isBlocked(w.x, w.z)) {
+            // dropped somewhere a Mii can't stand (in the pond, on a desk...): climb out
+            const inWater = (this.world.water || []).some((o) => window.MiiNav.insideShape(o, w.x, w.z, 0));
+            const out = this.nav.nearestFree(w.x, w.z);
+            w.path = [out];
+            w.target = out;
+            w.state = "walk";
+            w.resetStuck();
+            setTimeout(() => w.say(inWater ? D.pick(["Splash! I'm soaked!", "Brr, cold water!", "I can't swim!"]) : D.pick(["Whoops!", "Oof, not here!"]), 1.8), 350);
+          } else {
+            setTimeout(() => w.say(D.pick(D.DROP_LINES), 1.6), 350);
+          }
         } else if (down && down.w) {
           const w = down.w;
           w.hop(this.world.floaty ? 1.6 : 4);
