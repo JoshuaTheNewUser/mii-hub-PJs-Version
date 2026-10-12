@@ -16,20 +16,21 @@
 
   <main class="layout">
     <section class="stage" id="stage">
-      <canvas id="hub" aria-label="Miis walking around the hub"></canvas>
-      <div class="drop-hint" id="dropHint">Drop your Mii files here!</div>
-      <p class="tip">Tip: click a Mii to say hi, or drag one to pick it up.</p>
+      <canvas id="hub" aria-label="Miis walking around the hub in 3D"></canvas>
+      <div class="overlay" id="overlay"></div>
+      <div class="drop-hint" id="dropHint">Drop your Mii .glb files here!</div>
+      <p class="tip">Click a Mii to say hi · drag a Mii to pick it up · drag the background to turn the camera · scroll to zoom</p>
     </section>
 
     <aside class="sidebar">
       <div class="panel">
         <h2>Add Miis</h2>
         <label class="btn primary file-btn">
-          Choose Mii files…
-          <input type="file" id="fileInput" multiple accept=".miic,.mii,.ffsd,.cfsd,.3dsmii,.rcd,.bin,.charinfo" />
+          Choose Mii .glb files…
+          <input type="file" id="fileInput" multiple accept=".glb,model/gltf-binary" />
         </label>
         <button class="btn" id="demoBtn">Add some demo friends</button>
-        <p class="hint">Works with <b>.miic</b>, <b>.mii</b> (Wii), <b>.ffsd</b>/<b>.cfsd</b> (3DS/Wii U). You can also drag files onto the hub.</p>
+        <p class="hint">Use full-body 3D Mii models (<b>.glb</b>) exported from Mii Creator. You can also drag files onto the hub.</p>
         <p class="error" id="errorMsg" role="alert"></p>
         <label class="slider">
           <span>How chatty?</span>
@@ -57,12 +58,18 @@
     </aside>
   </main>
 
-  <script src="js/miiParser.js"></script>
-  <script src="js/miiRenderer.js"></script>
-  <script src="js/scenes.js"></script>
+  <!-- Three.js (3D library), stored in the project so it works offline -->
+  <script src="js/vendor/three.min.js"></script>
+  <script src="js/vendor/GLTFLoader.js"></script>
+  <script src="js/vendor/SkeletonUtils.js"></script>
+  <script src="js/vendor/OrbitControls.js"></script>
+
+  <script src="js/sampleGlb.js"></script>
+  <script src="js/miiModel.js"></script>
+  <script src="js/world3d.js"></script>
   <script src="js/dialogue.js"></script>
-  <script src="js/sampleMiis.js"></script>
-  <script src="js/hub.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/hub3d.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
