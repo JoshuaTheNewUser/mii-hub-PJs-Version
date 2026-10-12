@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mii Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Mii Hub</h1>
+    <nav class="scene-tabs" id="sceneTabs" aria-label="Choose a place"></nav>
+  </header>
+
+  <main class="layout">
+    <section class="stage" id="stage">
+      <canvas id="hub" aria-label="Miis walking around the hub"></canvas>
+      <div class="drop-hint" id="dropHint">Drop your Mii files here!</div>
+      <p class="tip">Tip: click a Mii to say hi, or drag one to pick it up.</p>
+    </section>
+
+    <aside class="sidebar">
+      <div class="panel">
+        <h2>Add Miis</h2>
+        <label class="btn primary file-btn">
+          Choose Mii files…
+          <input type="file" id="fileInput" multiple accept=".miic,.mii,.ffsd,.cfsd,.3dsmii,.rcd,.bin,.charinfo" />
+        </label>
+        <button class="btn" id="demoBtn">Add some demo friends</button>
+        <p class="hint">Works with <b>.miic</b>, <b>.mii</b> (Wii), <b>.ffsd</b>/<b>.cfsd</b> (3DS/Wii U). You can also drag files onto the hub.</p>
+        <p class="error" id="errorMsg" role="alert"></p>
+        <label class="slider">
+          <span>How chatty?</span>
+          <input type="range" id="chatty" min="0.3" max="2.5" step="0.1" value="1" />
+        </label>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Residents <span class="count" id="count">0</span></h2>
+          <button class="link-btn" id="clearBtn">Remove all</button>
+        </div>
+        <ul class="roster" id="roster"></ul>
+      </div>
+
+      <div class="panel">
+        <h2>Friendships</h2>
+        <ul class="friends" id="friends"></ul>
+      </div>
+
+      <div class="panel">
+        <h2>What's happening</h2>
+        <ul class="feed" id="feed"></ul>
+      </div>
+    </aside>
+  </main>
+
+  <script src="js/miiParser.js"></script>
+  <script src="js/miiRenderer.js"></script>
+  <script src="js/scenes.js"></script>
+  <script src="js/dialogue.js"></script>
+  <script src="js/sampleMiis.js"></script>
+  <script src="js/hub.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
