@@ -60,6 +60,13 @@
       const b = this.bounds;
       if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) return true;
       for (const o of this.obstacles) if (insideShape(o, x, z, pad)) return true;
+      // other Miis standing around (only while planning a route, see findPath)
+      if (this.others) {
+        for (const o of this.others) {
+          const dx = x - o.x, dz = z - o.z, rr = o.r + pad;
+          if (dx * dx + dz * dz < rr * rr) return true;
+        }
+      }
       return false;
     }
 
@@ -74,7 +81,15 @@
     }
 
     free(c, r) {
-      return c >= 0 && r >= 0 && c < this.cols && r < this.rows && !this.blocked[r * this.cols + c];
+      if (c < 0 || r < 0 || c >= this.cols || r >= this.rows || this.blocked[r * this.cols + c]) return false;
+      if (this.others) {
+        const p = this.cellCenter(c, r);
+        for (const o of this.others) {
+          const dx = p.x - o.x, dz = p.z - o.z, rr = o.r + MII_RADIUS;
+          if (dx * dx + dz * dz < rr * rr) return false;
+        }
+      }
+      return true;
     }
 
     // The closest open spot to (x, z) - used if a Mii ends up somewhere it shouldn't be.
@@ -107,7 +122,13 @@
     }
 
     // Can a Mii walk in a straight line from a to b without touching anything?
-    clearLine(ax, az, bx, bz) {
+    // `others` (optional) = Miis to walk around, as circles { x, z, r }.
+    clearLine(ax, az, bx, bz, others) {
+      if (others) {
+        const saved = this.others;
+        this.others = others;
+        try { return this.clearLine(ax, az, bx, bz); } finally { this.others = saved; }
+      }
       const d = Math.hypot(bx - ax, bz - az);
       const steps = Math.ceil(d / (this.cell * 0.5));
       for (let i = 1; i <= steps; i++) {
@@ -118,7 +139,24 @@
     }
 
     // Returns a list of points from (sx, sz) to (tx, tz), or null if there's no way there.
-    findPath(sx, sz, tx, tz) {
+    // `others` (optional) = Miis standing in the way, as circles { x, z, r }. We try to
+    // walk around them, but if they block every route (a crowd), we ignore them.
+    findPath(sx, sz, tx, tz, others) {
+      if (others && others.length) {
+        // never treat the Miis at the start or the goal as blockers
+        const near = (o, x, z) => Math.hypot(o.x - x, o.z - z) < o.r + MII_RADIUS + 0.3;
+        this.others = others.filter((o) => !near(o, sx, sz) && !near(o, tx, tz));
+        try {
+          const path = this.findPathInner(sx, sz, tx, tz);
+          if (path) return path;
+        } finally {
+          this.others = null;
+        }
+      }
+      return this.findPathInner(sx, sz, tx, tz);
+    }
+
+    findPathInner(sx, sz, tx, tz) {
       const goalPt = this.nearestFree(tx, tz);
       if (this.clearLine(sx, sz, goalPt.x, goalPt.z)) return [goalPt];
 

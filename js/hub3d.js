@@ -38,7 +38,7 @@
       this.timer = rnd(0.5, 2);
       this.target = null;
       this.spot = null;
-      this.speed = rnd(1.5, 2.1);
+      this.baseSpeed = rnd(1.5, 2.0);
       this.arms = "down";
       this.dance = false; this.laugh = false; this.sleep = false; this.nod = 0; this.shake = 0;
       this.cooldown = rnd(2, 6);
@@ -62,9 +62,21 @@
       this.buildModel();
     }
 
+    // personality traits (0-100) saved with the Mii; see dialogue.js
+    get personality() { return D.traits(this.record); }
+    trait(k) { return this.personality[k]; }
+
     buildModel() {
       const old = this.inst;
       this.inst = M.createInstance(this.template, this.look);
+      // true facts about this Mii's looks, so compliments are accurate
+      const src = this.template.source;
+      this.facts = {
+        top: M.colorName(this.look.shirt || src.shirt, "top"),
+        hair: M.colorName(this.look.hair || src.hair, "hair"),
+        beard: !!src.hasBeard && this.look.beard !== false,
+        tall: this.template.info.height >= 90,
+      };
       // taller Miis (by their Mii height setting) are a little bigger
       const s = (0.9 + clamp(this.template.info.height, 0, 127) / 127 * 0.2) * 1.3;
       this.sizeScale = s;
@@ -114,8 +126,11 @@
     }
 
     // Plans a route to (x, z) around obstacles and starts walking.
+    // energetic Miis walk faster, calm ones stroll
+    get speed() { return this.baseSpeed * (0.75 + this.trait("energy") / 100 * 0.6); }
+
     goTo(x, z) {
-      const path = this.hub.nav.findPath(this.x, this.z, x, z);
+      const path = this.hub.nav.findPath(this.x, this.z, x, z, this.hub.standingMiis(this));
       if (!path) { this.state = "idle"; this.timer = rnd(0.5, 1.5); this.spot = null; return false; }
       this.path = path;
       this.target = path[path.length - 1];
@@ -168,10 +183,9 @@
       this.controls.enableDamping = true;
       this.controls.minDistance = 8;
       this.controls.maxDistance = 45;
-      this.controls.minPolarAngle = 0.3;
-      this.controls.maxPolarAngle = 1.38;
-      this.controls.minAzimuthAngle = -1.0;
-      this.controls.maxAzimuthAngle = 1.0;
+      // spin all the way around; don't go under the floor or straight overhead
+      this.controls.minPolarAngle = 0.25;
+      this.controls.maxPolarAngle = 1.42;
 
       this.miiGroup = new THREE.Group();
       this.scene.add(this.miiGroup);
@@ -202,9 +216,10 @@
       const hfov = 2 * Math.atan(Math.tan(vfov / 2) * this.camera.aspect);
       // the front of the area is closer than the middle, so we don't need the full width
       const dist = clamp((halfW / Math.tan(hfov / 2)) * 0.8, 17, 30);
+      const ty = this.world.cameraTargetY || 1;
       const dir = new THREE.Vector3(0, this.world.cameraTilt || 0.55, 1).normalize();
-      this.camera.position.copy(dir.multiplyScalar(dist)).add(new THREE.Vector3(0, 1, 0));
-      this.controls.target.set(0, 1, 0);
+      this.camera.position.copy(dir.multiplyScalar(dist)).add(new THREE.Vector3(0, ty, 0));
+      this.controls.target.set(0, ty, 0);
       this.controls.maxDistance = Math.max(45, dist * 1.4);
       this.controls.update();
     }
@@ -227,6 +242,9 @@
         const p = this.randomFloorPoint();
         w.x = p.x; w.z = p.z;
         w.state = "idle"; w.timer = rnd(0.3, 1.5); w.spot = null; w.target = null; w.path = null; w.seat = null;
+        // clear what they were saying in the old place
+        w.bubble = null; w.uiBubble.classList.remove("show");
+        w.emote = null; w.uiEmote.classList.remove("show");
         w.lift = this.baseLift(w); w.liftVel = 0;
         w.appear = 0;
         w.helmet.visible = this.world.helmet;
@@ -240,6 +258,12 @@
           space: ["We're in SPACE!", "Blast off!"],
         }[id]), 2.5);
       }
+    }
+
+    // The direction a Mii at w should face to look at the camera.
+    viewYaw(w) {
+      const c = this.camera.position;
+      return Math.atan2(c.x - w.x, c.z - w.z);
     }
 
     baseLift(w) {
@@ -262,7 +286,7 @@
       // pop in at an open spot, then wander off
       const p = this.randomFloorPoint();
       w.x = p.x; w.z = p.z;
-      w.yaw = w.targetYaw = 0;
+      w.yaw = w.targetYaw = this.viewYaw(w);
       w.lift = this.baseLift(w) + 1.2;
       w.timer = rnd(1, 2.5);
       this.walkers.push(w);
@@ -322,7 +346,8 @@
       this.directorIn = rnd(2.5, 6);
       const free = this.walkers.filter((w) => !this.isBusy(w) && w.cooldown <= 0 && w.appear >= 1);
       if (free.length < 2) return;
-      const A = free[Math.floor(Math.random() * free.length)];
+      // outgoing Miis are more likely to start a conversation
+      const A = D.pick(free.flatMap((w) => Array(1 + Math.round(w.trait("social") / 20)).fill(w)));
       const others = free.filter((w) => w !== A);
       others.sort((p, q) => Math.hypot(p.x - A.x, p.z - A.z) - Math.hypot(q.x - A.x, q.z - A.z));
       const B = Math.random() < 0.6 ? others[0] : others[Math.floor(Math.random() * others.length)];
@@ -330,7 +355,27 @@
     }
 
     isBusy(w) {
-      return w.held || w.state === "interact" || w.state === "approach" || w.state === "waiting";
+      return w.held || w.state === "interact" || w.state === "approach" || w.state === "waiting" || w.state === "perform";
+    }
+
+    // Makes a Mii do something on its own (from its menu): dance, nap, wave, catchphrase...
+    perform(w, kind) {
+      this.endInteraction(w);
+      w.spot = null; w.seat = null; w.path = null;
+      w.emote = null; w.uiEmote.classList.remove("show");
+      w.state = "perform";
+      w.performKind = kind;
+      w.targetYaw = this.viewYaw(w);
+      w.timer = { dance: 5, nap: 6, wave: 2, catchphrase: 2.5, jump: 1.5 }[kind] || 2;
+      if (kind === "dance") { w.showEmote("🎵", 5); w.say(D.pick(["Let's dance!", "Watch my moves!", "Dance time!"]), 2); }
+      if (kind === "nap") { w.showEmote("💤", 6); w.say("Zzz...", 3); }
+      if (kind === "wave") { w.arms = "wave"; w.say(D.pick(D.CLICK_LINES), 1.8); }
+      if (kind === "jump") { w.hop(this.world.floaty ? 3 : 6.5); w.say(D.pick(["Hup!", "Boing!", "Wheee!"]), 1.4); }
+      if (kind === "catchphrase") {
+        const cp = (w.personality.catchphrase || "").trim();
+        w.arms = "cheer";
+        w.say(cp || "I don't have a catchphrase yet!", 2.4);
+      }
     }
 
     startInteraction(A, B) {
@@ -353,7 +398,7 @@
           m.state = "idle";
           m.timer = rnd(1, 3);
         }
-        m.cooldown = rnd(5, 12);
+        m.cooldown = rnd(5, 12) * (1.5 - m.trait("social") / 100); // outgoing Miis are ready to chat again sooner
       }
     }
 
@@ -401,7 +446,7 @@
     update(dt) {
       this.time += dt;
       if (!this.world) return;
-      this.world.update(this.time);
+      this.world.update(this.time, this.camera);
       this.runDirector(dt);
       const floaty = this.world.floaty;
       const gravity = floaty ? 3 : 22;
@@ -436,7 +481,7 @@
             const bf = this.bestFriendOf(w);
             if (w.spot && w.state === "activity" && Math.random() < 0.6) w.say(D.pick(w.spot.lines));
             else w.say(D.soloLine(w, this.world, bf && bf.look.name));
-            w.talkIn = rnd(9, 20);
+            w.talkIn = rnd(9, 20) * (1.5 - w.trait("chatty") / 100); // chatty Miis talk more
           }
         }
 
@@ -481,7 +526,7 @@
         case "idle": {
           w.timer -= dt;
           if (w.timer > 0) {
-            if (Math.random() < dt * 0.25) w.targetYaw = rnd(-0.8, 0.8); // look around, mostly towards the camera
+            if (Math.random() < dt * 0.25) w.targetYaw = this.viewYaw(w) + rnd(-0.8, 0.8); // look around, mostly towards the camera
             break;
           }
           const roll = Math.random();
@@ -498,6 +543,7 @@
           } else {
             w.timer = rnd(1, 3);
             if (this.world.floaty && Math.random() < 0.5) { w.hop(2.4); w.say(D.pick(["Boing!", "Moon jump!", "Wheee!"]), 1.6); }
+            else if (w.trait("energy") >= 70 && Math.random() < 0.4) w.hop(this.world.floaty ? 1.5 : 3.5); // can't keep still!
           }
           break;
         }
@@ -521,7 +567,7 @@
             } else {
               w.state = "idle";
               w.timer = rnd(1, 4);
-              w.targetYaw = rnd(-0.5, 0.5);
+              w.targetYaw = this.viewYaw(w) + rnd(-0.5, 0.5);
             }
           }
           break;
@@ -548,7 +594,7 @@
           w.replanIn = (w.replanIn || 0) - dt;
           if (!w.path || w.replanIn <= 0) {
             const meet = this.meetingPoint(w, B);
-            w.path = this.nav.findPath(w.x, w.z, meet.x, meet.z);
+            w.path = this.nav.findPath(w.x, w.z, meet.x, meet.z, this.standingMiis(w));
             w.replanIn = 1.5;
             if (!w.path) { this.endInteraction(w); break; }
           }
@@ -565,6 +611,22 @@
           break;
         }
 
+        case "perform": // something you asked for from the Mii's menu
+          w.timer -= dt;
+          if (w.performKind === "dance") {
+            w.dance = true;
+            w.arms = "out";
+            w.targetYaw += Math.sin(this.time * 5) * 0.08;
+            if (w.lift <= this.baseLift(w) + 0.01) w.hop(this.world.floaty ? 1.4 : 3.2);
+          }
+          if (w.performKind === "nap") { w.sleep = true; }
+          if (w.timer <= 0) {
+            w.dance = false; w.sleep = false; w.arms = "down";
+            w.state = "idle";
+            w.timer = rnd(1, 2);
+          }
+          break;
+
         case "waiting":
           if (w.partner) w.targetYaw = Math.atan2(w.partner.x - w.x, w.partner.z - w.z);
           break;
@@ -574,7 +636,7 @@
           if (p) {
             // face each other, but turn a bit towards the camera so we can see their faces
             const face = Math.atan2(p.x - w.x, p.z - w.z);
-            w.targetYaw = turnToward(face, 0, 0.35);
+            w.targetYaw = turnToward(face, this.viewYaw(w), 0.35);
           }
           if (w.dance) w.targetYaw += Math.sin(this.time * 5) * 0.8;
           if (w.role === "A") this.runScript(w, dt);
@@ -584,13 +646,27 @@
       }
     }
 
+    // Miis that are standing still (chatting, sitting, idling) - walking Miis plan
+    // routes around these. Walking Miis aren't included: they'll have moved on.
+    standingMiis(self) {
+      const out = [];
+      for (const o of this.walkers) {
+        if (o === self || o === self.partner || o.held) continue;
+        if (o.state === "walk" || o.state === "approach") continue;
+        out.push({ x: o.x, z: o.z, r: 0.5 });
+      }
+      return out;
+    }
+
     // Where should A stand to talk to B? Next to B, on whichever side is free.
     meetingPoint(A, B) {
       const sides = A.x < B.x ? [-1, 1] : [1, -1];
+      // don't pick a spot where someone else is already standing
+      const crowded = (x, z) => this.walkers.some((o) => o !== A && o !== B && Math.hypot(o.x - x, o.z - z) < 1.1);
       for (const sx of sides) {
-        for (const [ox, oz] of [[1.8, 0], [1.4, 0.9], [1.4, -0.9]]) {
+        for (const [ox, oz] of [[1.8, 0], [1.4, 0.9], [1.4, -0.9], [0.2, 1.8], [0.2, -1.8]]) {
           const x = B.x + sx * ox, z = B.z + oz;
-          if (!this.nav.isBlocked(x, z)) return { x, z };
+          if (!this.nav.isBlocked(x, z) && !crowded(x, z)) return { x, z };
         }
       }
       return this.nav.nearestFree(B.x + sides[0] * 1.8, B.z);
@@ -612,13 +688,13 @@
       w.lineCheckIn = (w.lineCheckIn || 0) - dt;
       if (w.lineCheckIn <= 0) {
         w.lineCheckIn = 0.2;
-        if (!this.nav.clearLine(w.x, w.z, next.x, next.z)) {
+        if (!this.nav.clearLine(w.x, w.z, next.x, next.z, this.standingMiis(w))) {
           // re-plan once; if the new route still isn't clear, just carry on carefully
           // (the stuck check below gives up if we really can't get anywhere)
           if (!w.justReplanned) {
             w.justReplanned = true;
             const goal = w.path[w.path.length - 1];
-            const path = this.nav.findPath(w.x, w.z, goal.x, goal.z);
+            const path = this.nav.findPath(w.x, w.z, goal.x, goal.z, this.standingMiis(w));
             if (!path) return "lost";
             w.path = path;
             return "walking";
@@ -634,13 +710,13 @@
       // stuck check: if we haven't got any closer for a while, plan a new route
       if (d < w.bestDist - 0.05) { w.bestDist = d; w.stuckTime = 0; }
       else w.stuckTime = (w.stuckTime || 0) + dt;
-      if (w.stuckTime > 0.9) {
+      if (w.stuckTime > 0.7) {
         w.repaths = (w.repaths || 0) + 1;
         w.stuckTime = 0;
         w.bestDist = Infinity;
-        if (w.repaths > 2) return "lost";
+        if (w.repaths > 1) return "lost";
         const goal = w.path[w.path.length - 1];
-        const path = this.nav.findPath(w.x, w.z, goal.x, goal.z);
+        const path = this.nav.findPath(w.x, w.z, goal.x, goal.z, this.standingMiis(w));
         if (!path) return "lost";
         w.path = path;
       }
@@ -709,13 +785,18 @@
       const px = seat ? w.x + (seat.x - w.x) * k : w.x;
       const pz = seat ? w.z + (seat.z - w.z) * k : w.z;
       const py = seat ? (seat.y || 0) * k : 0;
-      holder.position.set(px, w.lift + py, pz);
+      // models without leg bones (e.g. head-only exports) hop along instead of walking
+      const rig = w.inst.rig;
+      const hopY = !rig.hasLegs && !rig.mixer ? Math.abs(Math.sin(w.phase)) * 0.22 * w.walkAmt : 0;
+      holder.position.set(px, w.lift + py + hopY, pz);
       holder.rotation.y = w.yaw;
+      holder.rotation.z = !rig.hasLegs ? Math.sin(w.phase) * 0.08 * w.walkAmt : 0;
       const pop = w.appear < 1 ? 0.3 + 0.7 * (1 - Math.pow(1 - w.appear, 3)) : 1;
       holder.scale.setScalar(w.sizeScale * pop);
 
       w.inst.rig.pose({
         t: this.time,
+        dt,
         walk: w.walkAmt,
         phase: w.phase,
         arms: w.held ? "held" : w.arms,
@@ -804,6 +885,7 @@
       let down = null;
 
       c.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return; // right-click opens the menu instead (see "contextmenu")
         const w = this.pickWalker(this.pointerRay(e));
         down = { x: e.clientX, y: e.clientY, w };
         if (w) {
@@ -832,14 +914,14 @@
           }
           w.lift = 1.4 + Math.sin(this.time * 4) * 0.08;
           w.liftVel = 0;
-          w.targetYaw = 0;
+          w.targetYaw = this.viewYaw(w);
         } else if (!down) {
           this.hover = this.pickWalker(this.pointerRay(e));
           c.style.cursor = this.hover ? "grab" : "";
         }
       });
 
-      const release = () => {
+      const release = (e) => {
         if (this.dragging) {
           const w = this.dragging;
           w.held = false;
@@ -861,13 +943,13 @@
         } else if (down && down.w) {
           const w = down.w;
           w.hop(this.world.floaty ? 1.6 : 4);
-          w.targetYaw = 0;
+          w.targetYaw = this.viewYaw(w);
           if (!this.isBusy(w)) {
             w.say(D.pick(D.CLICK_LINES), 1.8);
             w.arms = "wave";
             setTimeout(() => { if (w.arms === "wave" && !w.partner) w.arms = "down"; }, 1500);
           }
-          if (this.onSelect) this.onSelect(w);
+          if (this.onSelect) this.onSelect(w, e.clientX, e.clientY);
         }
         down = null;
         this.controls.enabled = true;
@@ -875,6 +957,13 @@
       c.addEventListener("pointerup", release);
       c.addEventListener("pointercancel", release);
       c.addEventListener("pointerleave", () => { if (!this.dragging) this.hover = null; });
+      // right-click a Mii to open its menu
+      c.addEventListener("contextmenu", (e) => {
+        const w = this.pickWalker(this.pointerRay(e));
+        if (!w) return;
+        e.preventDefault();
+        if (this.onSelect) this.onSelect(w, e.clientX, e.clientY);
+      });
     }
 
     // ---------- main loop ----------

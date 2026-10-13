@@ -29,12 +29,65 @@
     return level;
   }
 
+  // ---------- Personality ----------
+  // Each trait goes from 0 to 100 (50 = in the middle).
+  const TRAITS = [
+    { key: "energy", low: "Calm", high: "Energetic" },
+    { key: "social", low: "Shy", high: "Outgoing" },
+    { key: "chatty", low: "Quiet", high: "Chatty" },
+    { key: "humor", low: "Serious", high: "Silly" },
+    { key: "kindness", low: "Grumpy", high: "Sweet" },
+  ];
+  const DEFAULT_PERSONALITY = { energy: 50, social: 50, chatty: 50, humor: 50, kindness: 50, catchphrase: "" };
+
+  function traits(m) {
+    return Object.assign({}, DEFAULT_PERSONALITY, (m && m.personality) || {});
+  }
+
+  function randomPersonality() {
+    const r = () => Math.round(20 + Math.random() * 60);
+    return { energy: r(), social: r(), chatty: r(), humor: r(), kindness: r(), catchphrase: "" };
+  }
+
+  // A short Tomodachi-style description, like "Lively Joker" or "Quiet Sweetheart".
+  function personalityLabel(p) {
+    p = Object.assign({}, DEFAULT_PERSONALITY, p || {});
+    let adj = "Easygoing";
+    if (p.energy >= 60 && p.social >= 60) adj = "Lively";
+    else if (p.energy >= 60) adj = "Adventurous";
+    else if (p.social >= 60) adj = "Friendly";
+    else if (p.energy <= 40 && p.social <= 40) adj = "Quiet";
+    else if (p.energy <= 40) adj = "Laid-back";
+    else if (p.social <= 40) adj = "Independent";
+    let noun = "Buddy";
+    if (p.humor >= 62 && p.humor >= p.kindness) noun = "Joker";
+    else if (p.kindness >= 62) noun = "Sweetheart";
+    else if (p.kindness <= 38) noun = "Grump";
+    else if (p.humor <= 38) noun = "Thinker";
+    return adj + " " + noun;
+  }
+
+  // Picks one option, where options with a bigger weight are picked more often.
+  function weighted(options) {
+    const total = options.reduce((t, o) => t + Math.max(0, o[1]), 0);
+    let r = Math.random() * total;
+    for (const [value, w] of options) { r -= Math.max(0, w); if (r <= 0) return value; }
+    return options[options.length - 1][0];
+  }
+
   // ---------- Things to say when two Miis first meet ----------
   function greeting(A, B, points) {
+    const a = traits(A), b = traits(B);
     if (points === 0) {
+      const sayA = a.social <= 35 ? pick(["Um... h-hi. I'm {A}.", "Oh! Um, hello... I'm {A}."])
+        : a.energy >= 70 ? pick(["HEY THERE!! I'm {A}!!", "Hiii! I'm {A}! Nice to meet you!"])
+        : pick(["Hi! I'm {A}!", "Hello there! I'm {A}.", "Oh, a new face! I'm {A}!"]);
+      const sayB = b.social <= 35 ? pick(["...H-hi. I'm {B}.", "Oh... um, I'm {B}."])
+        : b.kindness <= 35 ? pick(["Yeah, hi. I'm {B}.", "{B}. Nice to meet you, I guess."])
+        : pick(["Nice to meet you! I'm {B}.", "Hi {A}! I'm {B}!", "Hey! Call me {B}."]);
       return [
-        { who: "A", say: pick(["Hi! I'm {A}!", "Hello there! I'm {A}.", "Oh, a new face! I'm {A}!"]), arms: "wave", dur: 2.2 },
-        { who: "B", say: pick(["Nice to meet you! I'm {B}.", "Hi {A}! I'm {B}!", "Hey! Call me {B}."]), arms: "wave", dur: 2.2 },
+        { who: "A", say: sayA, arms: a.social <= 35 ? undefined : "wave", dur: 2.2 },
+        { who: "B", say: sayB, arms: b.social <= 35 ? undefined : "wave", dur: 2.2 },
       ];
     }
     if (points >= 16) {
@@ -54,6 +107,7 @@
     chat(A, B, scene) {
       const topics = {
         park: [
+          ["Nice weather, huh?", "Yeah! Perfect day."],
           ["Want to feed the ducks later?", "Only if we bring bread!"],
           ["The flowers smell so good today.", "Achoo! ...I'm allergic."],
           ["Race you to the fountain!", "You're on!"],
@@ -73,7 +127,7 @@
         ["What's your favorite food?", "Anything with cheese!"],
         ["I had the weirdest dream last night.", "Was I in it?"],
         ["Have you seen any good movies?", "I only watch cartoons."],
-        ["Nice weather, huh?", "Yeah! Perfect day."],
+        ["Do you like video games?", "I'm the champion of my couch!"],
       ];
       const [q, a] = pick((topics[scene.id] || []).concat(generic));
       return [
@@ -83,14 +137,28 @@
       ];
     },
 
-    compliment(A, B) {
+    compliment(A, B, scene, points) {
+      // Only say things that are actually true about B.
+      const f = B.facts || {};
+      const b = traits(B);
+      const options = [];
+      if (f.top) options.push("I love your " + f.top + " top!", "That " + f.top + " really suits you!");
+      if (f.hair) options.push("Your " + f.hair + " hair looks great today!");
+      if (f.beard) options.push("Nice beard, {B}!", "Your beard is so cool!");
+      if (f.tall) options.push("You're so tall, {B}!");
+      if (points >= 4) {
+        options.push("You're so fun to hang out with, {B}!");
+        if (b.humor >= 60) options.push("You always make me laugh, {B}!");
+        if (b.kindness >= 60) options.push("You're the nicest, {B}!");
+        if (b.energy >= 65) options.push("How do you have so much energy?!");
+      }
+      if (!options.length) options.push("I like your style, {B}!");
+      const reply = b.kindness <= 35 ? pick(["Hmph. ...Thanks.", "I know.", "...You really think so?"])
+        : b.social <= 35 ? pick(["*blushes* Th-thanks...", "Oh! Um... thank you!"])
+        : pick(["Aww, thanks {A}!", "You're too kind!", "*blushes*"]);
       return [
-        { who: "A", say: pick([
-          "I love your " + B.look.favoriteColorName + " shirt!",
-          "Your hair looks great today!",
-          "You're so fun to hang out with, {B}!",
-        ]), dur: 2.4 },
-        { who: "B", say: pick(["Aww, thanks {A}!", "You're too kind!", "*blushes*"]), expr: "love", emote: "😊", dur: 2.2 },
+        { who: "A", say: pick(options), dur: 2.4 },
+        { who: "B", say: reply, expr: "love", emote: "😊", dur: 2.2 },
       ];
     },
 
@@ -188,13 +256,26 @@
   };
 
   // Chooses what two Miis will do, based on where they are and how close they are.
+  // Chooses what two Miis will do. Their personalities change the odds:
+  // silly Miis tell more jokes, energetic ones dance, grumpy ones argue...
   function buildInteraction(A, B, scene, points) {
-    const choices = ["chat", "chat", "joke", "compliment", "highFive", "rockPaperScissors", "dance"];
-    if (points >= 4) choices.push("dance", "joke", "sleepy");
-    if (points >= 1) choices.push("disagree");
-    if (scene.id === "space") choices.push("spaceBounce", "spaceBounce");
-    const type = points === 0 ? "chat" : pick(choices);
-    const steps = greeting(A, B, points).concat(interactions[type](A, B, scene));
+    const a = traits(A), b = traits(B);
+    const avg = (k) => (a[k] + b[k]) / 2;
+    const type = points === 0 ? "chat" : weighted([
+      ["chat", 3],
+      ["joke", 0.5 + avg("humor") / 30],
+      ["compliment", 0.3 + a.kindness / 35],
+      ["highFive", 0.4 + avg("energy") / 45],
+      ["rockPaperScissors", 1],
+      ["dance", (points >= 4 ? 0.6 : 0.2) + avg("energy") / 40 + avg("humor") / 80],
+      ["sleepy", points >= 4 ? 0.4 + (100 - a.energy) / 70 : 0],
+      ["disagree", points >= 1 ? 0.2 + (100 - avg("kindness")) / 30 : 0],
+      ["spaceBounce", scene.id === "space" ? 1.5 + avg("energy") / 50 : 0],
+    ]);
+    const steps = greeting(A, B, points).concat(interactions[type](A, B, scene, points));
+    // sometimes finish with a catchphrase
+    const cp = a.catchphrase && a.catchphrase.trim();
+    if (cp && Math.random() < 0.35) steps.push({ who: "A", say: cp, dur: 2.0 });
     return { type, steps };
   }
 
@@ -223,8 +304,27 @@
     "I feel great!", "Did I leave the oven on?", "*whistles*", "Hmm...",
   ];
 
+  const TRAIT_LINES = {
+    energyHigh: ["Let's go, go, go!", "I can't sit still!", "Race you! ...Anyone?", "Woohoo!"],
+    energyLow: ["Ahh, so relaxing.", "Let's take it slow today.", "*yawn*", "Maybe a little nap..."],
+    socialHigh: ["Who wants to hang out?", "I love meeting new people!", "Party at my place!"],
+    socialLow: ["...", "*looks around nervously*", "I'll just stand over here.", "Um..."],
+    humorHigh: ["*does a silly dance*", "Boop!", "I'm a little teapot~", "Knock knock! ...Anyone?"],
+    humorLow: ["Hmm, let me think...", "Interesting.", "I should make a plan."],
+    kindHigh: ["I hope everyone's having a nice day!", "You're all great!", "Group hug, anyone?"],
+    kindLow: ["Hmph.", "Everyone's so loud today.", "Don't bother me.", "Whatever."],
+  };
+
   function soloLine(mii, scene, bestFriendName) {
+    const t = traits(mii);
+    if (t.catchphrase && t.catchphrase.trim() && Math.random() < 0.2) return t.catchphrase.trim();
     const pool = scene.lines.concat(SOLO_LINES);
+    // strong personality traits add their own lines
+    const add = (cond, lines) => { if (cond) for (let i = 0; i < 2; i++) pool.push(...lines); };
+    add(t.energy >= 65, TRAIT_LINES.energyHigh); add(t.energy <= 35, TRAIT_LINES.energyLow);
+    add(t.social >= 65, TRAIT_LINES.socialHigh); add(t.social <= 35, TRAIT_LINES.socialLow);
+    add(t.humor >= 65, TRAIT_LINES.humorHigh); add(t.humor <= 35, TRAIT_LINES.humorLow);
+    add(t.kindness >= 65, TRAIT_LINES.kindHigh); add(t.kindness <= 35, TRAIT_LINES.kindLow);
     if (bestFriendName) {
       pool.push("I wonder what " + bestFriendName + " is doing.", bestFriendName + " is the best!");
     }
@@ -239,6 +339,7 @@
   const DROP_LINES = ["Phew!", "Oof!", "That was fun!", "Again!", "Where am I?"];
 
   root.Dialogue = {
+    TRAITS, DEFAULT_PERSONALITY, traits, randomPersonality, personalityLabel,
     LEVELS, levelFor, buildInteraction, FRIENDSHIP_GAIN, FEED_TEXT,
     soloLine, CLICK_LINES, PICKUP_LINES, DROP_LINES, pick,
   };

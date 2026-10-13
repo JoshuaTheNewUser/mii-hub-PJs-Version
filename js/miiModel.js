@@ -63,7 +63,34 @@
     };
   }
 
-  const api = { readGlbJson, readInfo, FAVORITE_COLORS };
+  // Names for colours, so Miis can say "I love your navy top!" and be right.
+  const TOP_NAMES = FAVORITE_COLORS.concat([
+    { name: "navy", hex: "#191f40" }, { name: "gray", hex: "#40464e" }, { name: "gray", hex: "#8a8f98" },
+    { name: "black", hex: "#2a2a2a" }, { name: "white", hex: "#f4f4f4" }, { name: "cream", hex: "#f3e2b8" },
+    { name: "maroon", hex: "#6b1a24" }, { name: "teal", hex: "#1f8a8a" },
+  ]);
+  const HAIR_NAMES = [
+    { name: "black", hex: "#1e1a18" }, { name: "dark brown", hex: "#402010" }, { name: "brown", hex: "#6b4423" },
+    { name: "red", hex: "#8a2a14" }, { name: "ginger", hex: "#b5652a" }, { name: "gray", hex: "#787878" },
+    { name: "blonde", hex: "#d0a04a" }, { name: "white", hex: "#e8e8e8" }, { name: "pink", hex: "#f08ab0" },
+    { name: "blue", hex: "#3a6ad0" }, { name: "green", hex: "#3a9a4a" }, { name: "purple", hex: "#8a4ac0" },
+  ];
+
+  // colour: "#rrggbb" or [r, g, b]; kind: "top" or "hair"
+  function colorName(color, kind) {
+    if (!color) return null;
+    const rgb = typeof color === "string" ? [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16)) : color;
+    let best = null, bestD = Infinity;
+    for (const c of kind === "hair" ? HAIR_NAMES : TOP_NAMES) {
+      const h = [1, 3, 5].map((i) => parseInt(c.hex.slice(i, i + 2), 16));
+      // compare in a way that's closer to how people see colour (green matters most)
+      const d = 2 * (h[0] - rgb[0]) ** 2 + 4 * (h[1] - rgb[1]) ** 2 + 3 * (h[2] - rgb[2]) ** 2;
+      if (d < bestD) { bestD = d; best = c.name; }
+    }
+    return best;
+  }
+
+  const api = { readGlbJson, readInfo, FAVORITE_COLORS, colorName };
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
@@ -111,7 +138,7 @@
         const box = new THREE.Box3().setFromObject(scene);
         const height = box.max.y - box.min.y;
         if (!isFinite(height) || height <= 0) { reject(new Error("the model is empty")); return; }
-        resolve({ scene, info, height, groundY: box.min.y, source: detectSourceColors(scene) });
+        resolve({ scene, info, height, groundY: box.min.y, source: detectSourceColors(scene), animations: gltf.animations || [] });
       }, (err) => reject(new Error("couldn't read the 3D model (" + (err && err.message || err) + ")")));
     });
   }
@@ -167,6 +194,24 @@
     });
     const tops = shirtVotes.filter((c) => !near(c, src.skin, 2400));
     if (tops.length) src.shirt = tops[0];
+    // a beard shows up as hair-coloured parts on the face picture
+    scene.traverse((o) => {
+      if (o.isMesh && o.material && (o.material.name || "").toLowerCase() === "faceline" && o.material.map) {
+        const img = o.material.map.image;
+        const c = document.createElement("canvas");
+        c.width = c.height = 48;
+        const ctx = c.getContext("2d");
+        ctx.drawImage(img, 0, 0, 48, 48);
+        const px = ctx.getImageData(0, 0, 48, 48).data;
+        let hairy = 0, total = 0;
+        for (let i = 0; i < px.length; i += 4) {
+          if (px[i + 3] < 200) continue;
+          total++;
+          if (near([px[i], px[i + 1], px[i + 2]], src.hair, 2400)) hairy++;
+        }
+        src.hasBeard = total > 0 && hairy / total > 0.08;
+      }
+    });
     return src;
   }
 
@@ -251,8 +296,48 @@
   }
 
   // ---- making a copy that can move on its own ----
-  const BONES = ["Spine_1", "Spine_2", "Head", "Arm_1_L", "Arm_2_L", "Arm_1_R", "Arm_2_R",
-    "Leg_1_L", "Leg_2_L", "Leg_1_R", "Leg_2_R", "Waist"];
+  // ---- finding the bones ----
+  // Mii Creator names its bones "Arm_1_L", "Leg_2_R" and so on, but other tools
+  // use other names (Mixamo: "mixamorig:LeftArm", Blender: "upper_arm.L", VRM:
+  // "leftUpperArm"...). We look for each bone under any of those names.
+  const L = "(?:[_.\\-]?l(?:eft)?|left)", R = "(?:[_.\\-]?r(?:ight)?|right)";
+  const BONE_PATTERNS = {
+    Spine_1: [/^spine_?1$/, /^spine$/, /^hips?$/, /^pelvis$/],
+    Spine_2: [/^spine_?2$/, /^chest$/, /^spine_?0?1$/, /^upper_?chest$/],
+    Head: [/^head$/],
+    Arm_1_L: [/^arm_?1_?l$/, new RegExp("^(?:upper_?arm" + L + "|leftarm|left_?upper_?arm|arm" + L + ")$")],
+    Arm_2_L: [/^arm_?2_?l$/, new RegExp("^(?:fore_?arm" + L + "|lower_?arm" + L + "|leftforearm|left_?lower_?arm|elbow" + L + ")$")],
+    Arm_1_R: [/^arm_?1_?r$/, new RegExp("^(?:upper_?arm" + R + "|rightarm|right_?upper_?arm|arm" + R + ")$")],
+    Arm_2_R: [/^arm_?2_?r$/, new RegExp("^(?:fore_?arm" + R + "|lower_?arm" + R + "|rightforearm|right_?lower_?arm|elbow" + R + ")$")],
+    Leg_1_L: [/^leg_?1_?l$/, new RegExp("^(?:thigh" + L + "|upper_?leg" + L + "|leftupleg|left_?upper_?leg|leg" + L + ")$")],
+    Leg_2_L: [/^leg_?2_?l$/, new RegExp("^(?:shin" + L + "|calf" + L + "|lower_?leg" + L + "|leftleg|left_?lower_?leg|knee" + L + ")$")],
+    Leg_1_R: [/^leg_?1_?r$/, new RegExp("^(?:thigh" + R + "|upper_?leg" + R + "|rightupleg|right_?upper_?leg|leg" + R + ")$")],
+    Leg_2_R: [/^leg_?2_?r$/, new RegExp("^(?:shin" + R + "|calf" + R + "|lower_?leg" + R + "|rightleg|right_?lower_?leg|knee" + R + ")$")],
+  };
+
+  function cleanBoneName(name) {
+    return (name || "").toLowerCase()
+      .replace(/^mixamorig[:_]?|^armature[_|:]|^bip0?1[_ ]?|^j_bip_[clr]_/, "");
+  }
+
+  function findBones(object) {
+    const all = [];
+    object.traverse((o) => { if (o.isBone || o.type === "Bone") all.push(o); });
+    // models without a skin may still have plain nodes named like bones
+    if (!all.length) object.traverse((o) => { if (!o.isMesh && o !== object) all.push(o); });
+    const found = {};
+    // The loader adds "_1", "_2"... to repeated names, so if the exact name isn't
+    // there, try again without that ending.
+    const names = all.map((b) => cleanBoneName(b.name));
+    const trimmed = names.map((n) => n.replace(/_\d+$/, ""));
+    for (const [key, patterns] of Object.entries(BONE_PATTERNS)) {
+      for (const list of [names, trimmed]) {
+        const re = patterns.find((p) => list.some((n) => p.test(n)));
+        if (re) { found[key] = all[list.findIndex((n) => re.test(n))]; break; }
+      }
+    }
+    return found;
+  }
 
   function createInstance(template, look) {
     const object = THREE.SkeletonUtils.clone(template.scene);
@@ -275,20 +360,49 @@
 
     // Remember each bone's resting rotation, plus which way its parent faces,
     // so we can rotate bones using simple directions (forward, sideways, up).
-    object.updateMatrixWorld(true);
-    const rootInv = new THREE.Quaternion();
-    object.getWorldQuaternion(rootInv).invert();
+    holder.updateMatrixWorld(true); // update everything, including the size/position wrapper
+    const rootQInv = new THREE.Quaternion();
+    object.getWorldQuaternion(rootQInv).invert();
+    const rootInv = object.matrixWorld.clone().invert();
+    const found = findBones(object);
     const bones = {};
-    object.traverse((o) => {
-      if (BONES.includes(o.name) && !bones[o.name]) {
-        const parentQ = new THREE.Quaternion();
-        if (o.parent) o.parent.getWorldQuaternion(parentQ);
-        parentQ.premultiply(rootInv);
-        bones[o.name] = { bone: o, rest: o.quaternion.clone(), parentQ, parentQInv: parentQ.clone().invert() };
-      }
-    });
+    for (const [key, o] of Object.entries(found)) {
+      const parentQ = new THREE.Quaternion();
+      if (o.parent) o.parent.getWorldQuaternion(parentQ);
+      parentQ.premultiply(rootQInv);
+      bones[key] = { bone: o, rest: o.quaternion.clone(), parentQ, parentQInv: parentQ.clone().invert(), base: new THREE.Quaternion() };
+    }
 
-    return { holder, inner, object, rig: new Rig(bones) };
+    // If the model stands in a "T-pose" (arms straight out), turn the arms (and
+    // legs, if needed) so they hang down first. Mii Creator models are already fine.
+    const posOf = (o) => new THREE.Vector3().setFromMatrixPosition(o.matrixWorld).applyMatrix4(rootInv);
+    for (const [upper, lower, isArm] of [["Arm_1_L", "Arm_2_L", 1], ["Arm_1_R", "Arm_2_R", 1], ["Leg_1_L", "Leg_2_L", 0], ["Leg_1_R", "Leg_2_R", 0]]) {
+      const b = bones[upper];
+      if (!b) continue;
+      const child = found[lower] || b.bone.children.find((c) => c.isBone);
+      if (!child) continue;
+      const a = posOf(b.bone), c = posOf(child);
+      const dir = c.sub(a).normalize();
+      if (dir.lengthSq() < 0.5 || dir.y < (isArm ? -0.75 : -0.85)) continue; // already hanging down
+      const side = Math.sign(a.x) || 1;
+      const target = new THREE.Vector3(isArm ? side * 0.15 : 0, -1, 0).normalize();
+      b.base.setFromUnitVectors(dir, target);
+    }
+
+    // Animations that came with the file (e.g. from Mixamo) are used if there are any.
+    let mixer = null, actions = null;
+    if (template.animations.length) {
+      mixer = new THREE.AnimationMixer(object);
+      const clip = (re) => template.animations.find((c) => re.test(c.name));
+      const idle = clip(/idle|stand|breath/i) || template.animations[0];
+      const walk = clip(/walk|run|move/i);
+      actions = { idle: mixer.clipAction(idle), walk: walk && walk !== idle ? mixer.clipAction(walk) : null };
+      actions.idle.play();
+      if (actions.walk) { actions.walk.play(); actions.walk.setEffectiveWeight(0); }
+    }
+
+    const rig = new Rig(bones, mixer, actions);
+    return { holder, inner, object, rig };
   }
 
   // ---- posing ----
@@ -296,8 +410,14 @@
   const tmpE = new THREE.Euler();
 
   class Rig {
-    constructor(bones) {
+    constructor(bones, mixer, actions) {
       this.bones = bones;
+      this.mixer = mixer;
+      this.actions = actions;
+      // can we move legs? (if not, the hub makes the whole Mii bounce instead)
+      this.hasLegs = !!(bones.Leg_1_L && bones.Leg_1_R);
+      this.canAnimate = this.hasLegs || !!mixer;
+      this.missing = Object.keys(BONE_PATTERNS).filter((k) => !bones[k]);
     }
 
     // Rotates a bone by (x, y, z) radians measured in the Mii's own space:
@@ -307,8 +427,8 @@
       if (!b) return;
       tmpE.set(x || 0, y || 0, z || 0, "XYZ");
       tmpQ.setFromEuler(tmpE);
-      // local = parent⁻¹ · R · parent · rest
-      b.bone.quaternion.copy(b.parentQInv).multiply(tmpQ).multiply(b.parentQ).multiply(b.rest);
+      // local = parent⁻¹ · R · base · parent · rest   (base straightens T-poses)
+      b.bone.quaternion.copy(b.parentQInv).multiply(tmpQ).multiply(b.base).multiply(b.parentQ).multiply(b.rest);
     }
 
     /*
@@ -320,6 +440,15 @@
      */
     pose(p) {
       const t = p.t || 0;
+      if (this.mixer) {
+        // the file's own animations: blend between standing and walking
+        const w = p.walk || 0;
+        this.actions.idle.setEffectiveWeight(this.actions.walk ? 1 - w : 1);
+        if (this.actions.walk) this.actions.walk.setEffectiveWeight(w);
+        this.mixer.update(p.dt || 0);
+        // still do special arm poses (waving etc.) on top
+        if (!p.arms || p.arms === "down") return;
+      }
       const w = p.walk || 0;
       const ph = p.phase || 0;
       const swing = Math.sin(ph) * 0.6 * w;
@@ -343,18 +472,23 @@
 
       // arms: left arm raises outward with +Z, right arm with -Z
       let aL = { x: swing * 0.9, z: 0.05 }, aR = { x: -swing * 0.9, z: -0.05 };
-      let elbowL = 0, elbowR = 0;
+      let elbowL = 0, elbowR = 0;      // elbow bend forward/back
+      let elbowLz = 0, elbowRz = 0;    // elbow bend up/down (sideways)
       switch (p.arms) {
-        case "wave":
-          aR = { x: 0, z: -2.6 + Math.sin(t * 12) * 0.35 };
-          elbowR = 0;
+        // Mii heads are big, so raised arms bend at the elbow and keep the
+        // hands beside the head instead of sweeping through it.
+        case "wave": // right arm out to the side, forearm angled up and out, hand waving
+          aR = { x: -0.2, z: -1.5 };
+          elbowRz = -0.85 + Math.sin(t * 11) * 0.35;
           break;
-        case "up":
-          aL = { x: 0, z: 2.9 }; aR = { x: 0, z: -2.9 };
+        case "up": // one hand up and forward, for a high five
+          aR = { x: -0.95, z: -1.25 };
+          elbowR = -0.35; elbowRz = -0.7;
           break;
-        case "cheer":
-          aL = { x: 0, z: 2.5 + Math.sin(t * 10) * 0.3 };
-          aR = { x: 0, z: -2.5 - Math.sin(t * 10 + 1) * 0.3 };
+        case "cheer": // both arms out and up, bouncing
+          aL = { x: -0.15, z: 1.6 + Math.sin(t * 10) * 0.15 };
+          aR = { x: -0.15, z: -1.6 - Math.sin(t * 10 + 1) * 0.15 };
+          elbowLz = 0.75; elbowRz = -0.75;
           break;
         case "out":
           aL = { x: Math.sin(t * 8) * 0.4, z: 1.2 + Math.sin(t * 8) * 0.4 };
@@ -371,8 +505,8 @@
       }
       this.set("Arm_1_L", aL.x, 0, aL.z);
       this.set("Arm_1_R", aR.x, 0, aR.z);
-      this.set("Arm_2_L", elbowL, 0, 0);
-      this.set("Arm_2_R", elbowR, 0, 0);
+      this.set("Arm_2_L", elbowL, 0, elbowLz);
+      this.set("Arm_2_R", elbowR, 0, elbowRz);
 
       // body: a little bounce from side to side when walking or dancing
       const sway = p.dance ? Math.sin(t * 8) * 0.18 : Math.sin(ph) * 0.05 * w;

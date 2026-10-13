@@ -19,32 +19,22 @@
   const PANTS = ["#40464e", "#2b3a67", "#1c1c1c", "#6b4f2a", "#c9b38a", "#5a6b3a", "#e0e0e0"];
   const EYES = ["#0a4a35", "#000000", "#6c7070", "#663c2c", "#4870a0", "#605e30"];
 
-  // Names for colours, so Miis can say things like "I love your navy shirt!"
-  const COLOR_NAMES = M.FAVORITE_COLORS.concat([
-    { name: "navy", hex: "#191f40" }, { name: "gray", hex: "#40464e" }, { name: "gray", hex: "#808080" },
-  ]);
-  function colorName(rgbOrHex) {
-    const rgb = typeof rgbOrHex === "string"
-      ? [1, 3, 5].map((i) => parseInt(rgbOrHex.slice(i, i + 2), 16))
-      : rgbOrHex;
-    let best = "cool", bestD = Infinity;
-    for (const c of COLOR_NAMES) {
-      const h = [1, 3, 5].map((i) => parseInt(c.hex.slice(i, i + 2), 16));
-      const d = (h[0] - rgb[0]) ** 2 + (h[1] - rgb[1]) ** 2 + (h[2] - rgb[2]) ** 2;
-      if (d < bestD) { bestD = d; best = c.name; }
-    }
-    return best;
-  }
-
   // Demo friends are copies of Joe's model with different colours.
   const DEMO_FRIENDS = [
-    { name: "Mia", look: { skin: "#ffd3ad", hair: "#7c3a14", shirt: "#f55a7d", pants: "#2b3a67", eyes: "#4870a0", beard: false } },
-    { name: "Leo", look: { skin: "#de7942", hair: "#1e1a18", shirt: "#0a48b4", pants: "#1c1c1c", eyes: "#663c2c", beard: false } },
-    { name: "Ava", look: { skin: "#ffb669", hair: "#d0a04a", shirt: "#7328ad", pants: "#c9b38a", eyes: "#0a4a35", beard: false } },
-    { name: "Sam", look: { skin: "#ffaa8c", hair: "#787878", shirt: "#78d220", pants: "#6b4f2a", eyes: "#000000", beard: true } },
-    { name: "Kai", look: { skin: "#ad5129", hair: "#1e1a18", shirt: "#ff6e19", pants: "#40464e", eyes: "#663c2c", beard: false } },
-    { name: "Zoe", look: { skin: "#632c18", hair: "#1e1a18", shirt: "#3caade", pants: "#e0e0e0", eyes: "#605e30", beard: false } },
-    { name: "Max", look: { skin: "#ffd3ad", hair: "#5c1812", shirt: "#007830", pants: "#5a6b3a", eyes: "#4870a0", beard: true } },
+    { name: "Mia", look: { skin: "#ffd3ad", hair: "#7c3a14", shirt: "#f55a7d", pants: "#2b3a67", eyes: "#4870a0", beard: false },
+      personality: { energy: 75, social: 80, chatty: 70, humor: 55, kindness: 80, catchphrase: "Yay, friends!" } },
+    { name: "Leo", look: { skin: "#de7942", hair: "#1e1a18", shirt: "#0a48b4", pants: "#1c1c1c", eyes: "#663c2c", beard: false },
+      personality: { energy: 85, social: 60, chatty: 50, humor: 75, kindness: 50, catchphrase: "Let's gooo!" } },
+    { name: "Ava", look: { skin: "#ffb669", hair: "#d0a04a", shirt: "#7328ad", pants: "#c9b38a", eyes: "#0a4a35", beard: false },
+      personality: { energy: 35, social: 30, chatty: 35, humor: 40, kindness: 75, catchphrase: "Oh, um... okay!" } },
+    { name: "Sam", look: { skin: "#ffaa8c", hair: "#787878", shirt: "#78d220", pants: "#6b4f2a", eyes: "#000000", beard: true },
+      personality: { energy: 25, social: 45, chatty: 60, humor: 30, kindness: 30, catchphrase: "Back in my day..." } },
+    { name: "Kai", look: { skin: "#ad5129", hair: "#1e1a18", shirt: "#ff6e19", pants: "#40464e", eyes: "#663c2c", beard: false },
+      personality: { energy: 70, social: 70, chatty: 80, humor: 85, kindness: 60, catchphrase: "Boop!" } },
+    { name: "Zoe", look: { skin: "#632c18", hair: "#1e1a18", shirt: "#3caade", pants: "#e0e0e0", eyes: "#605e30", beard: false },
+      personality: { energy: 55, social: 50, chatty: 40, humor: 35, kindness: 65, catchphrase: "Interesting!" } },
+    { name: "Max", look: { skin: "#ffd3ad", hair: "#5c1812", shirt: "#007830", pants: "#5a6b3a", eyes: "#4870a0", beard: true },
+      personality: { energy: 60, social: 35, chatty: 30, humor: 60, kindness: 40, catchphrase: "Hmph. Fine." } },
   ];
 
   // Wait for the rounded font, so signs and posters drawn in 3D use it too.
@@ -86,11 +76,16 @@
   function lookFor(record, template) {
     const look = Object.assign({}, record.look || {});
     look.name = record.name || template.info.name;
-    look.favoriteColorName = colorName(look.shirt || template.source.shirt);
+    look.favoriteColorName = M.colorName(look.shirt || template.source.shirt, "top");
     return look;
   }
 
   async function addRecord(record, silent) {
+    // every Mii gets a personality (you can change it from its menu)
+    if (!record.personality) {
+      record.personality = D.randomPersonality();
+      S.putMii(record);
+    }
     const template = await templateFor(record);
     return hub.addWalker(record, template, lookFor(record, template), silent);
   }
@@ -156,7 +151,7 @@
     for (const f of DEMO_FRIENDS) {
       if (added >= count) break;
       if (taken.has(f.name)) continue;
-      const record = { id: "demo-" + f.name + "-" + Date.now(), kind: "demo", name: f.name, look: Object.assign({}, f.look), added: Date.now() };
+      const record = { id: "demo-" + f.name + "-" + Date.now(), kind: "demo", name: f.name, look: Object.assign({}, f.look), personality: Object.assign({}, f.personality), added: Date.now() };
       await addRecord(record);
       S.putMii(record);
       added++;
@@ -212,7 +207,14 @@
       name.textContent = w.look.name;
       const meta = document.createElement("div");
       meta.className = "meta";
-      meta.textContent = w.record.kind === "demo" ? "Demo friend (Joe's model)" : (w.record.fileName || "3D Mii");
+      meta.textContent = D.personalityLabel(w.record.personality) + " · " + (w.record.kind === "demo" ? "demo friend" : (w.record.fileName || "3D Mii"));
+      if (!w.inst.rig.canAnimate) {
+        // e.g. a "head only" export: it can't walk properly
+        const warn = document.createElement("div");
+        warn.className = "warn";
+        warn.textContent = "⚠ No skeleton found, so it can only hop. Export it from Mii Creator as \"Full body\".";
+        meta.appendChild(warn);
+      }
       info.append(name, meta);
 
       const actions = document.createElement("div");
@@ -233,6 +235,11 @@
       actions.append(edit, remove);
 
       row.append(img, info, actions);
+      // click the picture or name to open the Mii's menu
+      for (const el of [img, info]) {
+        el.style.cursor = "pointer";
+        el.addEventListener("click", (e) => openMiiMenu(w, e.clientX, e.clientY));
+      }
       li.appendChild(row);
       if (editingId === w.id) li.appendChild(buildEditor(w));
       list.appendChild(li);
@@ -379,6 +386,174 @@
   }
   rosterCount = -1;
   hub.onChange();
+
+
+  // ---------- the Mii menu (click or right-click a Mii) ----------
+  const menu = document.createElement("div");
+  menu.className = "mii-menu";
+  menu.hidden = true;
+  $("stage").appendChild(menu);
+  let menuFor = null;
+  let saveTimer = null;
+
+  function saveSoon(record) {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => S.putMii(record), 300);
+  }
+
+  function closeMiiMenu() {
+    menu.hidden = true;
+    menuFor = null;
+  }
+
+  function openMiiMenu(w, clientX, clientY) {
+    menuFor = w;
+    const rec = w.record;
+    rec.personality = Object.assign({}, D.DEFAULT_PERSONALITY, rec.personality || {});
+    const p = rec.personality;
+    menu.innerHTML = "";
+
+    // header: picture, name, personality type
+    const head = document.createElement("div");
+    head.className = "mm-head";
+    const img = document.createElement("img");
+    img.src = portraitFor(w);
+    img.alt = "";
+    const titles = document.createElement("div");
+    titles.className = "mm-titles";
+    const nameInput = document.createElement("input");
+    nameInput.className = "mm-name";
+    nameInput.value = w.look.name;
+    nameInput.maxLength = 12;
+    nameInput.setAttribute("aria-label", "Name");
+    nameInput.addEventListener("input", () => {
+      const name = nameInput.value.trim();
+      if (!name) return;
+      rec.name = name;
+      w.look.name = name;
+      w.uiName.textContent = name;
+      saveSoon(rec);
+      rosterCount = -1;
+      hub.onChange();
+    });
+    const label = document.createElement("div");
+    label.className = "mm-label";
+    label.textContent = D.personalityLabel(p);
+    titles.append(nameInput, label);
+    const close = document.createElement("button");
+    close.className = "mm-close";
+    close.textContent = "✕";
+    close.setAttribute("aria-label", "Close");
+    close.addEventListener("click", closeMiiMenu);
+    head.append(img, titles, close);
+
+    // quick actions
+    const acts = document.createElement("div");
+    acts.className = "mm-actions";
+    for (const [icon, text, kind] of [["👋", "Wave", "wave"], ["💃", "Dance", "dance"], ["🦘", "Jump", "jump"], ["😴", "Nap", "nap"], ["💬", "Catchphrase", "catchphrase"]]) {
+      const b = document.createElement("button");
+      b.innerHTML = "<span>" + icon + "</span>" + text;
+      b.addEventListener("click", () => hub.perform(w, kind));
+      acts.appendChild(b);
+    }
+
+    // personality sliders
+    const pers = document.createElement("div");
+    pers.className = "mm-section";
+    pers.innerHTML = "<h3>Personality</h3>";
+    for (const t of D.TRAITS) {
+      const row = document.createElement("label");
+      row.className = "mm-slider";
+      const lo = document.createElement("span"); lo.textContent = t.low;
+      const hi = document.createElement("span"); hi.textContent = t.high;
+      const r = document.createElement("input");
+      r.type = "range"; r.min = 0; r.max = 100; r.value = p[t.key];
+      r.setAttribute("aria-label", t.low + " to " + t.high);
+      r.addEventListener("input", () => {
+        p[t.key] = Number(r.value);
+        label.textContent = D.personalityLabel(p);
+        saveSoon(rec);
+      });
+      r.addEventListener("change", () => { rosterCount = -1; hub.onChange(); });
+      row.append(lo, r, hi);
+      pers.appendChild(row);
+    }
+    const cpRow = document.createElement("label");
+    cpRow.className = "mm-catch";
+    cpRow.textContent = "Catchphrase";
+    const cp = document.createElement("input");
+    cp.maxLength = 40;
+    cp.placeholder = "e.g. Let's gooo!";
+    cp.value = p.catchphrase || "";
+    cp.addEventListener("input", () => { p.catchphrase = cp.value; saveSoon(rec); });
+    cpRow.appendChild(cp);
+    pers.appendChild(cpRow);
+
+    // best friends
+    const fr = document.createElement("div");
+    fr.className = "mm-section";
+    const pals = hub.walkers.filter((o) => o !== w)
+      .map((o) => ({ o, pts: hub.points(w, o) })).filter((x) => x.pts > 0)
+      .sort((a, b) => b.pts - a.pts).slice(0, 3);
+    fr.innerHTML = "<h3>Best friends</h3>";
+    const ul = document.createElement("ul");
+    if (!pals.length) ul.innerHTML = '<li class="empty">No friends yet!</li>';
+    for (const { o, pts } of pals) {
+      const li = document.createElement("li");
+      const lv = D.levelFor(pts);
+      li.textContent = lv.emoji + " " + o.look.name + " — " + lv.name;
+      ul.appendChild(li);
+    }
+    fr.appendChild(ul);
+
+    // footer
+    const foot = document.createElement("div");
+    foot.className = "mm-foot";
+    const look = document.createElement("button");
+    look.textContent = "🎨 Change look";
+    look.addEventListener("click", () => {
+      editingId = w.id;
+      renderRoster();
+      closeMiiMenu();
+      const li = document.querySelector(".roster .editor");
+      if (li) li.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    const home = document.createElement("button");
+    home.className = "danger";
+    home.textContent = "🏠 Send home";
+    home.addEventListener("click", () => {
+      if (!confirm("Send " + w.look.name + " home? (This removes them from the hub.)")) return;
+      closeMiiMenu();
+      hub.removeWalker(w.id);
+      S.deleteMii(w.id);
+      portraits.delete(w.id);
+      saveSettings();
+    });
+    foot.append(look, home);
+
+    menu.append(head, acts, pers, fr, foot);
+    menu.hidden = false;
+
+    // place it next to where you clicked, but keep it inside the hub area
+    const st = $("stage").getBoundingClientRect();
+    const mw = menu.offsetWidth, mh = menu.offsetHeight;
+    let x = clientX - st.left + 16, y = clientY - st.top - mh / 2;
+    if (x + mw > st.width - 8) x = clientX - st.left - mw - 16;
+    x = Math.max(8, Math.min(x, st.width - mw - 8));
+    y = Math.max(8, Math.min(y, st.height - mh - 8));
+    menu.style.left = x + "px";
+    menu.style.top = y + "px";
+  }
+
+  hub.onSelect = (w, x, y) => openMiiMenu(w, x, y);
+  // close the menu when clicking somewhere else or pressing Escape
+  document.addEventListener("pointerdown", (e) => {
+    if (!menu.hidden && !menu.contains(e.target) && e.target !== $("hub")) closeMiiMenu();
+  });
+  $("hub").addEventListener("pointerdown", (e) => {
+    if (!menu.hidden && e.button === 0 && !hub.pickWalker(hub.pointerRay(e))) closeMiiMenu();
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMiiMenu(); });
 
   window.hub = hub; // handy for poking around in the browser console
 })();

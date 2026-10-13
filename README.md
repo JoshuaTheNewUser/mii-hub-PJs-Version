@@ -47,8 +47,12 @@ The hub reads the Mii's name from the file. It also uses the height setting to m
 ## What you can do
 
 - **Switch places:** use the **🌳 Park**, **🏢 Office** and **🚀 Outer Space** buttons at the top.
-- **Move the camera:** drag the background to turn it, and scroll (or pinch) to zoom.
-- **Click a Mii** to make it jump and say hi.
+- **Move the camera:** drag the background to spin all the way around, and scroll (or pinch) to zoom. In the office, the wall between you and the room hides itself, like a dollhouse.
+- **Click (or right-click) a Mii** to open its menu:
+  - **Quick actions:** wave, dance, jump, nap, or say its catchphrase.
+  - **Personality:** five sliders. *Calm ↔ Energetic*, *Shy ↔ Outgoing*, *Quiet ↔ Chatty*, *Serious ↔ Silly* and *Grumpy ↔ Sweet* change how it walks, how often it talks and starts conversations, what it does with friends, and what it says. Each Mii gets a Tomodachi-style label like "Lively Joker" or "Quiet Sweetheart".
+  - **Name and catchphrase:** rename it, and give it a catchphrase it says now and then.
+  - **Best friends:** see who it gets along with.
 - **Drag a Mii** to pick it up and carry it. Let go and it drops back down.
 - **✏️ Edit** a Mii in the *Residents* list to change its skin, hair, top, pants and eye colours, or remove a beard.
 - **🗑️** sends a Mii home (removes it).
@@ -62,7 +66,9 @@ Your Miis, their friendships and the place you picked are saved in your browser,
   - Park (a little island): sit on the benches, watch the ducks, make a wish at the fountain, have a picnic, admire the cherry blossoms, look at the sea.
   - Office: sit and work at a desk, relax on the sofa, make coffee, get water, use the printer, browse the bookshelf, visit the vending machine.
   - Outer Space (a moon base): check the rocket, salute the flag, fix the rover, gaze at Earth, visit the space garden, admire the glowing crystals.
-- **Find their own way around** trees, benches, desks, ponds and each other, and never walk on water. If you drop a Mii in the pond, it climbs out.
+- **Find their own way around** trees, benches, desks, chairs, ponds and each other, and never walk on water. If you drop a Mii in the pond, it climbs out.
+- **Act like themselves:** energetic Miis walk faster and bounce around, shy ones stammer when they meet someone new, silly ones tell more jokes, and grumpy ones argue more.
+- **Give honest compliments:** they only mention things that are really true, like the actual colour of someone's top or hair, or their beard.
 - **Talk now and then.** Some lines depend on the place they're in.
 - **Meet up in pairs** and:
   - chat
@@ -96,6 +102,14 @@ The demo friends (Mia, Leo, Ava, Sam…) are copies of Joe's 3D model with diffe
   - a glass dome with a garden inside, a rocket on a launch pad with blinking lights, and a launch tower
   - solar panels, a turning satellite dish, a rover and glowing crystals
   - a waving flag, Earth with moving clouds, and a UFO that zooms past now and then
+
+## If a Mii doesn't animate
+
+The hub finds the arm, leg, spine and head bones in each `.glb` file:
+- **Mii Creator names** like `Arm_1_L`, plus names used by other tools (Mixamo, Blender, VRM...).
+- **T-poses:** arms held straight out to the side are straightened to hang down.
+- **Built-in animations:** if the file has its own idle/walk animations, those are used.
+- **No skeleton:** models without one (like a "head only" export) hop along instead of walking, and get a ⚠ note in the Residents list. Re-export them from Mii Creator as **Full body**.
 
 ## How the animation works
 
