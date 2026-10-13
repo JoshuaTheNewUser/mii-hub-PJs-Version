@@ -17,7 +17,7 @@ const { autoUpdater } = require("electron-updater");
 const OWNER = "sneekyedd";
 const REPO = "mii-hub";
 const RELEASES_PAGE = `https://github.com/${OWNER}/${REPO}/releases/latest`;
-const LATEST_API = `https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`;
+const RELEASES_API = `https://api.github.com/repos/${OWNER}/${REPO}/releases?per_page=15`;
 // For testing: MIIHUB_UPDATE_TEST=1 answers "yes" to every question and logs instead.
 const TEST = process.env.MIIHUB_UPDATE_TEST === "1";
 
@@ -56,9 +56,10 @@ function isNewer(a, b) {
 async function checkMac() {
   send("checking");
   try {
-    const res = await fetch(LATEST_API, { headers: { Accept: "application/vnd.github+json" } });
+    const res = await fetch(RELEASES_API, { headers: { Accept: "application/vnd.github+json" } });
     if (!res.ok) throw new Error("GitHub said " + res.status);
-    const rel = await res.json();
+    // the newest release that actually has a Mac download (a Mac build can occasionally be skipped)
+    const rel = (await res.json()).find((r) => !r.draft && !r.prerelease && (r.assets || []).some((a) => /\.dmg$/i.test(a.name))) || {};
     const latest = String(rel.tag_name || "").replace(/^v/, "");
     if (latest && isNewer(latest, app.getVersion())) {
       send("available", { latest });
