@@ -355,7 +355,30 @@
     }
 
     isBusy(w) {
-      return w.held || w.state === "interact" || w.state === "approach" || w.state === "waiting" || w.state === "perform";
+      return w.held || w.state === "interact" || w.state === "approach" || w.state === "waiting" || w.state === "perform" || w.state === "playing";
+    }
+
+    // You started a mini-game with this Mii: it stops and faces you while you play.
+    startGame(w, icon) {
+      this.endInteraction(w);
+      w.spot = null; w.seat = null; w.path = null;
+      w.dance = false; w.sleep = false; w.arms = "down";
+      w.state = "playing";
+      w.targetYaw = this.viewYaw(w);
+      w.showEmote(icon || "🎮", 99999);
+    }
+
+    // The game is over (result: "mii" = the Mii won, "you", "draw", or null if you quit).
+    endGame(w, result) {
+      if (w.state !== "playing" && result === null) return;
+      w.emote = null; w.uiEmote.classList.remove("show");
+      w.state = "perform";
+      w.performKind = "react";
+      w.timer = 2.5;
+      if (result === "mii") { w.arms = "cheer"; w.hop(this.world.floaty ? 2 : 4.5); w.showEmote("🏆", 2.5); }
+      else if (result === "you") { w.nod = 0.35; w.showEmote("😅", 2.5); }
+      else if (result === "draw") { w.showEmote("🤝", 2.5); }
+      else { w.timer = 0.5; }
     }
 
     // Makes a Mii do something on its own (from its menu): dance, nap, wave, catchphrase...
@@ -611,6 +634,10 @@
           break;
         }
 
+        case "playing": // playing a mini-game with you
+          w.targetYaw = this.viewYaw(w);
+          break;
+
         case "perform": // something you asked for from the Mii's menu
           w.timer -= dt;
           if (w.performKind === "dance") {
@@ -621,7 +648,7 @@
           }
           if (w.performKind === "nap") { w.sleep = true; }
           if (w.timer <= 0) {
-            w.dance = false; w.sleep = false; w.arms = "down";
+            w.dance = false; w.sleep = false; w.arms = "down"; w.nod = 0;
             w.state = "idle";
             w.timer = rnd(1, 2);
           }

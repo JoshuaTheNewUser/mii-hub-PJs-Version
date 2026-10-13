@@ -25,7 +25,7 @@ Your Miis and friendships are kept when you update. You can also check yourself 
 
 Download the project, unzip it, and double-click `index.html`. You don't need to install anything.
 
-On first launch you'll see **Joe** (from `samples/Joe.glb`) plus a few demo friends. Everything works offline: the 3D library (Three.js) and the font are included in the project.
+On first launch you'll see a few randomly generated Miis. Add your own with **Choose Mii .glb files…**, or click **Add random Miis** for more. Everything works offline: the 3D library (Three.js) and the font are included in the project.
 
 ### How the installers are made
 
@@ -69,7 +69,7 @@ Your Miis, their friendships and the place you picked are saved in your browser,
 
 - **Walk around** and visit spots:
   - Park (a little island): sit on the benches, watch the ducks, make a wish at the fountain, have a picnic, admire the cherry blossoms, look at the sea.
-  - Office: sit and work at a desk, relax on the sofa, make coffee, get water, use the printer, browse the bookshelf, visit the vending machine.
+  - Office (an IT help desk): staff the help desk, wait for help, work on tickets at the tech desks, check the servers, fix computers at the repair bench, hunt for spare parts, watch the ticket dashboard, plan the network on the whiteboard, make coffee, and fight the out-of-order printer.
   - Outer Space (a moon base): check the rocket, salute the flag, fix the rover, gaze at Earth, visit the space garden, admire the glowing crystals.
 - **Find their own way around** trees, benches, desks, chairs, ponds and each other, and never walk on water. If you drop a Mii in the pond, it climbs out.
 - **Act like themselves:** energetic Miis walk faster and bounce around, shy ones stammer when they meet someone new, silly ones tell more jokes, and grumpy ones argue more.
@@ -87,9 +87,27 @@ Your Miis, their friendships and the place you picked are saved in your browser,
 - **Build friendships** over time, from *Strangers* to *Best Friends* 💖. You can watch this in the *Friendships* and *What's happening* panels.
 - **In space**, Miis wear astronaut helmets and float in low gravity.
 
-## About the demo friends
+## Mini-games
 
-The demo friends (Mia, Leo, Ava, Sam…) are copies of Joe's 3D model with different colours. They share Joe's face and hairstyle. Add more of your own `.glb` Miis to get a crowd with different faces, and remove the demo friends with 🗑️.
+Click a Mii and pick a game from **Play a game** in its menu:
+
+| Game | Format |
+| --- | --- |
+| ✊ Rock Paper Scissors | Best of 5 (first to 3) |
+| ⭕ Tic-Tac-Toe | Best of 3 (first to 2) |
+| 🔴 Connect 4 | One game, winner takes all |
+
+Every Mii has a **skill meter** for each game, from *Beginner* to *Master*. **The more you play a game with a Mii, the better it gets**, and it learns a bit more from losing. Skill changes how it plays:
+
+- **Rock Paper Scissors:** beginners pick almost at random and overuse a favourite move. Skilled Miis notice your habits and play whatever beats your next move.
+- **Tic-Tac-Toe:** beginners play anywhere. Better Miis take wins and block yours. A *Master* plays perfectly and can't be beaten (only drawn).
+- **Connect 4:** beginners drop pieces almost anywhere. Better Miis take wins, block yours, and think up to six moves ahead.
+
+While you play, the Mii stops what it's doing and faces you. It chats during the game in its own personality, and celebrates or sulks afterwards.
+
+## About the random Miis
+
+The random Miis (and the ones from **Add random Miis**) are built from the one bundled Mii model, with random colours, names, personalities and catchphrases. They share a face shape and hairstyle. Add your own `.glb` Miis for a crowd with different faces, and remove random ones with 🗑️.
 
 ## What's in each place
 
@@ -99,10 +117,13 @@ The demo friends (Mia, Leo, Ava, Sam…) are copies of Joe's 3D model with diffe
   - a duck pond with ducklings, lily pads and reeds
   - a three-tier fountain, swings, a picnic blanket, lamp posts and flower beds
   - butterflies, seagulls, clouds, a lighthouse and a sailboat
-- **Office:**
-  - desks with screens and swivel chairs, a bookshelf and a whiteboard
-  - a sofa corner, a kitchen with a steaming coffee machine, a water cooler and a vending machine
-  - curtained windows with a city view and a clock showing the real time
+- **Office (IT help desk department):**
+  - a help desk counter with a "Now serving" ticket display, a take-a-number machine and a waiting area
+  - tech desks with dual monitors, PC towers, headsets and a debugging rubber duck
+  - a server room with blinking server racks, a cable tray and a raised floor
+  - a repair bench with an opened-up PC, a laptop, tools and a pegboard
+  - spare-parts shelving, stacked laptop boxes, a cart of monitors, and a live ticket dashboard TV
+  - a rolling whiteboard with a network diagram, an "OUT OF ORDER" printer, e-waste bins, IT posters, and a break area
 - **Outer Space:**
   - a glass dome with a garden inside, a rocket on a launch pad with blinking lights, and a launch tower
   - solar panels, a turning satellite dish, a rover and glowing crystals
@@ -130,6 +151,8 @@ js/miiModel.js        loads .glb Miis, recolours them, moves their bones
 js/world3d.js         the 3D island park, office and moon base
 js/nav.js             route-finding, so Miis walk around obstacles
 js/dialogue.js        what Miis say and the activities they do together
+js/minigames.js       mini-game rules, the Mii opponents, and skill growth
+js/gamesUI.js         the window where you play a mini-game with a Mii
 js/hub3d.js           moves the Miis around, camera, clicking & dragging
 js/storage.js         saves Miis in the browser
 electron/main.js      runs Mii Hub as a desktop app (Electron)
@@ -143,6 +166,7 @@ js/sampleGlb.js       Joe.glb stored as text so it loads without a web server
 samples/Joe.glb       the sample Mii
 tests/glb.test.js     checks that .glb files are read correctly
 tests/nav.test.js     checks that routes go around obstacles and water
+tests/minigames.test.js  checks the game rules and that skill really changes how Miis play
 ```
 
 ## Running the tests

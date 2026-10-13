@@ -402,11 +402,68 @@
       ball(d, 0x222222, 0.42, 0.55, -0.12, 0.035);
       ducks.push(d);
     }
-    anim.push((t) => ducks.forEach((d, i) => {
-      const a = t * 0.22 - i * 0.38;
-      d.position.set(POND.x + Math.cos(a) * (POND.rx - 1.3), 0.05 + Math.sin(t * 3 + i) * 0.02, POND.z + Math.sin(a) * (POND.rz - 1.0));
-      d.rotation.y = -a - Math.PI;
+    // Each duck swims where it likes: it picks a new direction now and then, turns
+    // smoothly, steers away from the edge of the pond and from the other ducks, and
+    // always faces the way it's swimming. The ducklings loosely follow their mum.
+    const duckState = ducks.map((d, i) => ({
+      d, x: POND.x - 1 + i * 0.9, z: POND.z + (i - 1) * 0.6, heading: i * 2.1,
+      turn: 0, nextTurn: 0, speed: i === 0 ? 0.42 : 0.5, radius: i === 0 ? 0.45 : 0.28, mum: i === 0,
     }));
+    const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+    let lastT = null;
+    anim.push((t) => {
+      const dt = lastT === null ? 0 : Math.min(0.05, t - lastT);
+      lastT = t;
+      const mum = duckState[0];
+      for (const q of duckState) {
+        // pick a new wandering turn every few seconds
+        q.nextTurn -= dt;
+        if (q.nextTurn <= 0) {
+          q.turn = (Math.random() - 0.5) * (q.mum ? 1.2 : 0.8);
+          q.nextTurn = 1.5 + Math.random() * 3;
+        }
+        let desired = q.heading + q.turn * dt * 4;
+        let pull = 0.6;
+        // ducklings keep near mum (aim for a spot just behind her)
+        if (!q.mum) {
+          const bx = mum.x - Math.cos(mum.heading) * 0.9, bz = mum.z - Math.sin(mum.heading) * 0.9;
+          if (Math.hypot(bx - q.x, bz - q.z) > 1.2) { desired = Math.atan2(bz - q.z, bx - q.x); pull = 1.6; }
+        }
+        // turn back before reaching the edge of the pond
+        const u = (q.x - POND.x) / (POND.rx - 0.55), v = (q.z - POND.z) / (POND.rz - 0.55);
+        const edge = Math.hypot(u, v);
+        if (edge > 0.7) { desired = Math.atan2(POND.z - q.z, POND.x - q.x); pull = 1 + (edge - 0.7) * 10; }
+        // steer away from any duck that's close
+        for (const o of duckState) {
+          if (o === q) continue;
+          const dx = q.x - o.x, dz = q.z - o.z, dist = Math.hypot(dx, dz);
+          if (dist < q.radius + o.radius + 0.5) { desired = Math.atan2(dz, dx); pull = 2.5; }
+        }
+        q.heading += wrapAngle(desired - q.heading) * Math.min(1, pull * dt);
+        const speed = q.speed * (q.mum ? 1 : (Math.hypot(mum.x - q.x, mum.z - q.z) > 1.6 ? 1.3 : 0.9));
+        q.x += Math.cos(q.heading) * speed * dt;
+        q.z += Math.sin(q.heading) * speed * dt;
+      }
+      // never let two ducks overlap: push them apart
+      for (let i = 0; i < duckState.length; i++) {
+        for (let j = i + 1; j < duckState.length; j++) {
+          const a = duckState[i], b = duckState[j];
+          const dx = b.x - a.x, dz = b.z - a.z, dist = Math.hypot(dx, dz) || 0.001, min = a.radius + b.radius + 0.05;
+          if (dist < min) {
+            const push = (min - dist) / 2;
+            a.x -= (dx / dist) * push; a.z -= (dz / dist) * push;
+            b.x += (dx / dist) * push; b.z += (dz / dist) * push;
+          }
+        }
+      }
+      duckState.forEach((q, i) => {
+        // and never leave the water
+        const u = (q.x - POND.x) / (POND.rx - 0.5), v = (q.z - POND.z) / (POND.rz - 0.5), e = Math.hypot(u, v);
+        if (e > 0.95) { q.x = POND.x + (u / e) * 0.95 * (POND.rx - 0.5); q.z = POND.z + (v / e) * 0.95 * (POND.rz - 0.5); }
+        q.d.position.set(q.x, 0.05 + Math.sin(t * 3 + i) * 0.02, q.z);
+        q.d.rotation.y = -q.heading; // the duck's beak points along its local +x
+      });
+    });
 
     // fountain with three tiers and splashing water
     const F = { x: 6, z: -2.5 };
@@ -730,32 +787,38 @@
     return c;
   }
 
-  function deskPod(p, x, z, colors, kinds, flip) {
-    // Two facing desks with a low divider. Miis sit on the side away from the camera
-    // (behind the desks), facing the camera, so we can see their faces.
+  function deskPod(p, x, z, colors, kinds) {
+    // Two tech desks side by side with a low divider. The techs sit behind the
+    // desks facing the camera, so we can see their faces.
     const d = group(p, x, 0, z);
     const wood = toon(0xf0d3a8), legs = toon(0x8f96a3);
     block(d, wood, 0, 1.0, 0, 3.0, 0.1, 1.3, 0.04);
     for (const [sx, sz] of [[-1.4, -0.55], [1.4, -0.55], [-1.4, 0.55], [1.4, 0.55]]) block(d, legs, sx, 0.5, sz, 0.08, 1.0, 0.08, 0.03);
     block(d, colors[0], 0, 1.35, 0.62, 3.0, 0.6, 0.06, 0.03); // divider at the front
+    // sticky notes on the divider
+    for (let i = 0; i < 4; i++) block(d, [0xfff176, 0xff9ec7, 0x9fe3ff, 0xc5f08a][i], -1.2 + i * 0.75, 1.5 + (i % 2) * 0.12, 0.66, 0.16, 0.16, 0.01, 0.01, { rz: (i - 1.5) * 0.12 });
     for (let i = 0; i < 2; i++) {
       const sx = i === 0 ? -0.75 : 0.75;
-      // monitor facing the sitter (towards -z)
-      block(d, 0x2f3542, sx, 1.62, 0.25, 0.95, 0.62, 0.06, 0.04);
-      put(d, new THREE.PlaneGeometry(0.85, 0.52), new THREE.MeshBasicMaterial({ map: screenTexture(kinds[i]), toneMapped: false }), { x: sx, y: 1.62, z: 0.218, ry: Math.PI, shadow: false });
+      // two monitors each, facing the tech (towards -z)
+      for (const mx of [-0.33, 0.33]) {
+        block(d, 0x2f3542, sx + mx, 1.6, 0.25, 0.62, 0.42, 0.05, 0.03, { ry: mx > 0 ? -0.18 : 0.18 });
+        put(d, new THREE.PlaneGeometry(0.56, 0.36), new THREE.MeshBasicMaterial({ map: screenTexture(kinds[i] + (mx > 0 ? 1 : 0)), toneMapped: false }), { x: sx + mx, y: 1.6, z: 0.222, ry: Math.PI + (mx > 0 ? -0.18 : 0.18), shadow: false });
+      }
       block(d, 0x2f3542, sx, 1.2, 0.27, 0.1, 0.3, 0.1, 0.03);
-      block(d, 0x2f3542, sx, 1.06, 0.27, 0.35, 0.03, 0.22, 0.02);
+      block(d, 0x2f3542, sx, 1.06, 0.27, 0.45, 0.03, 0.22, 0.02);
       block(d, 0xf4f4f4, sx, 1.07, -0.2, 0.62, 0.03, 0.2, 0.02); // keyboard
       ball(d, 0xf4f4f4, sx + 0.45, 1.08, -0.2, 0.06, { sy: 0.5, sz: 1.4 }); // mouse
-      cylinder(d, colors[1], sx - 0.55, 1.15, 0.0, 0.07, 0.18); // mug
-      block(d, 0xffffff, sx + 0.5, 1.09, 0.2, 0.32, 0.06, 0.42, 0.01); // papers
+      cylinder(d, colors[1], sx - 0.55, 1.15, -0.05, 0.07, 0.18); // mug
+      block(d, 0x3a3f4a, sx + 0.5, 0.45, 0.3, 0.32, 0.8, 0.7, 0.04); // PC tower under the desk
+      ball(d, glow(0x5cc8ff, 1), sx + 0.5, 0.75, -0.06, 0.03);
+      // headset
+      put(d, G.torus(0.12, 0.02), toon(0x222222), { x: sx - 0.25, y: 1.17, z: 0.05, rx: Math.PI / 2 });
       officeChair(d, sx, -1.05, 0, colors[1]);
     }
-    // a little cactus and a pencil cup
-    cylinder(d, 0xd9774a, -1.25, 1.13, 0.3, 0.09, 0.16);
-    put(d, G.capsule(), toon(0x5cb85c), { x: -1.25, y: 1.32, z: 0.3, sx: 0.12, sy: 0.18, sz: 0.12 });
-    cylinder(d, 0x4a90e2, 1.3, 1.15, 0.3, 0.07, 0.2);
-    for (let i = 0; i < 3; i++) cylinder(d, [0xffcf5a, 0xff5a64, 0x5cc84a][i], 1.27 + i * 0.03, 1.32, 0.3, 0.012, 0.25, { rz: (i - 1) * 0.15 });
+    // the classic debugging rubber duck
+    ball(d, 0xffd23f, 1.25, 1.13, 0.0, 0.09, { sx: 1.2 });
+    ball(d, 0xffd23f, 1.31, 1.25, 0.0, 0.06);
+    ball(d, 0xff9a3a, 1.37, 1.24, 0.0, 0.025, { sx: 1.6 });
     return d;
   }
 
@@ -764,52 +827,62 @@
     const anim = [];
     addLights(root, { sky: 0xffffff, ground: 0xd9c7a8, hemi: 0.55, sun: 0.7, ambient: 0.35, fill: 0.35 });
 
-    // wooden floor
-    const wood = canvasTexture(256, 256, (ctx, w, h) => {
-      for (let i = 0; i < 8; i++) {
-        ctx.fillStyle = ["#e6b984", "#ddae78", "#e9c08f", "#d9a86f"][i % 4];
-        ctx.fillRect(0, i * 32, w, 32);
-        ctx.fillStyle = "rgba(120,70,30,0.25)";
-        ctx.fillRect(0, i * 32, w, 2);
-        ctx.fillRect(((i * 97) % 200) + 20, i * 32, 2, 32);
+    // carpet tiles, like a real office
+    const carpet = canvasTexture(256, 256, (ctx, w, h) => {
+      const shades = ["#8e9db3", "#97a6bb", "#8796ad", "#93a2b8"];
+      for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) {
+        ctx.fillStyle = shades[(x + y * 2) % 4];
+        ctx.fillRect(x * 128, y * 128, 128, 128);
+        // little carpet texture lines, turned the other way on every other tile
+        ctx.strokeStyle = "rgba(255,255,255,0.06)";
+        for (let k = 8; k < 128; k += 8) {
+          ctx.beginPath();
+          if ((x + y) % 2) { ctx.moveTo(x * 128 + k, y * 128); ctx.lineTo(x * 128 + k, y * 128 + 128); }
+          else { ctx.moveTo(x * 128, y * 128 + k); ctx.lineTo(x * 128 + 128, y * 128 + k); }
+          ctx.stroke();
+        }
       }
-    }, [14, 14]);
-    disc(root, toon(0xffffff, { map: wood }), 0, 0, 0, 40, { receive: true, s: 1 });
-    // big round rug in the middle
-    const rugTex = canvasTexture(256, 256, (ctx, w, h) => {
-      ctx.fillStyle = "#7cc6e8"; ctx.beginPath(); ctx.arc(w / 2, h / 2, w / 2, 0, TAU); ctx.fill();
-      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 10;
-      for (const r of [110, 80, 50]) { ctx.beginPath(); ctx.arc(w / 2, h / 2, r, 0, TAU); ctx.stroke(); }
-      ctx.fillStyle = "#ffcf5a"; ctx.beginPath(); ctx.arc(w / 2, h / 2, 22, 0, TAU); ctx.fill();
+      ctx.strokeStyle = "rgba(40,50,70,0.25)"; ctx.lineWidth = 2;
+      ctx.strokeRect(0, 0, 128, 128); ctx.strokeRect(128, 0, 128, 128); ctx.strokeRect(0, 128, 128, 128); ctx.strokeRect(128, 128, 128, 128);
+    }, [16, 16]);
+    disc(root, toon(0xffffff, { map: carpet }), 0, 0, 0, 40, { receive: true });
+    // welcome mat by the door
+    const matTex = canvasTexture(256, 112, (ctx, w, h) => {
+      ctx.fillStyle = "#4a6aa0"; ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = "#ffcf3a"; ctx.lineWidth = 6; ctx.strokeRect(8, 8, w - 16, h - 16);
+      ctx.fillStyle = "#ffffff"; ctx.font = "bold 40px 'Nunito', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("WELCOME", w / 2, h / 2 + 2);
     });
-    disc(root, toon(0xffffff, { map: rugTex, transparent: true }), 0, 0.015, 3.2, 4.0, { sy: 0.62, receive: true });
+    put(root, new THREE.PlaneGeometry(3.2, 1.4), toon(0xffffff, { map: matTex }), { y: 0.02, z: 9.6, rx: -Math.PI / 2, shadow: false });
 
-    // walls: mint upper wall, wood panelling below, white trim.
+    // walls: soft blue-grey upper wall, darker panelling below, white trim.
     // Each wall is its own group so it can hide when the camera is behind it
     // (like a dollhouse), letting you spin the camera all the way around.
     const W = { back: -11, side: 18, front: 11 };
     const backWall = group(root), leftWall = group(root), rightWall = group(root), frontWall = group(root);
-    block(backWall, 0xc9eadf, 0, 5, W.back - 0.25, 36.5, 10, 0.5, 0.02);
-    block(backWall, 0xb98a5e, 0, 1.1, W.back + 0.05, 36, 2.2, 0.12, 0.02);
+    const wallC = 0xdce8f2, panelC = 0x5f7da3;
+    block(backWall, wallC, 0, 5, W.back - 0.25, 36.5, 10, 0.5, 0.02);
+    block(backWall, panelC, 0, 1.1, W.back + 0.05, 36, 2.2, 0.12, 0.02);
     block(backWall, 0xffffff, 0, 2.25, W.back + 0.12, 36, 0.14, 0.1, 0.03);
     block(backWall, 0xffffff, 0, 0.1, W.back + 0.12, 36, 0.2, 0.1, 0.03);
     for (const sx of [-1, 1]) {
       const wall = sx < 0 ? leftWall : rightWall;
-      block(wall, 0xbfe2d6, sx * W.side, 5, 0, 0.5, 10, 22.5, 0.02);
-      block(wall, 0xb98a5e, sx * (W.side - 0.3), 1.1, 0, 0.12, 2.2, 22, 0.02);
+      block(wall, 0xd3e1ee, sx * W.side, 5, 0, 0.5, 10, 22.5, 0.02);
+      block(wall, panelC, sx * (W.side - 0.3), 1.1, 0, 0.12, 2.2, 22, 0.02);
       block(wall, 0xffffff, sx * (W.side - 0.35), 2.25, 0, 0.1, 0.14, 22, 0.03);
     }
-    // front wall with a door
-    block(frontWall, 0xc9eadf, -10.5, 5, W.front + 0.25, 15, 10, 0.5, 0.02);
-    block(frontWall, 0xc9eadf, 10.5, 5, W.front + 0.25, 15, 10, 0.5, 0.02);
-    block(frontWall, 0xc9eadf, 0, 7.8, W.front + 0.25, 6, 4.4, 0.5, 0.02);
-    block(frontWall, 0xb98a5e, -10.5, 1.1, W.front - 0.05, 15, 2.2, 0.12, 0.02);
-    block(frontWall, 0xb98a5e, 10.5, 1.1, W.front - 0.05, 15, 2.2, 0.12, 0.02);
-    block(frontWall, 0xd98a4a, 0, 2.8, W.front + 0.2, 2.6, 5.6, 0.2, 0.08); // door
+    // front wall with the entrance door
+    block(frontWall, wallC, -10.5, 5, W.front + 0.25, 15, 10, 0.5, 0.02);
+    block(frontWall, wallC, 10.5, 5, W.front + 0.25, 15, 10, 0.5, 0.02);
+    block(frontWall, wallC, 0, 7.8, W.front + 0.25, 6, 4.4, 0.5, 0.02);
+    block(frontWall, panelC, -10.5, 1.1, W.front - 0.05, 15, 2.2, 0.12, 0.02);
+    block(frontWall, panelC, 10.5, 1.1, W.front - 0.05, 15, 2.2, 0.12, 0.02);
+    block(frontWall, 0x4a90e2, 0, 2.8, W.front + 0.2, 2.6, 5.6, 0.2, 0.08); // door
+    block(frontWall, 0xbfe6ff, 0, 3.8, W.front + 0.08, 1.6, 1.4, 0.04, 0.02); // door window
     ball(frontWall, 0xffcf5a, 0.9, 2.7, W.front + 0.05, 0.12);
     block(frontWall, 0xffffff, 0, 5.75, W.front, 3.0, 0.25, 0.3, 0.05);
 
-    // windows with a city view and curtains
+    // windows with a city view and half-open blinds
     const city = canvasTexture(512, 256, (ctx, w, h) => {
       const g = ctx.createLinearGradient(0, 0, 0, h);
       g.addColorStop(0, "#6cc2ff"); g.addColorStop(1, "#d6f0ff");
@@ -823,6 +896,8 @@
         ctx.fillStyle = "#fff7c7";
         for (let y = h - bh + 8; y < h - 6; y += 13) for (let x = b * bw + 5; x < (b + 1) * bw - 8; x += 9) if (r() > 0.4) ctx.fillRect(x, y, 4, 6);
       }
+      // blinds pulled half way down
+      for (let y = 0; y < h * 0.42; y += 12) { ctx.fillStyle = "#f4f6f8"; ctx.fillRect(0, y, w, 9); ctx.fillStyle = "#c9d2dc"; ctx.fillRect(0, y + 9, w, 1); }
     });
     for (const x of [-10, 0, 10]) {
       put(backWall, new THREE.PlaneGeometry(6, 3.6), new THREE.MeshBasicMaterial({ map: city, toneMapped: false }), { x, y: 5.4, z: W.back + 0.02, shadow: false });
@@ -831,61 +906,29 @@
       block(backWall, 0xffffff, x, 5.4, W.back + 0.15, 0.14, 3.6, 0.15, 0.03);
       block(backWall, 0xffffff, x - 3.1, 5.4, W.back + 0.15, 0.2, 3.8, 0.2, 0.05);
       block(backWall, 0xffffff, x + 3.1, 5.4, W.back + 0.15, 0.2, 3.8, 0.2, 0.05);
-      for (const sx of [-1, 1]) { // curtains
-        for (let f = 0; f < 3; f++) put(backWall, G.capsule(), toon(0xff9aa8), { x: x + sx * (3.3 + f * 0.22), y: 5.3, z: W.back + 0.4, sx: 0.3, sy: 3.2, sz: 0.2 });
-      }
-      cylinder(backWall, 0xd9a06a, x, 7.75, W.back + 0.45, 0.06, 7.6, { rz: Math.PI / 2 });
-      // small plant on each sill
       cylinder(backWall, 0xffffff, x + 2, 3.75, W.back + 0.3, 0.16, 0.3);
       ball(backWall, 0x5cc84a, x + 2, 4.05, W.back + 0.3, 0.25);
     }
 
-    // whiteboard with doodles
-    const board = canvasTexture(256, 160, (ctx, w, h) => {
-      ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
-      ctx.strokeStyle = "#4a90e2"; ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.moveTo(20, 130); ctx.lineTo(70, 90); ctx.lineTo(110, 105); ctx.lineTo(170, 40); ctx.stroke();
-      ctx.fillStyle = "#ff5a64"; ctx.font = "bold 30px 'Nunito', sans-serif"; ctx.fillText("IDEAS!", 140, 135);
-      ctx.strokeStyle = "#5cc84a"; ctx.beginPath(); ctx.arc(215, 55, 22, 0, TAU); ctx.stroke();
-      ctx.fillStyle = "#5cc84a"; ctx.fillRect(205, 48, 5, 5); ctx.fillRect(220, 48, 5, 5);
-      ctx.beginPath(); ctx.arc(215, 58, 10, 0.2, Math.PI - 0.2); ctx.stroke();
-    });
-    block(leftWall, 0xd0d6de, -W.side + 0.4, 4.5, -2, 0.12, 2.6, 4.2, 0.05);
-    put(leftWall, new THREE.PlaneGeometry(4.0, 2.4), toon(0xffffff, { map: board }), { x: -W.side + 0.48, y: 4.5, z: -2, ry: Math.PI / 2, shadow: false });
-
-    // bookshelf full of colourful books
-    const shelf = group(root, -15, 0, W.back + 0.7);
-    block(shelf, 0xb98a5e, 0, 2.1, 0, 3.2, 4.2, 0.8, 0.05);
-    const books = [];
-    const br = seeded(21);
-    for (let row = 0; row < 4; row++) {
-      block(shelf, 0x9c7048, 0, 0.35 + row * 1.0, 0.05, 3.0, 0.08, 0.72, 0.02);
-      let bx = -1.4;
-      while (bx < 1.35) {
-        const bw = 0.1 + br() * 0.08, bh = 0.6 + br() * 0.25;
-        books.push({ x: -15 + bx + bw / 2, y: 0.4 + row * 1.0 + bh / 2, z: W.back + 0.8, sx: bw, sy: bh, sz: 0.5, color: [0xff5a64, 0x4a90e2, 0xffcf5a, 0x5cc84a, 0xb58cff, 0xff9a4a][Math.floor(br() * 6)] });
-        bx += bw + 0.02;
-      }
-    }
-    scatter(root, G.box(), toon(0xffffff), books);
-
-    // posters and a clock
-    const poster = (x, text, color, emoji) => {
-      const tex = canvasTexture(128, 170, (ctx, w, h) => {
+    // posters with IT humour
+    const poster = (wall, x, y, z, ry, lines, color, emoji) => {
+      const tex = canvasTexture(160, 210, (ctx, w, h) => {
         ctx.fillStyle = color; ctx.fillRect(0, 0, w, h);
-        ctx.fillStyle = "#fff"; ctx.font = "bold 22px 'Nunito', sans-serif"; ctx.textAlign = "center";
-        text.split(" ").forEach((t, i) => ctx.fillText(t, w / 2, 40 + i * 26));
-        ctx.font = "48px sans-serif"; ctx.fillText(emoji, w / 2, 150);
+        ctx.fillStyle = "#fff"; ctx.font = "bold 19px 'Nunito', sans-serif"; ctx.textAlign = "center";
+        lines.forEach((t, i) => ctx.fillText(t, w / 2, 36 + i * 24));
+        ctx.font = "54px sans-serif"; ctx.fillText(emoji, w / 2, 185);
       });
-      block(backWall, 0xffffff, x, 5.2, W.back + 0.08, 1.7, 2.2, 0.06, 0.02);
-      put(backWall, new THREE.PlaneGeometry(1.5, 2.0), toon(0xffffff, { map: tex }), { x, y: 5.2, z: W.back + 0.12, shadow: false });
+      const g = group(wall, x, y, z, ry);
+      block(g, 0xffffff, 0, 0, 0, 1.7, 2.2, 0.06, 0.02);
+      put(g, new THREE.PlaneGeometry(1.5, 2.0), toon(0xffffff, { map: tex }), { z: 0.04, shadow: false });
     };
-    poster(-5, "TEAM WORK!", "#ff8a4c", "⭐");
-    poster(5, "YOU CAN DO IT", "#4a90e2", "💪");
+    poster(backWall, -5, 5.2, W.back + 0.08, 0, ["HAVE YOU", "TRIED TURNING", "IT OFF AND", "ON AGAIN?"], "#ff7a59", "🔌");
+    poster(backWall, 5, 5.2, W.back + 0.08, 0, ["STRONG", "PASSWORDS", "SAVE LIVES"], "#5f7da3", "🔒");
+    poster(rightWall, W.side - 0.28, 5.3, 5, -Math.PI / 2, ["BACK UP", "YOUR FILES!"], "#5cb85c", "💾");
 
-    const clock = group(backWall, 15, 6.2, W.back + 0.1);
+    const clock = group(backWall, 15, 6.4, W.back + 0.1);
     cylinder(clock, 0xffffff, 0, 0, 0, 0.8, 0.1, { rx: Math.PI / 2 });
-    put(clock, G.torus(0.8, 0.08), toon(0xff7a59), {});
+    put(clock, G.torus(0.8, 0.08), toon(0x4a90e2), {});
     const hourHand = dynamic(group(clock, 0, 0, 0.08));
     const minHand = dynamic(group(clock, 0, 0, 0.1));
     block(hourHand, 0x333333, 0, 0.22, 0, 0.07, 0.45, 0.02, 0.02);
@@ -896,16 +939,14 @@
       minHand.rotation.z = -(now.getMinutes() + now.getSeconds() / 60) / 60 * TAU;
     });
 
-    // pendant lamps hanging from above
+    // ceiling lights over the desks
     for (const x of [-8, 0, 8]) {
-      for (const z of [-4.5]) {
-        cylinder(root, 0x444444, x, 9.4, z, 0.015, 3.0, { shadow: false });
-        put(root, G.sphere(), toon(0xffcf5a), { x, y: 7.9, z, s: 0.55, sy: 0.35, shadow: false });
-        ball(root, glow(0xfff6d0, 1), x, 7.75, z, 0.22, { shadow: false });
-      }
+      cylinder(root, 0x444444, x, 9.4, -4.5, 0.015, 3.0, { shadow: false });
+      block(root, 0xeef2f6, x, 7.9, -4.5, 2.4, 0.12, 0.6, 0.05, { shadow: false });
+      block(root, glow(0xfffbe8, 1), x, 7.83, -4.5, 2.2, 0.03, 0.45, 0.01, { shadow: false });
     }
 
-    // desk pods
+    // ===== tech desks =====
     const pods = [
       { x: -8, z: -4.5, colors: [0x7cc6e8, 0xff7a59], kinds: [0, 1] },
       { x: 0, z: -4.5, colors: [0xffcf5a, 0x5cc84a], kinds: [2, 3] },
@@ -913,53 +954,296 @@
     ];
     pods.forEach((p) => deskPod(root, p.x, p.z, p.colors, p.kinds));
 
-    // lounge corner: sofa, coffee table, floor lamp, big plant
-    const L = { x: -10, z: 5 };
-    const sofa = group(root, L.x, 0, L.z, 0.35);
-    block(sofa, 0xff8a9a, 0, 0.45, 0, 3.4, 0.5, 1.2, 0.2);
-    block(sofa, 0xff8a9a, 0, 1.05, -0.5, 3.4, 1.0, 0.35, 0.17);
-    block(sofa, 0xff7286, -1.6, 0.75, 0, 0.35, 0.8, 1.2, 0.16);
-    block(sofa, 0xff7286, 1.6, 0.75, 0, 0.35, 0.8, 1.2, 0.16);
-    block(sofa, 0xffd166, -0.8, 0.9, -0.2, 0.6, 0.55, 0.2, 0.12, { rx: -0.2 }); // cushions
-    block(sofa, 0x7cc6e8, 0.8, 0.9, -0.2, 0.6, 0.55, 0.2, 0.12, { rx: -0.2 });
-    const table = group(root, L.x + 2.6, 0, L.z + 1.6);
-    cylinder(table, 0xf0d3a8, 0, 0.55, 0, 0.9, 0.1);
-    cylinder(table, 0x8f96a3, 0, 0.28, 0, 0.08, 0.55);
-    block(table, 0xff5a64, -0.2, 0.62, 0.1, 0.5, 0.04, 0.35, 0.01, { ry: 0.3 });
-    cylinder(table, 0xffffff, 0.3, 0.68, -0.1, 0.09, 0.2);
-    const lamp = group(root, L.x - 2.4, 0, L.z - 0.3);
-    cylinder(lamp, 0x444444, 0, 0.05, 0, 0.3, 0.1);
-    cylinder(lamp, 0x444444, 0, 1.3, 0, 0.04, 2.5);
-    put(lamp, G.taper(0.25, 0.45), glow(0xfff1c2, 0.5), { y: 2.6, sy: 0.5 });
-    const bigPlant = group(root, 15.5, 0, 7.5);
-    cylinder(bigPlant, 0xffffff, 0, 0.45, 0, 0.5, 0.9);
-    for (let i = 0; i < 9; i++) {
-      const a = (i / 9) * TAU;
-      put(bigPlant, G.sphere(), toon(i % 2 ? 0x46b04a : 0x5cc84a), { x: Math.cos(a) * 0.45, y: 1.8 + (i % 3) * 0.3, z: Math.sin(a) * 0.45, sx: 0.25, sy: 0.9, sz: 0.25, rx: Math.sin(a) * 0.6, rz: -Math.cos(a) * 0.6 });
+    // ===== the help desk (front left) =====
+    const H = { x: -11.5, z: 3.2 };
+    const desk = group(root, H.x, 0, H.z);
+    block(desk, 0x4a90e2, 0, 0.55, 0, 6.2, 1.1, 0.9, 0.08);
+    block(desk, 0xffffff, 0, 1.15, 0.05, 6.4, 0.1, 1.1, 0.04);
+    block(desk, 0x3a78c8, 0, 0.55, 0.47, 6.2, 0.9, 0.02, 0.01, { shadow: false });
+    const deskSign = canvasTexture(256, 48, (ctx, w, h) => {
+      ctx.fillStyle = "#3a78c8"; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = "#fff"; ctx.font = "bold 28px 'Nunito', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("IT SUPPORT", w / 2, h / 2 + 1);
+    });
+    put(desk, new THREE.PlaneGeometry(2.6, 0.5), toon(0xffffff, { map: deskSign }), { y: 0.62, z: 0.5, shadow: false });
+    for (const sx of [-1.4, 1.4]) {
+      block(desk, 0x2f3542, sx, 1.55, -0.1, 0.8, 0.5, 0.05, 0.03);                       // monitor (faces the agent)
+      put(desk, new THREE.PlaneGeometry(0.72, 0.42), new THREE.MeshBasicMaterial({ map: screenTexture(3), toneMapped: false }), { x: sx, y: 1.55, z: -0.13, ry: Math.PI, shadow: false });
+      block(desk, 0x2f3542, sx, 1.25, -0.08, 0.1, 0.25, 0.1, 0.03);
+      block(desk, 0xf4f4f4, sx, 1.22, -0.35, 0.6, 0.03, 0.2, 0.02);
+      officeChair(desk, sx, -1.15, 0, 0x3a78c8);
     }
+    // service bell, ticket dispenser and a jar of free stickers on the counter
+    cylinder(desk, 0xd9d9d9, 0, 1.22, 0.25, 0.14, 0.04);
+    ball(desk, 0xffcf5a, 0, 1.25, 0.25, 0.11, { sy: 0.8 });
+    block(desk, 0xff5a64, 2.8, 1.45, 0.3, 0.35, 0.5, 0.25, 0.08);
+    block(desk, 0xffffff, 2.8, 1.33, 0.44, 0.2, 0.08, 0.02, 0.01);
+    cylinder(desk, toon(0xcfeaff, { transparent: true, opacity: 0.55 }), -2.7, 1.38, 0.25, 0.16, 0.36);
+    for (let i = 0; i < 5; i++) ball(desk, [0xff6fa5, 0x5cc84a, 0xffcf5a, 0x4a90e2, 0xb58cff][i], -2.7 + Math.cos(i) * 0.07, 1.28 + (i % 2) * 0.08, 0.25 + Math.sin(i) * 0.07, 0.05);
+    // big hanging sign
+    const bigSign = canvasTexture(512, 112, (ctx, w, h) => {
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = "#3a78c8"; ctx.fillRect(0, 0, w, 10); ctx.fillRect(0, h - 10, w, 10);
+      ctx.fillStyle = "#24283b"; ctx.font = "bold 58px 'Nunito', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("🛠 IT HELP DESK", w / 2, h / 2 + 2);
+    });
+    const hang = group(root, H.x, 0, H.z + 0.1);
+    for (const sx of [-1.4, 1.4]) cylinder(hang, 0x666666, sx, 6.7, 0, 0.012, 2.6, { shadow: false });
+    block(hang, 0xffffff, 0, 5.1, 0, 3.7, 0.85, 0.1, 0.05);
+    put(hang, new THREE.PlaneGeometry(3.5, 0.76), toon(0xffffff, { map: bigSign }), { y: 5.1, z: 0.06, shadow: false });
+    // "Now serving" number display that counts up
+    let serving = 41;
+    const servingCanvas = document.createElement("canvas");
+    servingCanvas.width = 256; servingCanvas.height = 96;
+    const servingTex = new THREE.CanvasTexture(servingCanvas);
+    servingTex.encoding = THREE.sRGBEncoding;
+    const drawServing = (flash) => {
+      const ctx = servingCanvas.getContext("2d");
+      ctx.fillStyle = flash ? "#3a2a00" : "#111418"; ctx.fillRect(0, 0, 256, 96);
+      ctx.fillStyle = "#9aa3b5"; ctx.font = "bold 20px 'Nunito', sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("NOW SERVING", 128, 26);
+      ctx.fillStyle = "#ffcf3a"; ctx.font = "bold 52px monospace";
+      ctx.fillText(String(serving).padStart(3, "0"), 128, 80);
+      servingTex.needsUpdate = true;
+    };
+    drawServing(false);
+    const servingBox = group(root, H.x + 4.2, 0, H.z - 0.2);
+    cylinder(servingBox, 0x666666, 0, 1.5, 0, 0.05, 3.0);
+    block(servingBox, 0x2f3542, 0, 3.4, 0, 1.6, 0.7, 0.18, 0.06);
+    put(servingBox, new THREE.PlaneGeometry(1.45, 0.56), new THREE.MeshBasicMaterial({ map: servingTex, toneMapped: false }), { y: 3.4, z: 0.1, shadow: false });
+    let nextNumber = 14;
+    anim.push((t) => {
+      if (t > nextNumber) {
+        serving = serving >= 999 ? 1 : serving + 1;
+        nextNumber = t + 15 + Math.random() * 15;
+        drawServing(true);
+        setTimeout(() => drawServing(false), 600);
+      }
+    });
+    // waiting area: a row of chairs, a little table and a plant
+    const WA = { x: -12.5, z: 7.6 };
+    const waiting = group(root, WA.x, 0, WA.z, Math.PI);
+    block(waiting, 0x8f96a3, 0, 0.3, 0, 4.8, 0.08, 0.5, 0.02);
+    for (let i = 0; i < 4; i++) {
+      const cx = -1.8 + i * 1.2;
+      block(waiting, 0xff7a59, cx, 0.6, 0, 1.0, 0.14, 0.75, 0.06);
+      block(waiting, 0xff7a59, cx, 1.05, -0.38, 1.0, 0.8, 0.12, 0.06);
+      block(waiting, 0x8f96a3, cx, 0.3, 0, 0.08, 0.6, 0.08, 0.02);
+    }
+    const magTable = group(root, WA.x + 3.5, 0, WA.z);
+    cylinder(magTable, 0xf0d3a8, 0, 0.55, 0, 0.55, 0.08);
+    cylinder(magTable, 0x8f96a3, 0, 0.28, 0, 0.06, 0.55);
+    block(magTable, 0xff5a64, -0.1, 0.61, 0.05, 0.42, 0.03, 0.3, 0.01, { ry: 0.4 });
+    block(magTable, 0x4a90e2, 0.1, 0.64, -0.05, 0.42, 0.03, 0.3, 0.01, { ry: -0.2 });
 
-    // kitchen corner: counter, coffee machine with steam, water cooler, vending machine
-    const K = { x: 11, z: 6 };
-    block(root, 0xffffff, K.x, 0.55, K.z, 3.2, 1.1, 1.0, 0.06);
-    block(root, 0xf0d3a8, K.x, 1.15, K.z, 3.3, 0.1, 1.1, 0.03);
-    const coffee = group(root, K.x - 0.7, 1.2, K.z);
+    // ===== server room (back right) =====
+    const SR = { x: 12.8, z: -8.6 };
+    block(root, 0xcfd6df, SR.x, 0.06, SR.z + 0.4, 8.2, 0.12, 4.6, 0.02); // raised floor
+    const tile = canvasTexture(64, 64, (ctx) => { ctx.fillStyle = "#cfd6df"; ctx.fillRect(0, 0, 64, 64); ctx.strokeStyle = "#a9b3c0"; ctx.lineWidth = 3; ctx.strokeRect(0, 0, 64, 64); ctx.fillStyle = "#b7c0cc"; for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) ctx.fillRect(10 + i * 12, 10 + j * 12, 4, 4); }, [8, 4]);
+    put(root, new THREE.PlaneGeometry(8.2, 4.6), toon(0xffffff, { map: tile }), { x: SR.x, y: 0.125, z: SR.z + 0.4, rx: -Math.PI / 2, shadow: false });
+    const rackFront = canvasTexture(128, 256, (ctx, w, h) => {
+      ctx.fillStyle = "#1f242c"; ctx.fillRect(0, 0, w, h);
+      for (let y = 8; y < h - 8; y += 20) {
+        ctx.fillStyle = y % 60 === 8 ? "#3a4250" : "#2c333e"; ctx.fillRect(8, y, w - 16, 16);
+        ctx.fillStyle = "#151920"; for (let x = 40; x < w - 14; x += 6) ctx.fillRect(x, y + 4, 3, 8);
+      }
+    });
+    const ledSpots = [];
+    for (let i = 0; i < 4; i++) {
+      const rx = SR.x - 2.7 + i * 1.8;
+      const rack = group(root, rx, 0.12, SR.z);
+      block(rack, 0x2a2f38, 0, 1.7, 0, 1.2, 3.4, 1.2, 0.04);
+      put(rack, new THREE.PlaneGeometry(1.0, 3.1), toon(0xffffff, { map: rackFront }), { y: 1.7, z: 0.61, shadow: false });
+      block(rack, 0x8f96a3, 0, 3.45, 0, 1.25, 0.08, 1.25, 0.02);
+      for (let k = 0; k < 14; k++) ledSpots.push({ x: rx - 0.4 + (k % 2) * 0.08, y: 0.4 + Math.floor(k / 2) * 0.42 + 0.12, z: SR.z + 0.63 });
+    }
+    // blinking lights on the servers (one shape drawn many times, colours change)
+    const leds = new THREE.InstancedMesh(new THREE.SphereGeometry(0.035, 6, 4), new THREE.MeshBasicMaterial({ toneMapped: false }), ledSpots.length);
+    const tmpO = new THREE.Object3D();
+    const ledColors = [new THREE.Color(0x3cff6e), new THREE.Color(0xffb02e), new THREE.Color(0x4ab8ff)];
+    const ledOff = new THREE.Color(0x1d3a24);
+    ledSpots.forEach((q, i) => { tmpO.position.set(q.x, q.y, q.z); tmpO.updateMatrix(); leds.setMatrixAt(i, tmpO.matrix); leds.setColorAt(i, ledColors[i % 3]); });
+    root.add(dynamic(leds));
+    let ledTimer = 0;
+    anim.push((t) => {
+      if (t < ledTimer) return;
+      ledTimer = t + 0.12;
+      for (let i = 0; i < ledSpots.length; i++) if (Math.random() < 0.3) leds.setColorAt(i, Math.random() < 0.6 ? ledColors[i % 3] : ledOff);
+      leds.instanceColor.needsUpdate = true;
+    });
+    // cable tray over the racks, an air conditioner, and a fire extinguisher
+    block(root, 0xffcf3a, SR.x, 3.95, SR.z, 7.4, 0.1, 0.6, 0.02);
+    for (let i = 0; i < 6; i++) cylinder(root, [0x4a90e2, 0xff5a64, 0x5cc84a, 0xffcf3a, 0xb58cff, 0xffffff][i], SR.x, 4.05, SR.z - 0.2 + i * 0.08, 0.03, 7.2, { rz: Math.PI / 2, shadow: false });
+    block(root, 0xf2f4f7, SR.x + 4.1, 1.2, SR.z, 0.9, 2.4, 1.0, 0.1);
+    for (let i = 0; i < 5; i++) block(root, 0xc9d2dc, SR.x + 4.1, 1.5 + i * 0.18, SR.z + 0.51, 0.8, 0.06, 0.02, 0.01);
+    cylinder(root, 0xe23b3b, SR.x - 3.7, 0.45, SR.z - 0.9, 0.16, 0.75);
+    cylinder(root, 0x222222, SR.x - 3.7, 0.9, SR.z - 0.9, 0.05, 0.15);
+    const srSign = canvasTexture(256, 64, (ctx, w, h) => {
+      ctx.fillStyle = "#24283b"; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = "#7fe0ff"; ctx.font = "bold 32px 'Nunito', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("SERVER ROOM", w / 2, h / 2 + 1);
+    });
+    put(backWall, new THREE.PlaneGeometry(2.6, 0.65), toon(0xffffff, { map: srSign }), { x: SR.x, y: 8.4, z: W.back + 0.05, shadow: false });
+
+    // ===== repair bench (right wall) =====
+    const RB = { x: 16.2, z: -0.5 };
+    const bench = group(root, RB.x, 0, RB.z, -Math.PI / 2);
+    block(bench, 0xb98a5e, 0, 1.0, 0, 5.0, 0.12, 1.3, 0.04);
+    for (const sx of [-2.3, 2.3]) block(bench, 0x8f96a3, sx, 0.5, 0, 0.12, 1.0, 1.1, 0.03);
+    block(bench, 0x8f96a3, 0, 0.35, 0.2, 4.6, 0.06, 0.9, 0.02); // shelf underneath
+    block(bench, 0x2e8b57, 0, 1.07, 0, 3.6, 0.02, 1.0, 0.01, { shadow: false }); // anti-static mat
+    // an opened-up PC
+    const pc = group(bench, -1.2, 1.08, 0);
+    block(pc, 0x3a3f4a, 0, 0.45, 0, 0.5, 0.9, 1.0, 0.04);
+    block(pc, 0x1f7a4a, 0.26, 0.45, 0, 0.02, 0.75, 0.85, 0.01);
+    ball(pc, 0x666666, 0.28, 0.6, 0.15, 0.12, { sx: 0.2 });
+    block(pc, 0x5cc84a, 0.28, 0.3, -0.2, 0.03, 0.08, 0.35, 0.01);
+    block(pc, 0x5cc84a, 0.28, 0.38, -0.2, 0.03, 0.08, 0.35, 0.01);
+    // a laptop
+    const lap = group(bench, 0.6, 1.08, 0.1);
+    block(lap, 0xc9d2dc, 0, 0.02, 0, 0.8, 0.04, 0.55, 0.02);
+    block(lap, 0xc9d2dc, 0, 0.3, -0.27, 0.8, 0.55, 0.03, 0.02, { rx: -0.25 });
+    put(lap, new THREE.PlaneGeometry(0.7, 0.45), new THREE.MeshBasicMaterial({ map: screenTexture(1), toneMapped: false }), { y: 0.3, z: -0.25, rx: -0.25, shadow: false });
+    // toolbox and screwdrivers
+    block(bench, 0xe23b3b, 1.7, 1.25, -0.2, 0.7, 0.35, 0.35, 0.05);
+    for (let i = 0; i < 3; i++) {
+      cylinder(bench, [0xffcf3a, 0xff5a64, 0x4a90e2][i], 1.4 + i * 0.15, 1.1, 0.35, 0.03, 0.18, { rx: Math.PI / 2 });
+      cylinder(bench, 0xbbbbbb, 1.4 + i * 0.15, 1.1, 0.53, 0.012, 0.2, { rx: Math.PI / 2 });
+    }
+    // magnifying lamp
+    cylinder(bench, 0x666666, -2.2, 1.6, -0.4, 0.03, 1.0);
+    put(bench, G.torus(0.18, 0.03), toon(0x666666), { x: -2.0, y: 2.1, z: -0.2, rx: 1.0 });
+    // pegboard with tools on the wall
+    const peg = canvasTexture(256, 128, (ctx, w, h) => {
+      ctx.fillStyle = "#e4c9a0"; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = "#c7a97d"; for (let y = 8; y < h; y += 14) for (let x = 8; x < w; x += 14) ctx.fillRect(x, y, 3, 3);
+      ctx.fillStyle = "#e23b3b"; ctx.fillRect(30, 30, 10, 60); ctx.fillStyle = "#666"; ctx.fillRect(26, 22, 18, 12);
+      ctx.fillStyle = "#4a90e2"; ctx.fillRect(70, 40, 40, 8); ctx.fillRect(70, 40, 8, 40);
+      ctx.strokeStyle = "#ffcf3a"; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(160, 64, 22, 0, TAU); ctx.stroke();
+      ctx.fillStyle = "#333"; ctx.fillRect(210, 25, 8, 70); ctx.fillRect(225, 25, 8, 55);
+    });
+    put(rightWall, new THREE.PlaneGeometry(4.6, 2.3), toon(0xffffff, { map: peg }), { x: W.side - 0.26, y: 3.4, z: RB.z, ry: -Math.PI / 2, shadow: false });
+
+    // ===== spare parts shelving (left wall, back) =====
+    const shelfX = -16.9;
+    const parts = [];
+    const pr2 = seeded(21);
+    for (const sz of [-8.6, -6.2]) {
+      const sh = group(root, shelfX, 0, sz, Math.PI / 2);
+      for (const sx of [-1.1, 1.1]) for (const dz of [-0.35, 0.35]) block(sh, 0x8f96a3, sx, 1.9, dz, 0.07, 3.8, 0.07, 0.02);
+      for (let row = 0; row < 4; row++) {
+        block(sh, 0xb8c2cf, 0, 0.25 + row * 1.1, 0, 2.3, 0.06, 0.8, 0.02);
+        // boxes and bins on each shelf
+        let bx = -1.0;
+        while (bx < 0.9) {
+          const bw = 0.28 + pr2() * 0.3, bh = 0.3 + pr2() * 0.4;
+          const wx = shelfX + 0.0, wz = sz + bx + bw / 2; // the shelf is turned to face +x
+          parts.push({ x: wx + (pr2() - 0.5) * 0.1, y: 0.28 + row * 1.1 + bh / 2, z: wz, sx: 0.55, sy: bh, sz: bw, color: [0xc9a46a, 0x4a90e2, 0xff7a59, 0x5cc84a, 0xffcf3a, 0xd8b98a][Math.floor(pr2() * 6)] });
+          bx += bw + 0.06;
+        }
+      }
+    }
+    scatter(root, G.box(), toon(0xffffff), parts, true);
+    // boxes of new laptops stacked on the floor, and a rolling cart of monitors
+    for (let i = 0; i < 4; i++) block(root, 0xc9a46a, -15.6 + (i % 2) * 0.05, 0.3 + i * 0.5, -3.8 + (i % 2) * 0.08, 1.0, 0.48, 0.75, 0.04, { ry: i * 0.1 });
+    const cart = group(root, -12.6, 0, -8.6, 0.3);
+    block(cart, 0x8f96a3, 0, 0.5, 0, 1.6, 0.06, 0.9, 0.02);
+    block(cart, 0x8f96a3, 0, 1.1, 0, 1.6, 0.06, 0.9, 0.02);
+    for (const [sx, sz] of [[-0.75, -0.4], [0.75, -0.4], [-0.75, 0.4], [0.75, 0.4]]) {
+      block(cart, 0x8f96a3, sx, 0.65, sz, 0.05, 1.1, 0.05, 0.01);
+      ball(cart, 0x222222, sx, 0.08, sz, 0.08);
+    }
+    for (let i = 0; i < 3; i++) block(cart, 0x2f3542, -0.4 + i * 0.4, 1.45, 0, 0.12, 0.6, 0.8, 0.03);
+
+    // ===== ticket dashboard TV (left wall) =====
+    const dashCanvas = document.createElement("canvas");
+    dashCanvas.width = 384; dashCanvas.height = 216;
+    const dashTex = new THREE.CanvasTexture(dashCanvas);
+    dashTex.encoding = THREE.sRGBEncoding;
+    let openTickets = 12, solved = 37;
+    const drawDash = () => {
+      const ctx = dashCanvas.getContext("2d");
+      ctx.fillStyle = "#14213d"; ctx.fillRect(0, 0, 384, 216);
+      ctx.fillStyle = "#7fe0ff"; ctx.font = "bold 22px 'Nunito', sans-serif"; ctx.fillText("TICKET DASHBOARD", 16, 32);
+      ctx.fillStyle = "#ffcf3a"; ctx.font = "bold 40px 'Nunito', sans-serif"; ctx.fillText(String(openTickets), 20, 88);
+      ctx.fillStyle = "#5cff8a"; ctx.fillText(String(solved), 200, 88);
+      ctx.fillStyle = "#9aa3b5"; ctx.font = "bold 16px 'Nunito', sans-serif"; ctx.fillText("OPEN", 22, 108); ctx.fillText("SOLVED TODAY", 202, 108);
+      const bars = [0.4, 0.6, 0.35, 0.8, 0.55, 0.7, Math.min(1, solved / 60)];
+      bars.forEach((b, i) => { ctx.fillStyle = i === bars.length - 1 ? "#5cff8a" : "#4a90e2"; ctx.fillRect(22 + i * 48, 200 - b * 70, 32, b * 70); });
+      dashTex.needsUpdate = true;
+    };
+    drawDash();
+    const tv = group(leftWall, -W.side + 0.35, 4.6, -0.8, Math.PI / 2);
+    block(tv, 0x1a1d24, 0, 0, 0, 4.2, 2.45, 0.12, 0.05);
+    put(tv, new THREE.PlaneGeometry(4.0, 2.25), new THREE.MeshBasicMaterial({ map: dashTex, toneMapped: false }), { z: 0.07, shadow: false });
+    let dashNext = 6;
+    anim.push((t) => {
+      if (t < dashNext) return;
+      dashNext = t + 6;
+      if (Math.random() < 0.6 && openTickets > 0) { openTickets--; solved++; } else openTickets++;
+      drawDash();
+    });
+
+    // rolling whiteboard with a network diagram
+    const wbTex = canvasTexture(256, 160, (ctx, w, h) => {
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = "#4a90e2"; ctx.lineWidth = 3;
+      const boxes = [[110, 18, "ROUTER"], [30, 80, "PCs"], [190, 80, "WiFi"], [110, 120, "SERVER"]];
+      for (const [x, y] of boxes.slice(1)) { ctx.beginPath(); ctx.moveTo(140, 40); ctx.lineTo(x + 30, y); ctx.stroke(); }
+      ctx.font = "bold 14px 'Nunito', sans-serif"; ctx.textAlign = "center";
+      for (const [x, y, label] of boxes) { ctx.strokeStyle = "#24283b"; ctx.strokeRect(x, y, 60, 24); ctx.fillStyle = "#24283b"; ctx.fillText(label, x + 30, y + 17); }
+      ctx.fillStyle = "#e2445c"; ctx.font = "bold 16px 'Nunito', sans-serif"; ctx.fillText("Ticket #404 ?!", 60, 150);
+    });
+    const wb = group(root, -4.2, 0, 1.0, 0.15);
+    for (const sx of [-1.2, 1.2]) { block(wb, 0x8f96a3, sx, 1.4, 0, 0.08, 2.8, 0.08, 0.02); ball(wb, 0x222222, sx, 0.08, 0, 0.08); block(wb, 0x8f96a3, sx, 0.15, 0, 0.08, 0.06, 0.8, 0.02); }
+    block(wb, 0xd0d6de, 0, 2.0, 0, 2.5, 1.6, 0.06, 0.03);
+    put(wb, new THREE.PlaneGeometry(2.36, 1.48), toon(0xffffff, { map: wbTex }), { y: 2.0, z: 0.035, shadow: false });
+
+    // printer (out of order, of course), e-waste and recycling bins
+    const pr = group(root, 4, 0, W.back + 1.0);
+    block(pr, 0xd9dde3, 0, 0.5, 0, 1.4, 1.0, 1.0, 0.08);
+    block(pr, 0xeef0f3, 0, 1.15, 0, 1.3, 0.3, 0.9, 0.06);
+    block(pr, 0xffffff, 0, 1.33, 0.1, 0.7, 0.04, 0.5, 0.01);
+    ball(pr, toon(0xff3b3b, { emissive: 0xff3b3b, emissiveIntensity: 1 }), 0.5, 1.15, 0.46, 0.05);
+    const oooTex = canvasTexture(128, 64, (ctx, w, h) => {
+      ctx.fillStyle = "#fffbe8"; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = "#e2445c"; ctx.font = "bold 20px 'Nunito', sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("OUT OF", w / 2, 26); ctx.fillText("ORDER :(", w / 2, 50);
+    });
+    put(pr, new THREE.PlaneGeometry(0.6, 0.3), toon(0xffffff, { map: oooTex }), { y: 0.75, z: 0.51, rz: 0.06, shadow: false });
+    const bin = (x, z, color, label) => {
+      const b = group(root, x, 0, z);
+      block(b, color, 0, 0.5, 0, 0.7, 1.0, 0.7, 0.08);
+      block(b, 0x24283b, 0, 1.02, 0, 0.72, 0.06, 0.72, 0.03);
+      const lt = canvasTexture(96, 40, (ctx, w, h) => { ctx.fillStyle = "#fff"; ctx.font = "bold 18px 'Nunito', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(label, w / 2, h / 2); });
+      put(b, new THREE.PlaneGeometry(0.6, 0.25), toon(0xffffff, { map: lt, transparent: true }), { y: 0.7, z: 0.36, shadow: false });
+    };
+    bin(5.6, W.back + 0.9, 0x5cb85c, "E-WASTE");
+    bin(6.5, W.back + 0.9, 0x4a90e2, "RECYCLE");
+
+    // ===== break area (front right): coffee, water, vending machine, a little table =====
+    const K = { x: 11.5, z: 8.8 };
+    block(root, 0xffffff, K.x, 0.55, K.z, 3.6, 1.1, 1.0, 0.06);
+    block(root, 0xf0d3a8, K.x, 1.15, K.z, 3.7, 0.1, 1.1, 0.03);
+    const coffee = group(root, K.x - 0.9, 1.2, K.z);
     block(coffee, 0x3a3f4a, 0, 0.4, 0, 0.6, 0.8, 0.5, 0.06);
-    ball(coffee, glow(0x5cff8a, 1), 0.2, 0.65, 0.26, 0.04);
-    cylinder(coffee, 0xffffff, 0, 0.1, 0.15, 0.08, 0.18);
+    ball(coffee, glow(0x5cff8a, 1), 0.2, 0.65, -0.26, 0.04);
+    cylinder(coffee, 0xffffff, 0, 0.1, -0.15, 0.08, 0.18);
     const steam = [];
-    for (let i = 0; i < 4; i++) steam.push(dynamic(ball(coffee, toon(0xffffff, { transparent: true, opacity: 0.6 }), 0, 0.3, 0.15, 0.08, { shadow: false })));
+    for (let i = 0; i < 4; i++) steam.push(dynamic(ball(coffee, toon(0xffffff, { transparent: true, opacity: 0.6 }), 0, 0.3, -0.15, 0.08, { shadow: false })));
     anim.push((t) => steam.forEach((s, i) => {
       const k = (t * 0.5 + i / 4) % 1;
-      s.position.set(Math.sin(t * 2 + i) * 0.05, 0.25 + k * 0.6, 0.15);
+      s.position.set(Math.sin(t * 2 + i) * 0.05, 0.25 + k * 0.6, -0.15);
       s.scale.setScalar(0.06 + k * 0.08);
       s.material.opacity = 0.6 * (1 - k);
     }));
-    block(root, 0xff5a64, K.x + 0.8, 1.35, K.z, 0.3, 0.3, 0.3, 0.05); // toaster-ish box
-    const cooler = group(root, K.x + 2.6, 0, K.z - 0.3);
+    block(root, 0xeeeeee, K.x + 0.6, 1.45, K.z, 0.8, 0.5, 0.5, 0.06); // microwave
+    block(root, 0x222222, K.x + 0.5, 1.45, K.z - 0.26, 0.5, 0.35, 0.02, 0.02);
+    const cooler = group(root, K.x + 2.6, 0, K.z + 0.1);
     block(cooler, 0xf2f4f7, 0, 0.75, 0, 0.8, 1.5, 0.8, 0.12);
     cylinder(cooler, toon(0x8fd8ff, { transparent: true, opacity: 0.8 }), 0, 1.95, 0, 0.36, 0.9);
-    block(cooler, 0x4a90e2, 0, 1.15, 0.42, 0.18, 0.1, 0.08, 0.02);
-    const vend = group(root, 16.6, 0, 0.5, -Math.PI / 2);
+    block(cooler, 0x4a90e2, 0, 1.15, -0.42, 0.18, 0.1, 0.08, 0.02);
+    const vend = group(root, 16.8, 0, 6.2, -Math.PI / 2);
     block(vend, 0xff5a64, 0, 1.6, 0, 1.8, 3.2, 1.0, 0.1);
     const vendTex = canvasTexture(128, 160, (ctx, w, h) => {
       ctx.fillStyle = "#dff4ff"; ctx.fillRect(0, 0, w, h);
@@ -967,18 +1251,22 @@
       for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) { ctx.fillStyle = cols[(r + c) % 5]; ctx.fillRect(10 + c * 28, 10 + r * 36, 18, 26); }
     });
     put(vend, new THREE.PlaneGeometry(1.1, 1.9), new THREE.MeshBasicMaterial({ map: vendTex, toneMapped: false }), { x: -0.2, y: 2.0, z: 0.51, shadow: false });
+    const cafe = group(root, 9.2, 0, 5.2);
+    cylinder(cafe, 0xffffff, 0, 1.0, 0, 0.6, 0.06);
+    cylinder(cafe, 0x8f96a3, 0, 0.5, 0, 0.05, 1.0);
+    cylinder(cafe, 0x8f96a3, 0, 0.03, 0, 0.35, 0.05);
+    cylinder(cafe, 0xff7a59, 0.15, 1.08, 0.1, 0.07, 0.14);
 
-    // printer and filing cabinets
-    const pr = group(root, 4, 0, W.back + 1.0);
-    block(pr, 0xd9dde3, 0, 0.5, 0, 1.4, 1.0, 1.0, 0.08);
-    block(pr, 0xeef0f3, 0, 1.15, 0, 1.3, 0.3, 0.9, 0.06);
-    block(pr, 0xffffff, 0, 1.33, 0.1, 0.7, 0.04, 0.5, 0.01);
-    ball(pr, glow(0x5cc84a, 1), 0.5, 1.15, 0.46, 0.05);
-    for (const x of [7.5, 8.4]) {
-      const fc = group(root, x, 0, W.back + 0.8);
-      block(fc, 0x9fb3c8, 0, 0.9, 0, 0.85, 1.8, 0.9, 0.05);
-      for (let i = 0; i < 3; i++) block(fc, 0xb8c9db, 0, 0.35 + i * 0.58, 0.46, 0.75, 0.5, 0.04, 0.03);
-    }
+    // plants in the corners
+    const plantAt = (x, z, s) => {
+      const pl = group(root, x, 0, z, 0, s);
+      cylinder(pl, 0xffffff, 0, 0.45, 0, 0.45, 0.9);
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * TAU;
+        put(pl, G.sphere(), toon(i % 2 ? 0x46b04a : 0x5cc84a), { x: Math.cos(a) * 0.4, y: 1.7 + (i % 3) * 0.3, z: Math.sin(a) * 0.4, sx: 0.22, sy: 0.85, sz: 0.22, rx: Math.sin(a) * 0.6, rz: -Math.cos(a) * 0.6 });
+      }
+    };
+    plantAt(-16.6, 9.6, 1); plantAt(-7.6, 8.6, 0.8); plantAt(16.6, 9.8, 0.9); plantAt(-3.4, -9.9, 0.8);
 
     const walls = [
       { group: backWall, axis: "z", at: W.back, outside: -1 },
@@ -987,7 +1275,7 @@
       { group: rightWall, axis: "x", at: W.side, outside: 1 },
     ];
     for (const w of walls) {
-      // the clock hands move, so keep them out of the merge
+      // the clock hands and screens change, so they're kept out of the merge
       mergeStatic(w.group);
       dynamic(w.group);
     }
@@ -998,18 +1286,28 @@
       for (let i = 0; i < 2; i++) {
         const sx = p.x + (i === 0 ? -0.75 : 0.75), sz = p.z - 1.05;
         deskSpots.push({
-          x: sx, z: sz - 1.2, yaw: 0, arms: "type", emoji: ["⌨️", "📊", "💻", "📧", "📊", "⌨️"][pi * 2 + i], activity: "working at a desk",
+          x: sx, z: sz - 1.2, yaw: 0, arms: "type", emoji: ["🎧", "💻", "🖥️", "📞", "⌨️", "🐛"][pi * 2 + i], activity: "working on tickets",
           seat: { x: sx, z: sz + 0.05, y: 0.0 },
-          lines: [["*click clack*", "So many emails...", "Almost done with this report!"],
-            ["Numbers are going up!", "Spreadsheet time!", "Who made this chart?"],
-            ["Can you hear me now?", "You're on mute!", "Let's circle back on that."]][(pi + i) % 3],
+          lines: [["*click clack*", "Ticket closed! Next!", "Who wrote this code?!"],
+            ["Have you tried restarting it?", "Please hold...", "I'll escalate that ticket."],
+            ["Talking to the rubber duck...", "Found the bug!", "It works on my machine!"]][(pi + i) % 3],
         });
       }
     });
+    const agentSpots = [-1.4, 1.4].map((sx) => ({
+      x: H.x + sx, z: H.z - 2.4, yaw: 0, arms: "type", emoji: "🛠️", activity: "staffing the help desk",
+      seat: { x: H.x + sx, z: H.z - 1.15, y: 0.0 },
+      lines: ["IT help desk, how can I help?", "Have you tried turning it off and on again?", "Next please!", "Is it plugged in?"],
+    }));
+    const waitSeats = [-1.8, -0.6, 0.6, 1.8].map((cx, i) => ({
+      x: WA.x - cx, z: WA.z + 1.35, yaw: Math.PI, emoji: "🎫", activity: "waiting for help",
+      seat: { x: WA.x - cx, z: WA.z - 0.05, y: 0.0 },
+      lines: ["How long is the wait?", "My laptop makes a weird noise...", "*checks phone*", "I hope they can fix it."],
+    }));
 
     return {
       group: root,
-      background: 0xf3ead8,
+      background: 0xe6edf3,
       fog: null,
       cameraTilt: 0.5,
       bounds: { minX: -17, maxX: 17, minZ: -10.4, maxZ: 10 },
@@ -1017,30 +1315,52 @@
       // each desk pod's zone also covers the chairs behind it
       obstacles: pods.map((p) => ({ x: p.x, z: p.z - 0.45, w: 3.1, d: 2.3 }))
         .concat([
-          { x: L.x - Math.sin(0.35) * 0.15, z: L.z - Math.cos(0.35) * 0.15, w: 3.7, d: 1.75, rot: -0.35 }, { x: L.x + 2.6, z: L.z + 1.6, r: 0.95 }, { x: L.x - 2.4, z: L.z - 0.3, r: 0.35 },
-          { x: K.x, z: K.z, w: 3.3, d: 1.1 }, { x: K.x + 2.6, z: K.z - 0.3, r: 0.6 }, { x: 16.6, z: 0.5, w: 1.0, d: 1.8 },
-          { x: 15.5, z: 7.5, r: 0.95 }, { x: -15, z: W.back + 0.7, w: 3.3, d: 0.9 }, { x: 4, z: W.back + 1.0, w: 1.5, d: 1.1 },
-          { x: 8, z: W.back + 0.8, w: 1.9, d: 1.0 },
+          { x: H.x, z: H.z - 0.55, w: 6.6, d: 2.3 },                 // help desk counter + agent chairs
+          { x: H.x + 4.2, z: H.z - 0.2, r: 0.35 },                   // "now serving" stand
+          { x: WA.x, z: WA.z, w: 5.0, d: 1.1 },                       // waiting chairs
+          { x: WA.x + 3.5, z: WA.z, r: 0.7 },                         // magazine table
+          { x: SR.x, z: SR.z, w: 7.6, d: 1.5 },                       // server racks
+          { x: SR.x + 4.1, z: SR.z, w: 1.1, d: 1.2 },                 // air conditioner
+          { x: SR.x - 3.7, z: SR.z - 0.9, r: 0.3 },                   // fire extinguisher
+          { x: RB.x - 0.1, z: RB.z, w: 1.5, d: 5.1 },                 // repair bench
+          { x: shelfX + 0.2, z: -7.4, w: 1.2, d: 5.2 },               // parts shelves
+          { x: -15.6, z: -3.8, w: 1.2, d: 1.0 },                      // laptop boxes
+          { x: -12.6, z: -8.6, w: 1.9, d: 1.4, rot: -0.3 },           // monitor cart
+          { x: -4.2, z: 1.0, w: 2.8, d: 0.9, rot: -0.15 },            // whiteboard
+          { x: 4, z: W.back + 1.0, w: 1.5, d: 1.1 },                  // printer
+          { x: 6.05, z: W.back + 0.9, w: 1.7, d: 0.8 },               // bins
+          { x: K.x, z: K.z, w: 3.8, d: 1.1 },                         // break counter
+          { x: K.x + 2.6, z: K.z + 0.1, r: 0.6 },                     // water cooler
+          { x: 16.8, z: 6.2, w: 1.0, d: 1.9 },                        // vending machine
+          { x: 9.2, z: 5.2, r: 0.7 },                                 // café table
+          { x: -16.6, z: 9.6, r: 0.95 }, { x: -7.6, z: 8.6, r: 0.8 }, { x: 16.6, z: 9.8, r: 0.85 }, { x: -3.4, z: -9.9, r: 0.8 },
         ]),
-      spots: deskSpots.concat([
-        { x: L.x + Math.sin(0.35) * 1.75, z: L.z + Math.cos(0.35) * 1.75, yaw: 0.35, emoji: "🛋️", activity: "relaxing on the sofa",
-          seat: { x: L.x + Math.sin(0.35) * 0.15, z: L.z + Math.cos(0.35) * 0.15, y: 0.06 },
-          lines: ["Break time!", "This sofa is so comfy.", "Just five more minutes..."] },
-        { x: K.x - 0.7, z: K.z + 1.2, yaw: Math.PI, emoji: "☕", activity: "making coffee",
-          lines: ["Coffee, please!", "Mmm, smells great.", "Who drank the last cup?!"] },
-        { x: K.x + 2.6, z: K.z + 1.3, yaw: Math.PI, emoji: "💧", activity: "getting water",
+      spots: deskSpots.concat(agentSpots, waitSeats, [
+        { x: H.x - 1.0, z: H.z + 1.5, yaw: Math.PI, emoji: "😩", activity: "asking for help",
+          lines: ["My computer won't turn on!", "I forgot my password... again.", "The Wi-Fi is down!", "I spilled coffee on my keyboard..."] },
+        { x: SR.x - 0.9, z: SR.z + 1.9, yaw: Math.PI, emoji: "🖥️", activity: "checking the servers",
+          lines: ["All systems go!", "Why is this one beeping?", "It's so loud in here!", "Uptime: 99.9%!"] },
+        { x: RB.x - 1.75, z: RB.z + 1.0, yaw: Math.PI / 2, arms: "type", emoji: "🔧", activity: "fixing a computer",
+          lines: ["Who spilled juice in this?!", "Needs more thermal paste.", "Aha! A loose cable!", "Good as new!"] },
+        { x: shelfX + 1.6, z: -7.4, yaw: -Math.PI / 2, emoji: "📦", activity: "looking for spare parts",
+          lines: ["Where are the HDMI cables?", "We're out of mice again.", "Found a keyboard!"] },
+        { x: -15.6, z: -0.8, yaw: -Math.PI / 2, lookUp: 0.3, emoji: "📈", activity: "checking the ticket queue",
+          lines: ["So many tickets!", "We're crushing it today!", "Ticket #404... not found."] },
+        { x: -4.0, z: 2.2, yaw: Math.PI - 0.15, emoji: "📝", activity: "planning the network",
+          lines: ["If we move the router here...", "Hmm, where does this cable go?", "Needs more Wi-Fi."] },
+        { x: K.x - 0.9, z: K.z - 1.2, yaw: 0, emoji: "☕", activity: "making coffee",
+          lines: ["Coffee, please!", "Coffee first, then code.", "Who drank the last cup?!"] },
+        { x: K.x + 2.6, z: K.z - 1.1, yaw: 0, emoji: "💧", activity: "getting water",
           lines: ["*glug glug*", "Staying hydrated!", "Any gossip today?"] },
-        { x: 4, z: W.back + 2.2, yaw: Math.PI, emoji: "🖨️", activity: "using the printer",
-          lines: ["Paper jam AGAIN?!", "Come on, print!", "Who used all the ink?"] },
-        { x: -15, z: W.back + 1.9, yaw: Math.PI, emoji: "📚", activity: "browsing books",
-          lines: ["So many books!", "Ooh, a mystery novel.", "I love reading."] },
-        { x: 15.2, z: 0.5, yaw: -Math.PI / 2, emoji: "🥤", activity: "at the vending machine",
+        { x: 4, z: W.back + 2.2, yaw: Math.PI, emoji: "🖨️", activity: "trying the printer",
+          lines: ["Paper jam AGAIN?!", "It says OUT OF ORDER...", "Have you tried turning it off and on again?"] },
+        { x: 15.4, z: 6.2, yaw: -Math.PI / 2, emoji: "🥤", activity: "at the vending machine",
           lines: ["Snack time!", "It ate my coin!", "Ooh, melon soda!"] },
       ]),
       lines: [
-        "Is it lunch time yet?", "I need more coffee.", "Meeting in 5 minutes!",
-        "Did anyone see my stapler?", "I love Fridays.", "Working hard or hardly working?",
-        "Great job, team!", "Who wants pizza?", "Let's brainstorm!", "My chair squeaks.",
+        "Have you tried turning it off and on again?", "It works on my machine!", "Who unplugged the router?!",
+        "Did you clear your cache?", "Password123 is NOT a good password.", "The Wi-Fi is down again!",
+        "Is it plugged in?", "I need more RAM... and coffee.", "Ticket closed!", "Have you updated your drivers?",
       ],
       update(t, camera) {
         anim.forEach((a) => a(t));

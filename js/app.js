@@ -19,23 +19,6 @@
   const PANTS = ["#40464e", "#2b3a67", "#1c1c1c", "#6b4f2a", "#c9b38a", "#5a6b3a", "#e0e0e0"];
   const EYES = ["#0a4a35", "#000000", "#6c7070", "#663c2c", "#4870a0", "#605e30"];
 
-  // Demo friends are copies of Joe's model with different colours.
-  const DEMO_FRIENDS = [
-    { name: "Mia", look: { skin: "#ffd3ad", hair: "#7c3a14", shirt: "#f55a7d", pants: "#2b3a67", eyes: "#4870a0", beard: false },
-      personality: { energy: 75, social: 80, chatty: 70, humor: 55, kindness: 80, catchphrase: "Yay, friends!" } },
-    { name: "Leo", look: { skin: "#de7942", hair: "#1e1a18", shirt: "#0a48b4", pants: "#1c1c1c", eyes: "#663c2c", beard: false },
-      personality: { energy: 85, social: 60, chatty: 50, humor: 75, kindness: 50, catchphrase: "Let's gooo!" } },
-    { name: "Ava", look: { skin: "#ffb669", hair: "#d0a04a", shirt: "#7328ad", pants: "#c9b38a", eyes: "#0a4a35", beard: false },
-      personality: { energy: 35, social: 30, chatty: 35, humor: 40, kindness: 75, catchphrase: "Oh, um... okay!" } },
-    { name: "Sam", look: { skin: "#ffaa8c", hair: "#787878", shirt: "#78d220", pants: "#6b4f2a", eyes: "#000000", beard: true },
-      personality: { energy: 25, social: 45, chatty: 60, humor: 30, kindness: 30, catchphrase: "Back in my day..." } },
-    { name: "Kai", look: { skin: "#ad5129", hair: "#1e1a18", shirt: "#ff6e19", pants: "#40464e", eyes: "#663c2c", beard: false },
-      personality: { energy: 70, social: 70, chatty: 80, humor: 85, kindness: 60, catchphrase: "Boop!" } },
-    { name: "Zoe", look: { skin: "#632c18", hair: "#1e1a18", shirt: "#3caade", pants: "#e0e0e0", eyes: "#605e30", beard: false },
-      personality: { energy: 55, social: 50, chatty: 40, humor: 35, kindness: 65, catchphrase: "Interesting!" } },
-    { name: "Max", look: { skin: "#ffd3ad", hair: "#5c1812", shirt: "#007830", pants: "#5a6b3a", eyes: "#4870a0", beard: true },
-      personality: { energy: 60, social: 35, chatty: 30, humor: 60, kindness: 40, catchphrase: "Hmph. Fine." } },
-  ];
 
   // Wait for the rounded font, so signs and posters drawn in 3D use it too.
   try {
@@ -145,20 +128,45 @@
   });
 
   // ---------- demo friends ----------
-  async function addDemoFriends(count) {
+  // ---------- random generic Miis ----------
+  // New players start with a few of these, and "Add random Miis" makes more.
+  const NAMES = ["Mia", "Leo", "Ava", "Sam", "Kai", "Zoe", "Max", "Ivy", "Ben", "Lily", "Owen", "Ruby", "Finn", "Nora", "Theo",
+    "Ella", "Jack", "Maya", "Noah", "Rosa", "Eli", "Luna", "Hugo", "Iris", "Gus", "June", "Omar", "Pia", "Ravi", "Suki",
+    "Toby", "Vera", "Wade", "Yuki", "Zara", "Ash", "Bea", "Cole", "Dina", "Ezra", "Fay", "Gabe", "Hana", "Ian", "Jade",
+    "Kian", "Lena", "Milo", "Nia", "Otto", "Pax", "Quinn", "Remy", "Sol", "Tess", "Uma", "Vic", "Wren", "Xavi", "Yara"];
+  const CATCHPHRASES = ["Let's gooo!", "Yay, friends!", "Boop!", "Interesting!", "Oh, um... okay!", "Back in my day...",
+    "Easy peasy!", "Wowza!", "Hmph. Fine.", "Let's do this!", "Snack time?", "You got this!", "Whoopsie!", "Neat-o!", ""];
+  const rnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  function randomMiiRecord(taken) {
+    const free = NAMES.filter((n) => !taken.has(n));
+    const name = free.length ? rnd(free) : rnd(NAMES) + " " + (2 + Math.floor(Math.random() * 8));
+    taken.add(name);
+    const personality = D.randomPersonality();
+    // spread personalities out a bit so Miis feel different from each other
+    for (const k of ["energy", "social", "chatty", "humor", "kindness"]) {
+      personality[k] = Math.round(Math.max(5, Math.min(95, 50 + (Math.random() - 0.5) * 90)));
+    }
+    personality.catchphrase = rnd(CATCHPHRASES);
+    return {
+      id: "mii-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7),
+      kind: "demo", // built from the bundled model, recoloured
+      name,
+      look: { skin: rnd(SKINS), hair: rnd(HAIRS), shirt: rnd(SHIRTS), pants: rnd(PANTS), eyes: rnd(EYES), beard: Math.random() < 0.2 },
+      personality,
+      added: Date.now(),
+    };
+  }
+
+  async function addRandomMiis(count) {
     const taken = new Set(hub.walkers.map((w) => w.look.name));
-    let added = 0;
-    for (const f of DEMO_FRIENDS) {
-      if (added >= count) break;
-      if (taken.has(f.name)) continue;
-      const record = { id: "demo-" + f.name + "-" + Date.now(), kind: "demo", name: f.name, look: Object.assign({}, f.look), personality: Object.assign({}, f.personality), added: Date.now() };
+    for (let i = 0; i < count; i++) {
+      const record = randomMiiRecord(taken);
       await addRecord(record);
       S.putMii(record);
-      added++;
     }
-    if (!added) errorMsg.textContent = "All the demo friends are already here!";
   }
-  $("demoBtn").addEventListener("click", () => { errorMsg.textContent = ""; addDemoFriends(3); });
+  $("demoBtn").addEventListener("click", () => { errorMsg.textContent = ""; addRandomMiis(3); });
 
   $("chatty").addEventListener("input", (e) => { hub.chattiness = parseFloat(e.target.value); saveSettings(); });
 
@@ -207,7 +215,7 @@
       name.textContent = w.look.name;
       const meta = document.createElement("div");
       meta.className = "meta";
-      meta.textContent = D.personalityLabel(w.record.personality) + " · " + (w.record.kind === "demo" ? "demo friend" : (w.record.fileName || "3D Mii"));
+      meta.textContent = D.personalityLabel(w.record.personality);
       if (!w.inst.rig.canAnimate) {
         // e.g. a "head only" export: it can't walk properly
         const warn = document.createElement("div");
@@ -374,21 +382,26 @@
     }
   }
   if (!hub.walkers.length) {
-    // First visit: Joe plus a few demo friends.
-    const joe = { id: "sample-joe", kind: "sample", look: {}, added: Date.now() };
+    // First visit: a few random generic Miis to get things going.
     try {
-      await addRecord(joe);
-      S.putMii(joe);
+      await addRandomMiis(5);
     } catch (e) {
-      errorMsg.textContent = "Couldn't load the sample Mii: " + e.message;
+      errorMsg.textContent = "Couldn't create the starter Miis: " + e.message;
     }
-    await addDemoFriends(4);
   }
   rosterCount = -1;
   hub.onChange();
 
 
   // ---------- the Mii menu (click or right-click a Mii) ----------
+  const MG = window.MiniGames;
+  // each Mii's record of how good it is at each game
+  function gameStats(rec, id) {
+    rec.games = rec.games || {};
+    if (!rec.games[id]) rec.games[id] = MG.newStats();
+    return rec.games[id];
+  }
+
   const menu = document.createElement("div");
   menu.className = "mii-menu";
   menu.hidden = true;
@@ -489,6 +502,45 @@
     cpRow.appendChild(cp);
     pers.appendChild(cpRow);
 
+    // mini-games, with this Mii's skill meter for each
+    const games = document.createElement("div");
+    games.className = "mm-section";
+    games.innerHTML = "<h3>Play a game</h3>";
+    for (const g of Object.values(MG.GAMES)) {
+      const st = gameStats(rec, g.id);
+      const row = document.createElement("div");
+      row.className = "mm-game";
+      const label = document.createElement("div");
+      label.className = "mm-game-name";
+      label.innerHTML = "<span>" + g.icon + "</span>" + g.short;
+      const meterWrap = document.createElement("div");
+      meterWrap.className = "mm-game-meter";
+      const meter = document.createElement("div");
+      meter.className = "skill-meter";
+      const fill = document.createElement("div");
+      fill.className = "skill-fill";
+      fill.style.width = st.skill.toFixed(0) + "%";
+      meter.appendChild(fill);
+      const lvl = document.createElement("div");
+      lvl.className = "mm-game-level";
+      lvl.textContent = MG.skillLevel(st.skill) + " · " + Math.round(st.skill) + (st.played ? " · " + st.played + " played" : "");
+      meterWrap.append(meter, lvl);
+      const play = document.createElement("button");
+      play.className = "mm-play";
+      play.textContent = "Play";
+      play.title = g.name + " (" + g.format + ")";
+      play.addEventListener("click", () => {
+        closeMiiMenu();
+        window.MiiGamesUI.open({
+          walker: w, game: g.id, hub, stage: $("stage"),
+          portrait: portraitFor(w), stats: gameStats(rec, g.id),
+          onSave: () => saveSoon(rec),
+        });
+      });
+      row.append(label, meterWrap, play);
+      games.appendChild(row);
+    }
+
     // best friends
     const fr = document.createElement("div");
     fr.className = "mm-section";
@@ -531,7 +583,7 @@
     });
     foot.append(look, home);
 
-    menu.append(head, acts, pers, fr, foot);
+    menu.append(head, acts, games, pers, fr, foot);
     menu.hidden = false;
 
     // place it next to where you clicked, but keep it inside the hub area
