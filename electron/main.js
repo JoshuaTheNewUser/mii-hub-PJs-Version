@@ -3,8 +3,9 @@
  * Runs Mii Hub as a desktop app (its own window and icon) using Electron.
  * The app itself is the same index.html the browser version uses.
  */
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, shell, ipcMain } = require("electron");
 const path = require("path");
+const updater = require("./updater");
 
 // Only one Mii Hub window at a time; opening it again just brings it to the front.
 if (!app.requestSingleInstanceLock()) {
@@ -27,11 +28,13 @@ function createWindow() {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
   win.removeMenu();
   win.loadFile(path.join(__dirname, "..", "index.html"));
   win.once("ready-to-show", () => win.show());
+  updater.setup(win); // starts checking for updates a few seconds from now
 
   // Links open in the normal web browser, not inside the app.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -59,6 +62,11 @@ app.on("second-instance", () => {
     win.focus();
   }
 });
+
+// The page can ask for the update status, start a check, or open the download page.
+ipcMain.handle("update-get-status", () => updater.getStatus());
+ipcMain.handle("update-check", () => { updater.check(true); return true; });
+ipcMain.handle("update-open-releases", () => shell.openExternal(updater.RELEASES_PAGE));
 
 app.whenReady().then(() => {
   createWindow();

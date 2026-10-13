@@ -621,3 +621,46 @@ body {
   color: #b06a00;
   font-weight: 700;
 }
+
+/* ---------- buttons on the scene: places + full screen ---------- */
+.stage-tools {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 15;
+  display: flex;
+  gap: 6px;
+}
+
+.stage-scenes { display: flex; gap: 6px; }
+
+.stage-btn {
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.85);
+  color: #24283b;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(4px);
+}
+
+.stage-btn:hover { background: #fff; }
+.stage-btn[aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+/* the place buttons only show in full screen (the tabs at the top do the job otherwise) */
+.stage:not(.is-full) .stage-scenes { display: none; }
+
+.stage.is-full {
+  border-radius: 0;
+  min-height: 0;
+}
+
+.stage.is-full .tip { display: none; }
+
+.panel[hidden] { display: none; }
+
+.btn:disabled { opacity: 0.6; cursor: default; }

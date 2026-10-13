@@ -101,7 +101,7 @@
     tabs.appendChild(b);
   }
   function updateTabs() {
-    for (const b of tabs.children) b.setAttribute("aria-pressed", String(b.dataset.scene === hub.world.id));
+    for (const b of document.querySelectorAll("[data-scene]")) b.setAttribute("aria-pressed", String(b.dataset.scene === hub.world.id));
   }
 
   function saveSettings() {
@@ -554,6 +554,70 @@
     if (!menu.hidden && e.button === 0 && !hub.pickWalker(hub.pointerRay(e))) closeMiiMenu();
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMiiMenu(); });
+
+
+  // ---------- full screen (just the 3D scene) ----------
+  const stageEl = $("stage");
+  const fsBtn = $("fullscreenBtn");
+  const isFull = () => document.fullscreenElement === stageEl || document.webkitFullscreenElement === stageEl;
+  function toggleFullscreen() {
+    if (isFull()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else (stageEl.requestFullscreen || stageEl.webkitRequestFullscreen).call(stageEl).catch(() => {});
+  }
+  fsBtn.addEventListener("click", toggleFullscreen);
+  for (const ev of ["fullscreenchange", "webkitfullscreenchange"]) {
+    document.addEventListener(ev, () => {
+      const on = isFull();
+      fsBtn.textContent = on ? "✕" : "⛶";
+      fsBtn.title = on ? "Exit full screen (F or Esc)" : "Full screen (F)";
+      stageEl.classList.toggle("is-full", on);
+      // let the browser finish resizing, then fit the 3D view to the new size
+      requestAnimationFrame(() => hub.resize());
+    });
+  }
+  document.addEventListener("keydown", (e) => {
+    const typing = /^(input|textarea|select)$/i.test((e.target && e.target.tagName) || "");
+    if (!typing && (e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) toggleFullscreen();
+  });
+
+  // little place buttons on the scene itself (handy in full screen)
+  const stageScenes = $("stageScenes");
+  for (const scene of window.World3D.list) {
+    const b = document.createElement("button");
+    b.className = "stage-btn";
+    b.textContent = scene.icon;
+    b.title = scene.name;
+    b.setAttribute("aria-label", scene.name);
+    b.dataset.scene = scene.id;
+    b.addEventListener("click", () => { hub.setScene(scene.id); saveSettings(); updateTabs(); });
+    stageScenes.appendChild(b);
+  }
+
+  // ---------- desktop app: version and updates ----------
+  const desktop = window.miiHubDesktop;
+  if (desktop) {
+    $("desktopPanel").hidden = false;
+    const statusEl = $("updateStatus");
+    const btn = $("checkUpdatesBtn");
+    const show = (st) => {
+      if (!st) return;
+      $("appVersion").textContent = "v" + st.version;
+      btn.disabled = st.state === "checking" || st.state === "downloading";
+      statusEl.textContent = {
+        idle: "Updates are checked automatically.",
+        dev: "Running from source code: updates are off.",
+        checking: "Checking for updates…",
+        latest: "You have the latest version. ✓",
+        available: "Version " + st.latest + " is available!",
+        downloading: "Downloading update… " + (st.percent || 0) + "%",
+        ready: "Update ready: it installs when you restart Mii Hub.",
+        error: "Couldn't check for updates right now.",
+      }[st.state] || "";
+    };
+    desktop.onUpdateStatus(show);
+    desktop.getStatus().then(show);
+    btn.addEventListener("click", () => desktop.checkForUpdates());
+  }
 
   window.hub = hub; // handy for poking around in the browser console
 })();

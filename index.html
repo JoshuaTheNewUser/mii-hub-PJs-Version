@@ -17,6 +17,10 @@
       <canvas id="hub" aria-label="Miis walking around the hub in 3D"></canvas>
       <div class="overlay" id="overlay"></div>
       <div class="drop-hint" id="dropHint">Drop your Mii .glb files here!</div>
+      <div class="stage-tools" id="stageTools">
+        <div class="stage-scenes" id="stageScenes" aria-label="Choose a place"></div>
+        <button class="stage-btn" id="fullscreenBtn" title="Full screen (F)" aria-label="Full screen">⛶</button>
+      </div>
       <p class="tip">Click a Mii for its menu · drag a Mii to pick it up · drag the background to spin the camera · scroll to zoom</p>
     </section>
 
@@ -52,6 +56,13 @@
       <div class="panel">
         <h2>What's happening</h2>
         <ul class="feed" id="feed"></ul>
+      </div>
+
+      <!-- only shown in the installed desktop app -->
+      <div class="panel" id="desktopPanel" hidden>
+        <h2>Mii Hub <span id="appVersion"></span></h2>
+        <p class="hint" id="updateStatus">Updates are checked automatically.</p>
+        <button class="btn" id="checkUpdatesBtn">Check for updates</button>
       </div>
     </aside>
   </main>

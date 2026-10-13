@@ -15,7 +15,11 @@ A 3D web app where your Miis walk around, chat and become friends, a bit like th
 
 The warnings appear because the app isn't signed with a paid developer certificate. They're normal for small hobby apps.
 
-Inside the app, **F11** switches full screen on and off.
+**Updates are automatic.** Once Mii Hub is installed, you never need this page again. A few seconds after it starts (and every few hours), it checks for a newer version and asks if you'd like to update:
+- **Windows and Linux:** click **Update now**. It downloads in the background, then offers to restart into the new version. If you pick **Later**, it updates the next time you close Mii Hub.
+- **Mac:** it tells you about the update and opens the download page. Apple only lets apps install their own updates if they're signed with a paid Apple developer certificate.
+
+Your Miis and friendships are kept when you update. You can also check yourself with **Check for updates** at the bottom of the side panel.
 
 ### Option 2: Open it in a web browser
 
@@ -47,6 +51,7 @@ The hub reads the Mii's name from the file. It also uses the height setting to m
 ## What you can do
 
 - **Switch places:** use the **🌳 Park**, **🏢 Office** and **🚀 Outer Space** buttons at the top.
+- **Full screen:** click **⛶** in the corner of the scene (or press **F**) to make the scene fill your screen. Small place buttons stay in the corner. Press **F** or **Esc**, or click **✕**, to go back. In the desktop app, **F11** makes the whole window full screen.
 - **Move the camera:** drag the background to spin all the way around, and scroll (or pinch) to zoom. In the office, the wall between you and the room hides itself, like a dollhouse.
 - **Click (or right-click) a Mii** to open its menu:
   - **Quick actions:** wave, dance, jump, nap, or say its catchphrase.
@@ -128,6 +133,8 @@ js/dialogue.js        what Miis say and the activities they do together
 js/hub3d.js           moves the Miis around, camera, clicking & dragging
 js/storage.js         saves Miis in the browser
 electron/main.js      runs Mii Hub as a desktop app (Electron)
+electron/updater.js   checks GitHub for new versions and installs them
+electron/preload.js   lets the page show the version and "Check for updates"
 build/icon.png        the app icon
 fonts/                the Nunito font (works offline)
 package.json          desktop app settings (version, installers)
