@@ -556,9 +556,12 @@
       const a = (i / 3) * TAU + 0.5;
       cylinder(bbq, 0x3a3f4a, Math.cos(a) * 0.3, 0.45, Math.sin(a) * 0.3, 0.04, 0.95, { rx: Math.sin(a) * 0.25, rz: -Math.cos(a) * 0.25 });
     }
-    put(bbq, new THREE.SphereGeometry(0.55, 24, 12, 0, TAU, PI / 2, PI / 2), toon(0x2f3542), { y: 1.05 });
+    // the bowl and the open lid are thin half-spheres, so draw both sides of them
+    // (otherwise you can see straight through from underneath)
+    const grillMat = toon(0x2f3542, { side: THREE.DoubleSide });
+    put(bbq, new THREE.SphereGeometry(0.55, 24, 12, 0, TAU, PI / 2, PI / 2), grillMat, { y: 1.05 });
     cylinder(bbq, 0x8f96a3, 0, 1.05, 0, 0.55, 0.02);
-    put(bbq, new THREE.SphereGeometry(0.55, 24, 12, 0, TAU, 0, PI / 2), toon(0x2f3542), { x: 0, y: 1.05, z: -0.55, rx: -1.3 });
+    put(bbq, new THREE.SphereGeometry(0.55, 24, 12, 0, TAU, 0, PI / 2), grillMat, { x: 0, y: 1.05, z: -0.55, rx: -1.3 });
     for (let k = 0; k < 3; k++) put(bbq, G.capsule(), toon(0xc0593a), { x: -0.25 + k * 0.25, y: 1.1, z: 0.05, sx: 0.09, sy: 0.25, sz: 0.09, rx: PI / 2 });
     put(bbq, G.capsule(), toon(0x8ad43a), { x: 0.15, y: 1.1, z: 0.3, sx: 0.08, sy: 0.12, sz: 0.08, rz: PI / 2 });
     const smoke = [];
