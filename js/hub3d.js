@@ -1,7 +1,8 @@
 /*
  * hub3d.js
  * The 3D hub: moves the Miis around, makes them talk and hang out,
- * and handles the camera, clicking and dragging.
+ * and handles the camera, clicking and dragging. It also runs home visits
+ * (the inside of one Mii's apartment) and hands out the Miis' coins.
  */
 (function () {
   "use strict";
@@ -12,40 +13,79 @@
 
   const rnd = (a, b) => a + Math.random() * (b - a);
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const smooth = (k) => k * k * (3 - 2 * k);
   const MII_HEIGHT = 1.8;
 
   // Turns smoothly from angle a towards angle b.
   function turnToward(a, b, amount) {
-    let d = ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
-    return a + d * Math.min(1, amount);
+    return a + angleDiff(a, b) * Math.min(1, amount);
+  }
+  // The shortest way to turn from angle a to angle b (-PI..PI).
+  function angleDiff(a, b) {
+    return ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+  }
+
+  // How a Mii moves, from its personality. Energetic Miis take big bouncy
+  // steps, shy ones look down and keep their arms in, grumpy ones stomp,
+  // silly ones waddle, chatty ones talk with their hands...
+  function animStyle(p) {
+    const e = p.energy / 100, s = p.social / 100, h = p.humor / 100, k = p.kindness / 100, c = p.chatty / 100;
+    let idle = "relaxed";
+    if (k <= 0.33) idle = "grumpy";
+    else if (s <= 0.33) idle = "shy";
+    else if (e >= 0.7) idle = "bouncy";
+    else if (h >= 0.68) idle = "silly";
+    else if (s >= 0.7 && k >= 0.4) idle = "proud";
+    return {
+      stride: 0.42 + e * 0.3,
+      armSwing: 0.45 + e * 0.55 + h * 0.25 - (1 - s) * 0.2,
+      armsOut: 0.03 + h * 0.08 + s * 0.04,
+      bounce: 0.01 + e * 0.05 + h * 0.03,
+      lean: (e - 0.5) * 0.12 + (k < 0.35 ? 0.05 : 0),
+      headDown: Math.max(0, (0.45 - s) * 0.35) + (k < 0.35 ? 0.06 : 0),
+      wobble: Math.max(0, h - 0.55) * 0.18,
+      stomp: Math.max(0, 0.55 - k) * 1.2 + e * 0.2,
+      gesture: c,
+      waveSize: 0.55 + s * 0.6 + e * 0.25,
+      tempo: 0.7 + e * 0.6,
+      dance: e >= 0.6 ? "jumpy" : h >= 0.6 ? "silly" : "sway",
+      idle,
+      fidget: e,
+    };
   }
 
   // ------------------------------------------------------------------
   // One Mii in the hub
   // ------------------------------------------------------------------
   class Walker {
-    constructor(hub, record, template, look) {
+    constructor(hub, record, template, look, group) {
       this.hub = hub;
       this.id = record.id;
       this.record = record;
       this.template = template;
       this.look = look; // { name, favoriteColorName, ...colours }
+      this.group = group || hub.miiGroup;
       this.x = 0; this.z = 0;
-      this.yaw = 0; this.targetYaw = 0;
+      this.yaw = 0; this.targetYaw = 0; this.moveYaw = null;
       this.lift = 0; this.liftVel = 0;
-      this.phase = 0; this.walkAmt = 0;
+      this.phase = 0; this.walkAmt = 0; this.curSpeed = 0;
       this.state = "idle";
       this.timer = rnd(0.5, 2);
       this.target = null;
       this.spot = null;
+      this.anchor = null;     // the seat/bed/treadmill the Mii is on (or getting on)
+      this.seatBlend = 0;     // 0 = standing, 1 = fully sitting/lying
       this.baseSpeed = rnd(1.5, 2.0);
       this.arms = "down";
       this.dance = false; this.laugh = false; this.sleep = false; this.nod = 0; this.shake = 0;
       this.cooldown = rnd(2, 6);
       this.talkIn = rnd(4, 12);
       this.partner = null;
+      this.remote = null;     // "shout" or "phone" when chatting from far away
       this.held = false;
       this.appear = 0;
+      this.vanish = 0;        // grows to 1 when the Mii leaves (goes home)
+      this.battery = 1;       // social energy: hanging out uses it up, alone time refills it
       this.bubble = null; // { text, time, dur }
       this.emote = null;  // { icon, time, dur }
 
@@ -66,21 +106,32 @@
     get personality() { return D.traits(this.record); }
     trait(k) { return this.personality[k]; }
 
+    // how this Mii moves (worked out again when you change its personality)
+    get style() {
+      const p = this.personality;
+      const key = p.energy + "," + p.social + "," + p.chatty + "," + p.humor + "," + p.kindness;
+      if (this._styleKey !== key) { this._styleKey = key; this._style = animStyle(p); }
+      return this._style;
+    }
+
     buildModel() {
       const old = this.inst;
       this.inst = M.createInstance(this.template, this.look);
       // true facts about this Mii's looks, so compliments are accurate
-      const src = this.template.source;
+      const src = this.template.source, info = this.template.info;
+      const recoloured = !!this.look.shirt;
       this.facts = {
-        top: M.colorName(this.look.shirt || src.shirt, "top"),
-        hair: M.colorName(this.look.hair || src.hair, "hair"),
-        beard: !!src.hasBeard && this.look.beard !== false,
-        tall: this.template.info.height >= 90,
+        top: recoloured || src.topReliable ? M.colorName(this.look.shirt || src.shirt, "top") : null,
+        garment: src.garment || null,
+        hair: src.hasHair ? M.colorName(this.look.hair || src.hair, "hair") : null,
+        tall: info.height >= 90,
+        short: info.height <= 30,
       };
       // taller Miis (by their Mii height setting) are a little bigger
-      const s = (0.9 + clamp(this.template.info.height, 0, 127) / 127 * 0.2) * 1.3;
+      const s = (0.9 + clamp(info.height, 0, 127) / 127 * 0.2) * 1.3;
       this.sizeScale = s;
       this.inst.holder.scale.setScalar(s);
+      this.inst.holder.rotation.order = "YXZ"; // turn first, then tip over (for lying in bed)
       // astronaut helmet for outer space (hidden elsewhere)
       const helmet = new THREE.Group();
       const glass = new THREE.Mesh(
@@ -98,9 +149,22 @@
       helmet.visible = !!(this.hub.world && this.hub.world.helmet);
       this.helmet = helmet;
       this.inst.holder.add(helmet);
-      this.hub.miiGroup.add(this.inst.holder);
+      // a little phone held up to the right side of the face, for phone calls
+      // (Mii arms are too short to reach their big heads, so it sits by the cheek)
+      const phone = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.2, 0.1), new THREE.MeshStandardMaterial({ color: 0x30343f, roughness: 0.4 }));
+      const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.085, 0.17), new THREE.MeshBasicMaterial({ color: 0x8fd3ff }));
+      screen.rotation.y = -Math.PI / 2;
+      screen.position.x = -0.016;
+      phone.add(body, screen);
+      phone.position.set(-0.4, 1.13, 0.02);
+      phone.rotation.set(0, 0, -0.25);
+      phone.visible = false;
+      this.inst.holder.add(phone);
+      this.phone = phone;
+      this.group.add(this.inst.holder);
       if (old) {
-        this.hub.miiGroup.remove(old.holder);
+        this.group.remove(old.holder);
         M.disposeObject(old.holder);
       }
     }
@@ -121,20 +185,29 @@
       this.uiEmote.classList.add("show");
     }
 
-    hop(power) {
-      if (this.lift <= this.hub.baseLift(this) + 0.05) this.liftVel = power || 4;
+    clearEmote() {
+      this.emote = null;
+      this.uiEmote.classList.remove("show");
     }
 
-    // Plans a route to (x, z) around obstacles and starts walking.
+    hop(power) {
+      if (this.seatBlend > 0.05) return; // can't jump while sitting down
+      // energetic Miis jump higher, calm ones barely leave the ground
+      const k = 0.75 + this.trait("energy") / 100 * 0.5;
+      if (this.lift <= this.hub.baseLift(this) + 0.05) this.liftVel = (power || 4) * k;
+    }
+
     // energetic Miis walk faster, calm ones stroll
     get speed() { return this.baseSpeed * (0.75 + this.trait("energy") / 100 * 0.6); }
 
+    // Plans a route to (x, z) around obstacles and starts walking.
     goTo(x, z) {
       const path = this.hub.nav.findPath(this.x, this.z, x, z, this.hub.standingMiis(this));
       if (!path) { this.state = "idle"; this.timer = rnd(0.5, 1.5); this.spot = null; return false; }
       this.path = path;
       this.target = path[path.length - 1];
       this.state = "walk";
+      this.anchor = null;
       this.resetStuck();
       return true;
     }
@@ -145,8 +218,11 @@
       this.bestDist = Infinity;
     }
 
+    // sitting, lying or standing on something (or still getting off it)
+    get anchored() { return this.seatBlend > 0.02; }
+
     remove() {
-      this.hub.miiGroup.remove(this.inst.holder);
+      this.group.remove(this.inst.holder);
       M.disposeObject(this.inst.holder);
       this.ui.remove();
     }
@@ -165,8 +241,16 @@
       this.chattiness = 1;
       this.friendships = {};
       this.feed = [];
+      this.recent = [];     // recent hang-outs, so doing the same thing over and over earns less
+      this.timers = [];
+      this.residents = [];  // who lives in which apartment (see setResidents)
+      this.visiting = null; // { record, walker } while you're inside a Mii's home
       this.onChange = () => {};
-      this.onSelect = null;
+      this.onSelect = null;       // right-click a Mii (opens its menu)
+      this.onCoins = null;        // a Mii earned coins
+      this.onHomeTalk = null;     // what a Mii says to you at home
+      this.onApartmentClick = null;
+      this.onLeftHome = null;
 
       this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
       this.renderer.outputEncoding = THREE.sRGBEncoding;
@@ -196,6 +280,9 @@
       this.bindPointer();
     }
 
+    // The Miis you can see right now (only the resident while visiting a home).
+    active() { return this.visiting ? [this.visiting.walker] : this.walkers; }
+
     // ---------- setup ----------
     resize() {
       const rect = this.canvas.parentElement.getBoundingClientRect();
@@ -215,36 +302,47 @@
       const vfov = (this.camera.fov * Math.PI) / 180;
       const hfov = 2 * Math.atan(Math.tan(vfov / 2) * this.camera.aspect);
       // the front of the area is closer than the middle, so we don't need the full width
-      const dist = clamp((halfW / Math.tan(hfov / 2)) * 0.8, 17, 30);
+      const near = this.world.isHome ? 12 : 17;
+      const dist = clamp((halfW / Math.tan(hfov / 2)) * 0.8, near, 30);
       const ty = this.world.cameraTargetY || 1;
       const dir = new THREE.Vector3(0, this.world.cameraTilt || 0.55, 1).normalize();
       this.camera.position.copy(dir.multiplyScalar(dist)).add(new THREE.Vector3(0, ty, 0));
       this.controls.target.set(0, ty, 0);
-      this.controls.maxDistance = Math.max(45, dist * 1.4);
+      this.controls.minDistance = this.world.isHome ? 6 : 8;
+      this.controls.maxDistance = Math.max(this.world.isHome ? 28 : 45, dist * 1.4);
       this.controls.update();
     }
 
+    // Shows a place (already built) and lets Miis find their way around it.
+    useWorld(world) {
+      this.world = world;
+      this.nav = new window.MiiNav.Nav(world.bounds, world.obstacles);
+      this.scene.add(world.group);
+      this.scene.background = new THREE.Color(world.background);
+      this.scene.fog = world.fog ? new THREE.Fog(...world.fog) : null;
+      if (world.setResidents) world.setResidents(this.residents);
+      this.fitCamera();
+    }
+
     setScene(id) {
+      if (this.visiting) this.leaveHome();
       if (this.world && this.world.id === id) return;
       if (this.world) {
         this.scene.remove(this.world.group);
         window.World3D.dispose(this.world);
       }
-      this.world = window.World3D.build(id);
-      this.nav = new window.MiiNav.Nav(this.world.bounds, this.world.obstacles);
-      this.scene.add(this.world.group);
-      this.scene.background = new THREE.Color(this.world.background);
-      this.scene.fog = this.world.fog ? new THREE.Fog(...this.world.fog) : null;
-      this.fitCamera();
+      this.useWorld(window.World3D.build(id));
 
       for (const w of this.walkers) {
+        if (w.leaving) { this.finishLeaving(w); continue; }
         this.endInteraction(w);
         const p = this.randomFloorPoint();
         w.x = p.x; w.z = p.z;
-        w.state = "idle"; w.timer = rnd(0.3, 1.5); w.spot = null; w.target = null; w.path = null; w.seat = null;
+        w.state = "idle"; w.timer = rnd(0.3, 1.5); w.spot = null; w.target = null; w.path = null;
+        w.anchor = null; w.lastAnchor = null; w.seatBlend = 0;
         // clear what they were saying in the old place
         w.bubble = null; w.uiBubble.classList.remove("show");
-        w.emote = null; w.uiEmote.classList.remove("show");
+        w.clearEmote();
         w.lift = this.baseLift(w); w.liftVel = 0;
         w.appear = 0;
         w.helmet.visible = this.world.helmet;
@@ -252,12 +350,22 @@
       if (this.walkers.length) {
         this.addFeed("Everyone went to the " + this.world.name + "! " + this.world.icon);
         const first = this.walkers[Math.floor(Math.random() * this.walkers.length)];
-        first.say(D.pick({
+        const lines = {
           park: ["Let's go to the park!", "Fresh air!"],
           office: ["Back to work...", "Good morning, office!"],
           space: ["We're in SPACE!", "Blast off!"],
-        }[id]), 2.5);
+          apartments: ["Home sweet home!", "Hi, neighbours!"],
+        }[id];
+        if (lines) first.say(D.pick(lines), 2.5);
       }
+      this.onChange();
+    }
+
+    // Who lives in which apartment: [{ id, name, home }]. Shown in the Apartments place.
+    setResidents(list) {
+      this.residents = list;
+      const w = this.visiting ? this.mainWorld : this.world;
+      if (w && w.setResidents) w.setResidents(list);
     }
 
     // The direction a Mii at w should face to look at the camera.
@@ -275,48 +383,246 @@
     randomFloorPoint() {
       for (let i = 0; i < 20; i++) {
         const p = this.nav.randomFree();
-        if (!this.walkers.some((o) => Math.hypot(o.x - p.x, o.z - p.z) < 1.5)) return p;
+        if (!this.active().some((o) => Math.hypot(o.x - p.x, o.z - p.z) < 1.5)) return p;
       }
       return this.nav.randomFree();
     }
 
+    // Runs fn after a delay (in hub time), unless the Mii has gone.
+    later(w, delay, fn) {
+      this.timers.push({ at: this.time + delay, w, fn });
+    }
+
     // ---------- adding / removing Miis ----------
-    addWalker(record, template, look, silent) {
+    // opts.at = { x, z } to appear somewhere in particular (like a front door)
+    addWalker(record, template, look, silent, opts) {
       const w = new Walker(this, record, template, look);
       // pop in at an open spot, then wander off
-      const p = this.randomFloorPoint();
+      const at = opts && opts.at;
+      const p = at ? this.nav.nearestFree(at.x, at.z) : this.randomFloorPoint();
       w.x = p.x; w.z = p.z;
       w.yaw = w.targetYaw = this.viewYaw(w);
-      w.lift = this.baseLift(w) + 1.2;
+      w.lift = this.baseLift(w) + (at ? 0 : 1.2);
       w.timer = rnd(1, 2.5);
+      w.helmet.visible = !!this.world.helmet;
       this.walkers.push(w);
+      if (this.visiting) w.ui.style.display = "none";
       if (!silent) {
-        setTimeout(() => w.say(D.pick(["Hi everyone!", "Hello! I'm {A}!", "I'm here!", "What's this place?"]), 2.5), 900);
-        this.addFeed(look.name + " arrived! 👋");
+        const lines = opts && opts.lines ? opts.lines : ["Hi everyone!", "Hello! I'm {A}!", "I'm here!", "What's this place?"];
+        this.later(w, 0.9, () => w.say(D.pick(lines), 2.5));
+        this.addFeed(opts && opts.feed ? opts.feed : look.name + " arrived! 👋");
       }
       this.onChange();
       return w;
     }
 
-    removeWalker(id) {
+    // Takes a Mii out of the hub. Its friendships are kept unless forget is true.
+    removeWalker(id, forget) {
       const w = this.walkers.find((x) => x.id === id);
-      if (!w) return;
-      this.endInteraction(w);
-      w.remove();
-      this.walkers = this.walkers.filter((x) => x !== w);
-      for (const key of Object.keys(this.friendships)) {
-        if (key.split("|").includes(id)) delete this.friendships[key];
+      if (w) {
+        this.endInteraction(w);
+        if (this.dragging === w) this.dragging = null;
+        if (this.hover === w) this.hover = null;
+        w.remove();
+        this.walkers = this.walkers.filter((x) => x !== w);
       }
-      this.addFeed(w.look.name + " went home. 🏠");
+      if (forget) {
+        for (const key of Object.keys(this.friendships)) {
+          if (key.split("|").includes(id)) delete this.friendships[key];
+        }
+      }
       this.onChange();
     }
 
     clearAll() {
+      if (this.visiting) this.leaveHome();
       for (const w of this.walkers) w.remove();
       this.walkers = [];
       this.friendships = {};
       this.feed = [];
       this.onChange();
+    }
+
+    // The Mii says goodbye and walks to its front door (in the Apartments) or
+    // just heads off, then disappears. Nothing is forgotten.
+    sendHome(id, done) {
+      const w = this.walkers.find((x) => x.id === id);
+      if (!w) { if (done) done(); return; }
+      this.endInteraction(w);
+      if (this.dragging === w) { this.dragging = null; w.held = false; }
+      w.spot = null; w.anchor = null; w.dance = false; w.sleep = false; w.arms = "down";
+      w.leaving = true;
+      w.onLeft = done;
+      w.say(D.pick(["Time to go home!", "See you later!", "Home sweet home, here I come!", "Bye for now!"]), 2.2);
+      w.showEmote("🏠", 4);
+      const door = this.world.doorFor && this.world.doorFor(id);
+      w.leaveAfter = this.time + (door ? 0 : 1.8);
+      w.leaveBy = this.time + 14;
+      if (door) w.goTo(door.x, door.z);
+      else { w.state = "idle"; w.timer = 99; w.targetYaw = this.viewYaw(w); w.arms = "wave"; }
+    }
+
+    finishLeaving(w) {
+      const done = w.onLeft;
+      w.onLeft = null;
+      this.removeWalker(w.id, false);
+      this.addFeed(w.look.name + " went home. 🏠");
+      if (done) done();
+    }
+
+    // A Mii moves away for good. Everyone reacts depending on how close they were.
+    moveAway(id, name) {
+      const gone = this.walkers.find((x) => x.id === id);
+      const pts = (o) => this.friendships[id < o.id ? id + "|" + o.id : o.id + "|" + id] || 0;
+      let heartbroken = [];
+      for (const o of this.walkers) {
+        if (o === gone || o.leaving || o.state === "playing") continue;
+        const p = pts(o);
+        const react = () => {
+          if (!this.walkers.includes(o)) return;
+          this.endInteraction(o);
+          if (o.state === "walk" || o.state === "approach") { o.state = "idle"; o.path = null; }
+          o.timer = Math.max(o.timer, 3);
+          if (!o.anchored) o.targetYaw = gone ? Math.atan2(gone.x - o.x, gone.z - o.z) : this.viewYaw(o);
+          const sweet = o.trait("kindness") >= 60, grumpy = o.trait("kindness") <= 35;
+          if (p >= 16) {
+            o.say(D.pick(["Noooo! " + name + ", don't go!", "I'll never forget you, " + name + "!", name + "... my best friend... 😭"]), 3.5);
+            o.showEmote("😭", 4); o.nod = 0.35; this.later(o, 3.5, () => { o.nod = 0; });
+          } else if (p >= 9) {
+            o.say(D.pick(["I'm going to miss " + name + " so much...", "It won't be the same without " + name + "."]), 3);
+            o.showEmote("😢", 3.5); o.nod = 0.25; this.later(o, 3, () => { o.nod = 0; });
+          } else if (p >= 4) {
+            o.say(D.pick(["Aww, " + name + " is moving away?", "Bye, " + name + "! Write to me!"]), 2.6);
+            o.showEmote("😟", 3);
+          } else if (p >= 1) {
+            o.say(grumpy ? "Oh. Bye, I guess." : D.pick(["Bye, " + name + "! Good luck!", "Oh, see you, " + name + "!"]), 2.4);
+            o.showEmote("👋", 2.5);
+          } else if (Math.random() < 0.6) {
+            o.say(sweet ? "I wish I'd got to know " + name + "..." : D.pick(["Who's " + name + "?", "Huh? Who?"]), 2.4);
+            o.showEmote(sweet ? "😔" : "🤷", 2.5);
+          }
+        };
+        this.later(o, rnd(0.4, 2.4), react);
+        if (p >= 16) heartbroken.push(o.look.name);
+      }
+      if (gone) {
+        this.endInteraction(gone);
+        gone.spot = null; gone.anchor = null; gone.state = "idle"; gone.timer = 99; gone.path = null;
+        gone.targetYaw = this.viewYaw(gone);
+        gone.arms = "wave";
+        gone.say(D.pick(["Goodbye, everyone!", "I'll miss you all!", "Bye! Thanks for everything!"]), 2.6);
+        gone.showEmote("📦", 4);
+        gone.leaving = true;
+        gone.leaveAfter = this.time + 2.6;
+        gone.leaveBy = this.time + 2.6;
+        gone.onLeft = null;
+      }
+      for (const key of Object.keys(this.friendships)) {
+        if (key.split("|").includes(id)) delete this.friendships[key];
+      }
+      this.addFeed(name + " moved away. 📦");
+      for (const n of heartbroken) this.addFeed(n + " is heartbroken. 💔");
+      this.onChange();
+    }
+
+    // ---------- visiting a Mii at home ----------
+    visitHome(record, template, look) {
+      if (this.visiting) this.leaveHome();
+      if (this.dragging) { this.dragging.held = false; this.dragging = null; }
+      this.hover = null;
+      this.mainWorld = this.world;
+      this.mainNav = this.nav;
+      this.mainCamera = { pos: this.camera.position.clone(), target: this.controls.target.clone() };
+      this.scene.remove(this.world.group);
+      this.miiGroup.visible = false;
+      for (const w of this.walkers) w.ui.style.display = "none";
+      this.useWorld(window.World3D.build("home", { record }));
+      this.homeGroup = new THREE.Group();
+      this.scene.add(this.homeGroup);
+      const v = new Walker(this, record, template, look, this.homeGroup);
+      const start = this.world.playerSpot ? this.nav.nearestFree(this.world.playerSpot.x, this.world.playerSpot.z) : this.nav.randomFree();
+      v.x = start.x; v.z = start.z;
+      v.yaw = v.targetYaw = this.viewYaw(v);
+      v.timer = rnd(3, 5);
+      this.visiting = { record, walker: v };
+      this.later(v, 0.7, () => {
+        v.arms = "wave";
+        v.say(this.onHomeTalk ? this.onHomeTalk(v, "hello") : "Welcome to my home!", 3);
+        v.hop(3);
+        this.later(v, 1.8, () => { if (v.arms === "wave") v.arms = "down"; });
+      });
+      this.onChange();
+    }
+
+    leaveHome() {
+      if (!this.visiting) return;
+      const v = this.visiting.walker;
+      v.remove();
+      this.scene.remove(this.homeGroup);
+      this.scene.remove(this.world.group);
+      window.World3D.dispose(this.world);
+      this.visiting = null;
+      this.useWorld(this.mainWorld);
+      this.nav = this.mainNav;
+      this.mainWorld = null;
+      if (this.mainCamera) {
+        this.camera.position.copy(this.mainCamera.pos);
+        this.controls.target.copy(this.mainCamera.target);
+        this.controls.update();
+      }
+      this.miiGroup.visible = true;
+      for (const w of this.walkers) w.ui.style.display = "";
+      if (this.onLeftHome) this.onLeftHome();
+      this.onChange();
+    }
+
+    // Rebuilds the room after you change the furniture.
+    refreshHome() {
+      if (!this.visiting) return;
+      const v = this.visiting.walker;
+      const cam = { pos: this.camera.position.clone(), target: this.controls.target.clone() };
+      this.scene.remove(this.world.group);
+      window.World3D.dispose(this.world);
+      this.useWorld(window.World3D.build("home", { record: this.visiting.record }));
+      this.camera.position.copy(cam.pos);
+      this.controls.target.copy(cam.target);
+      this.controls.update();
+      v.spot = null; v.anchor = null; v.lastAnchor = null; v.seatBlend = 0; v.path = null;
+      const p = this.nav.nearestFree(v.x, v.z);
+      v.x = p.x; v.z = p.z;
+      v.state = "idle"; v.timer = 3;
+    }
+
+    // You gave the Mii something new for its home: it reacts, then goes to try it.
+    homeReact(text, emote, itemId) {
+      if (!this.visiting) return;
+      const v = this.visiting.walker;
+      v.state = "idle"; v.timer = 3; v.path = null;
+      v.targetYaw = this.viewYaw(v);
+      v.say(text, 3);
+      if (emote) v.showEmote(emote, 3);
+      if (emote === "😍" || emote === "🤩") v.hop(4);
+      const spot = itemId && (this.world.spots || []).find((s) => s.itemId === itemId);
+      if (spot) this.later(v, 2.6, () => { if (v.state === "idle") { v.spot = spot; v.goTo(spot.x, spot.z); } });
+    }
+
+    // You gave the Mii some food: it eats it, then says what it thinks.
+    giveFood(food, text, emote) {
+      if (!this.visiting) return;
+      const v = this.visiting.walker;
+      v.spot = null; v.anchor = null; v.path = null;
+      v.state = "perform"; v.performKind = "eat"; v.timer = 2.8;
+      v.targetYaw = this.viewYaw(v);
+      v.arms = "eat";
+      v.showEmote(food.icon, 2.8);
+      v.say(D.pick(["Ooh, " + food.name.toLowerCase() + "!", "For me?", "*munch munch*"]), 1.6);
+      this.later(v, 2.8, () => {
+        v.arms = "down";
+        v.say(text, 3);
+        v.showEmote(emote, 2.5);
+        if (emote === "😍") v.hop(4.5);
+        if (emote === "🤢") { v.shake = 1; this.later(v, 1.2, () => { v.shake = 0; }); }
+      });
     }
 
     // ---------- friendships ----------
@@ -339,29 +645,83 @@
       this.onChange();
     }
 
+    // ---------- coins ----------
+    // Miis earn coins from MEANINGFUL time together, not just lots of it:
+    //  - doing something outside their comfort zone is worth the most
+    //    (a shy Mii walking up to a stranger, a grumpy Mii giving a compliment,
+    //    a serious Mii telling a joke, a calm Mii dancing...)
+    //  - doing the same thing with the same Mii again and again is worth less
+    //  - hanging out uses up "social energy", which comes back with time alone,
+    //    so cranking up "How chatty?" doesn't make coins pour in
+    coinValue(m, other, type, role, pointsBefore, remote) {
+      const p = m.personality;
+      const below = (v, at) => Math.max(0, (at - v) / 25); // 0 .. 2
+      const base = { chat: 1, joke: 1.5, compliment: 1.5, dance: 1.5, highFive: 1, rockPaperScissors: 1, disagree: 1.5, sleepy: 1, spaceBounce: 1 }[type] || 1;
+      let stretch = 0;
+      if (role === "A") stretch += below(p.social, 50) * 1.2;              // a shy Mii started it
+      if (pointsBefore === 0) stretch += below(p.social, 55) * 0.8;        // ...with a stranger!
+      if (type === "joke" && role === "A") stretch += below(p.humor, 50);  // a serious Mii telling a joke
+      if (type === "compliment" && role === "A") stretch += below(p.kindness, 55) * 1.3; // a grump being nice
+      if (type === "dance" || type === "highFive" || type === "spaceBounce") stretch += below(p.energy, 50) * 0.9;
+      if (type === "chat" || remote) stretch += below(p.chatty, 50) * 0.6; // a quiet Mii chatting
+      if (type === "disagree") stretch += 0.5 + (p.kindness <= 40 ? 0.5 : 0); // making up after an argument
+      if (remote === "shout") stretch += below(p.energy, 55) * 0.5;
+      if (remote === "phone") stretch += below(p.social, 45) * 0.3;
+      // how often have they done this lately?
+      const now = this.time;
+      this.recent = this.recent.filter((r) => now - r.t < 300);
+      const pair = this.pairKey(m, other);
+      const samePair = this.recent.filter((r) => r.pair === pair).length;
+      const sameType = this.recent.filter((r) => r.type === type && (r.a === m.id || r.b === m.id)).length;
+      const novelty = 1 / (1 + samePair * 0.6 + sameType * 0.25);
+      const energy = 0.2 + 0.8 * clamp(m.battery, 0, 1);
+      const value = (base + stretch * 1.6) * novelty * energy * 1.3;
+      return Math.floor(value) + (Math.random() < value % 1 ? 1 : 0);
+    }
+
+    awardCoins(w, n, why) {
+      if (n <= 0) return;
+      w.record.coins = (w.record.coins || 0) + n;
+      // a little "+2 🪙" floats up from the Mii
+      const pos = new THREE.Vector3(w.x, w.lift + MII_HEIGHT * w.sizeScale * 0.9, w.z).project(this.camera);
+      if (pos.z < 1) {
+        const el = document.createElement("div");
+        el.className = "coin-pop" + (n >= 3 ? " big" : "");
+        el.textContent = "+" + n + " 🪙";
+        el.style.left = (pos.x * 0.5 + 0.5) * this.W + "px";
+        el.style.top = (-pos.y * 0.5 + 0.5) * this.H + "px";
+        this.overlay.appendChild(el);
+        setTimeout(() => el.remove(), 1800);
+      }
+      if (this.onCoins) this.onCoins(w, n, why);
+    }
+
     // ---------- the "director" decides who should hang out ----------
     runDirector(dt) {
+      if (this.visiting) return;
       this.directorIn -= dt * this.chattiness;
       if (this.directorIn > 0) return;
       this.directorIn = rnd(2.5, 6);
-      const free = this.walkers.filter((w) => !this.isBusy(w) && w.cooldown <= 0 && w.appear >= 1);
+      const free = this.walkers.filter((w) => !this.isBusy(w) && w.cooldown <= 0 && w.appear >= 1 && !w.anchored);
       if (free.length < 2) return;
-      // outgoing Miis are more likely to start a conversation
-      const A = D.pick(free.flatMap((w) => Array(1 + Math.round(w.trait("social") / 20)).fill(w)));
+      // outgoing Miis are more likely to start a conversation; tired ones less
+      const A = D.weighted(free.map((w) => [w, (1 + w.trait("social") / 20) * (0.25 + w.battery)]));
       const others = free.filter((w) => w !== A);
       others.sort((p, q) => Math.hypot(p.x - A.x, p.z - A.z) - Math.hypot(q.x - A.x, q.z - A.z));
       const B = Math.random() < 0.6 ? others[0] : others[Math.floor(Math.random() * others.length)];
-      this.startInteraction(A, B);
+      // far apart? Sometimes they don't bother walking over: they shout or phone instead
+      if (Math.hypot(A.x - B.x, A.z - B.z) > 12 && Math.random() < 0.3) this.startRemote(A, B);
+      else this.startInteraction(A, B);
     }
 
     isBusy(w) {
-      return w.held || w.state === "interact" || w.state === "approach" || w.state === "waiting" || w.state === "perform" || w.state === "playing";
+      return w.held || w.leaving || w.state === "interact" || w.state === "approach" || w.state === "waiting" || w.state === "perform" || w.state === "playing";
     }
 
     // You started a mini-game with this Mii: it stops and faces you while you play.
     startGame(w, icon) {
       this.endInteraction(w);
-      w.spot = null; w.seat = null; w.path = null;
+      w.spot = null; w.anchor = null; w.path = null;
       w.dance = false; w.sleep = false; w.arms = "down";
       w.state = "playing";
       w.targetYaw = this.viewYaw(w);
@@ -371,7 +731,7 @@
     // The game is over (result: "mii" = the Mii won, "you", "draw", or null if you quit).
     endGame(w, result) {
       if (w.state !== "playing" && result === null) return;
-      w.emote = null; w.uiEmote.classList.remove("show");
+      w.clearEmote();
       w.state = "perform";
       w.performKind = "react";
       w.timer = 2.5;
@@ -379,13 +739,15 @@
       else if (result === "you") { w.nod = 0.35; w.showEmote("😅", 2.5); }
       else if (result === "draw") { w.showEmote("🤝", 2.5); }
       else { w.timer = 0.5; }
+      // playing with you is time well spent
+      if (result) this.later(w, 1.2, () => this.awardCoins(w, 3, "game"));
     }
 
     // Makes a Mii do something on its own (from its menu): dance, nap, wave, catchphrase...
     perform(w, kind) {
       this.endInteraction(w);
-      w.spot = null; w.seat = null; w.path = null;
-      w.emote = null; w.uiEmote.classList.remove("show");
+      w.spot = null; w.anchor = null; w.path = null;
+      w.clearEmote();
       w.state = "perform";
       w.performKind = kind;
       w.targetYaw = this.viewYaw(w);
@@ -393,7 +755,7 @@
       if (kind === "dance") { w.showEmote("🎵", 5); w.say(D.pick(["Let's dance!", "Watch my moves!", "Dance time!"]), 2); }
       if (kind === "nap") { w.showEmote("💤", 6); w.say("Zzz...", 3); }
       if (kind === "wave") { w.arms = "wave"; w.say(D.pick(D.CLICK_LINES), 1.8); }
-      if (kind === "jump") { w.hop(this.world.floaty ? 3 : 6.5); w.say(D.pick(["Hup!", "Boing!", "Wheee!"]), 1.4); }
+      if (kind === "jump") { this.later(w, w.anchored ? 0.5 : 0, () => w.hop(this.world.floaty ? 3 : 6.5)); w.say(D.pick(["Hup!", "Boing!", "Wheee!"]), 1.4); }
       if (kind === "catchphrase") {
         const cp = (w.personality.catchphrase || "").trim();
         w.arms = "cheer";
@@ -405,16 +767,40 @@
       const plan = D.buildInteraction(A, B, this.world, this.points(A, B));
       A.partner = B; B.partner = A;
       A.plan = plan; A.role = "A"; B.role = "B";
-      A.state = "approach"; A.spot = null; A.stuck = 0;
-      B.state = "waiting"; B.spot = null; B.target = null;
+      A.state = "approach"; A.spot = null; A.anchor = null; A.path = null; A.approachTries = 0; A.approachTime = 0;
+      B.state = "waiting"; B.spot = null; B.anchor = null; B.target = null; B.path = null;
       B.showEmote("❗", 1.2);
+    }
+
+    // Shout or phone? Loud, outgoing pairs shout; quieter ones phone. Both do the same.
+    remoteMode(A, B) {
+      const a = A.personality, b = B.personality;
+      const loud = (a.energy + a.social + b.energy + b.social) / 4 + (a.chatty + b.chatty) / 8 - 12;
+      return loud + rnd(-8, 8) >= 50 ? "shout" : "phone";
+    }
+
+    // Two Miis far apart talk without walking over: by shouting or on the phone.
+    startRemote(A, B, mode) {
+      mode = mode || this.remoteMode(A, B);
+      const plan = D.buildInteraction(A, B, this.world, this.points(A, B), { remote: mode });
+      A.partner = B; B.partner = A;
+      A.plan = plan; A.role = "A"; B.role = "B";
+      for (const m of [A, B]) {
+        m.remote = mode;
+        m.state = "interact"; m.path = null; m.spot = null; m.anchor = null;
+        m.arms = mode === "phone" ? "phone" : "down";
+        if (mode === "phone") m.showEmote("📱", 99);
+      }
+      A.step = -1;
+      A.stepTimer = mode === "phone" ? 0.8 : 0.2;
     }
 
     endInteraction(w) {
       const p = w.partner;
       for (const m of [w, p]) {
         if (!m) continue;
-        m.partner = null; m.plan = null; m.role = null;
+        if (m.remote === "phone" && m.emote && m.emote.icon === "📱") m.clearEmote();
+        m.partner = null; m.plan = null; m.role = null; m.remote = null;
         m.dance = false; m.laugh = false; m.sleep = false; m.nod = 0; m.shake = 0;
         m.arms = "down";
         if (m.state === "interact" || m.state === "approach" || m.state === "waiting") {
@@ -428,11 +814,16 @@
     finishInteraction(A) {
       const B = A.partner;
       if (!B) return;
+      const type = A.plan.type;
+      const remote = A.remote;
       const key = this.pairKey(A, B);
       const before = this.friendships[key] || 0;
-      const after = before + (D.FRIENDSHIP_GAIN[A.plan.type] || 1);
+      const after = before + (D.FRIENDSHIP_GAIN[type] || 1);
       this.friendships[key] = after;
-      this.addFeed(D.FEED_TEXT[A.plan.type].replace("{A}", A.look.name).replace("{B}", B.look.name));
+      let feed = D.FEED_TEXT[type].replace("{A}", A.look.name).replace("{B}", B.look.name);
+      if (remote === "phone") feed = feed.replace(/\.$/, "") + " on the phone. 📱";
+      if (remote === "shout") feed = feed.replace(/\.$/, "") + " from across the " + (this.world.id === "office" ? "office" : "way") + "! 📣";
+      this.addFeed(feed);
       const oldLevel = D.levelFor(before), newLevel = D.levelFor(after);
       if (newLevel !== oldLevel) {
         this.addFeed(A.look.name + " and " + B.look.name + " are now " + newLevel.name + "! " + newLevel.emoji);
@@ -440,12 +831,21 @@
         B.showEmote(newLevel.emoji, 2.5);
         this.spawnHearts(A, B);
       }
+      // coins for a meaningful hang-out, then they need a little recharge
+      for (const [m, o, role] of [[A, B, "A"], [B, A, "B"]]) {
+        const n = this.coinValue(m, o, type, role, before, remote);
+        if (n > 0) this.later(m, role === "A" ? 0.3 : 0.6, () => this.awardCoins(m, n, type));
+        m.battery = clamp(m.battery - (0.22 + (1 - m.trait("social") / 100) * 0.2) * (remote ? 0.6 : 1), 0, 1);
+      }
+      this.recent.push({ pair: key, type, a: A.id, b: B.id, t: this.time });
       this.endInteraction(A);
-      // walk apart a little so they don't get stuck together
-      for (const m of [A, B]) {
-        const dir = m.x < (A.x + B.x) / 2 ? -1 : 1;
-        const b = this.world.bounds;
-        m.goTo(clamp(m.x + dir * rnd(2, 5), b.minX + 1, b.maxX - 1), clamp(m.z + rnd(-2, 2), b.minZ + 1, b.maxZ - 1));
+      if (!remote) {
+        // walk apart a little so they don't get stuck together
+        for (const m of [A, B]) {
+          const dir = m.x < (A.x + B.x) / 2 ? -1 : 1;
+          const b = this.world.bounds;
+          m.goTo(clamp(m.x + dir * rnd(2, 5), b.minX + 1, b.maxX - 1), clamp(m.z + rnd(-2, 2), b.minZ + 1, b.maxZ - 1));
+        }
       }
       this.onChange();
     }
@@ -473,13 +873,23 @@
       this.runDirector(dt);
       const floaty = this.world.floaty;
       const gravity = floaty ? 3 : 22;
+      const list = this.active();
 
-      for (const w of this.walkers) {
+      // things that were scheduled to happen now
+      if (this.timers.length) {
+        const due = this.timers.filter((t) => t.at <= this.time);
+        this.timers = this.timers.filter((t) => t.at > this.time);
+        for (const t of due) if (!t.w || this.walkers.includes(t.w) || (this.visiting && this.visiting.walker === t.w)) t.fn();
+      }
+
+      for (const w of list) {
         w.appear = Math.min(1, w.appear + dt * 2.5);
         w.cooldown -= dt;
+        // alone time recharges social energy (faster for outgoing Miis)
+        if (!w.partner) w.battery = Math.min(1, w.battery + dt * 0.008 * (0.6 + w.trait("social") / 100));
 
         if (w.bubble) { w.bubble.time += dt; if (w.bubble.time > w.bubble.dur) { w.bubble = null; w.uiBubble.classList.remove("show"); } }
-        if (w.emote) { w.emote.time += dt; if (w.emote.time > w.emote.dur) { w.emote = null; w.uiEmote.classList.remove("show"); } }
+        if (w.emote) { w.emote.time += dt; if (w.emote.time > w.emote.dur) w.clearEmote(); }
 
         // jumping / floating
         if (!w.held) {
@@ -503,55 +913,97 @@
           if (w.talkIn <= 0 && !w.bubble) {
             const bf = this.bestFriendOf(w);
             if (w.spot && w.state === "activity" && Math.random() < 0.6) w.say(D.pick(w.spot.lines));
+            else if (w.battery < 0.25 && Math.random() < 0.5) w.say(D.pick(["I need a little alone time...", "Phew, so much socialising!", "*recharging*"]));
             else w.say(D.soloLine(w, this.world, bf && bf.look.name));
             w.talkIn = rnd(9, 20) * (1.5 - w.trait("chatty") / 100); // chatty Miis talk more
+          }
+        }
+
+        // going home: once at the door (or out of time), fade away
+        if (w.leaving) {
+          const there = this.time > w.leaveAfter && (w.state !== "walk" || this.time > w.leaveBy);
+          if (there) {
+            w.vanish = Math.min(1, w.vanish + dt * 2.2);
+            if (w.vanish >= 1) { this.finishLeaving(w); continue; }
           }
         }
 
         if (!w.held) this.updateState(w, dt);
       }
 
-      // keep Miis from walking through each other
-      for (let i = 0; i < this.walkers.length; i++) {
-        for (let j = i + 1; j < this.walkers.length; j++) {
-          const a = this.walkers[i], b = this.walkers[j];
-          if (a.held || b.held || a.partner === b) continue;
+      this.separate(this.active(), dt);
+      for (const w of this.active()) this.applyPose(w, dt);
+    }
+
+    // Keeps Miis from walking through each other.
+    separate(list, dt) {
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const a = list[i], b = list[j];
+          if (a.held || b.held || a.partner === b || a.anchored || b.anchored) continue;
           const dx = b.x - a.x, dz = b.z - a.z;
           const d = Math.hypot(dx, dz);
-          const min = 1.2;
+          const walkingA = a.state === "walk" || a.state === "approach";
+          const walkingB = b.state === "walk" || b.state === "approach";
+          // walking past someone who's standing still needs a little less room
+          // (routes already go around them, see standingMiis)
+          const min = walkingA && walkingB ? 1.2 : 1.05;
           if (d > 0.001 && d < min) {
             const push = (min - d) / d * 0.5;
-            // Two Miis walking into each other: step to the side (like people
-            // passing in a hallway) instead of pushing head-on forever.
-            const walkingA = a.state === "walk" || a.state === "approach";
-            const walkingB = b.state === "walk" || b.state === "approach";
             const nudge = (m, sx, sz) => {
               if (m.state === "activity" || m.state === "interact") return;
-              // never push a Mii into a tree, a desk or the water
-              if (!this.nav.isBlocked(m.x + sx, m.z + sz)) { m.x += sx; m.z += sz; }
+              this.tryMove(m, sx, sz);
             };
             if (walkingA && walkingB) {
+              // Two Miis walking into each other: both step to their own right
+              // (like people passing in a hallway), and the calmer one waits a moment.
               const side = 0.6 * push;
               nudge(a, dz * side, -dx * side);
               nudge(b, -dz * side, dx * side);
+              const headOn = a.moveYaw !== null && b.moveYaw !== null && Math.abs(angleDiff(a.moveYaw, b.moveYaw)) > 2.2;
+              if (headOn && !a.yieldTime && !b.yieldTime) {
+                const waiter = a.trait("energy") <= b.trait("energy") ? a : b;
+                waiter.yieldTime = 0.45;
+              }
             }
             nudge(a, -dx * push, -dz * push);
             nudge(b, dx * push, dz * push);
+            // walking into someone who's standing still: curve around them
+            // instead of pushing against them forever
+            if (walkingA !== walkingB) {
+              const m = walkingA ? a : b, o = walkingA ? b : a;
+              if (m.moveYaw !== null) {
+                const rx = (o.x - m.x) / d, rz = (o.z - m.z) / d;
+                const hx = Math.sin(m.moveYaw), hz = Math.cos(m.moveYaw);
+                const into = hx * rx + hz * rz;
+                if (into > 0.1) {
+                  let tx = hx - rx * into, tz = hz - rz * into;
+                  const tl = Math.hypot(tx, tz);
+                  if (tl < 0.05) { tx = -rz; tz = rx; } else { tx /= tl; tz /= tl; }
+                  const k = m.speed * dt * into * 0.8;
+                  this.tryMove(m, tx * k, tz * k);
+                }
+              }
+            }
           }
         }
       }
-
-      for (const w of this.walkers) this.applyPose(w, dt);
     }
 
     updateState(w, dt) {
+      // getting up off a seat/bed first (only takes a moment)
+      if (w.anchored && !(w.state === "activity" && w.anchor)) {
+        if (w.state === "walk" || w.state === "approach") return;
+      }
       switch (w.state) {
         case "idle": {
           w.timer -= dt;
+          if (w.leaving) break;
           if (w.timer > 0) {
             if (Math.random() < dt * 0.25) w.targetYaw = this.viewYaw(w) + rnd(-0.8, 0.8); // look around, mostly towards the camera
             break;
           }
+          if (this.visiting) { this.homeIdle(w); break; }
           const roll = Math.random();
           if (roll < 0.3 && this.world.spots.length) {
             const spot = D.pick(this.world.spots);
@@ -576,17 +1028,30 @@
           if (result === "lost") {
             // couldn't get there: give up and try something else
             w.spot = null;
+            w.toPlayer = false;
             w.state = "idle";
             w.timer = rnd(0.5, 1.5);
           } else if (result === "arrived") {
-            if (w.spot) {
+            if (w.leaving) { w.state = "idle"; w.timer = 99; break; }
+            if (w.toPlayer) {
+              // came over to say something to you
+              w.toPlayer = false;
+              w.state = "idle";
+              w.timer = rnd(3, 5);
+              w.targetYaw = this.viewYaw(w);
+              w.arms = "wave";
+              w.say(this.onHomeTalk ? this.onHomeTalk(w, "chat") : "Hi!", 3);
+              this.later(w, 1.6, () => { if (w.arms === "wave") w.arms = "down"; });
+            } else if (w.spot) {
+              const spot = w.spot;
               w.state = "activity";
-              w.timer = rnd(6, 11);
-              // sitting spots move the Mii onto the seat
-              if (w.spot.seat) w.seat = w.spot.seat;
-              w.targetYaw = w.spot.yaw || 0;
-              w.showEmote(w.spot.emoji, w.timer);
-              if (Math.random() < 0.6) w.say(D.pick(w.spot.lines));
+              w.timer = this.visiting ? rnd(8, 16) * (spot.lie ? 1.4 : 1) : rnd(6, 11);
+              // seats, beds and treadmills: the Mii gets on
+              w.anchor = spot.seat ? { kind: "sit", at: spot.seat } : spot.lie ? { kind: "lie", at: spot.lie } : spot.stand ? { kind: "stand", at: spot.stand } : null;
+              if (w.anchor) w.anchor.yaw = spot.seat && spot.seat.yaw !== undefined ? spot.seat.yaw : spot.yaw || 0;
+              w.targetYaw = spot.yaw || 0;
+              w.showEmote(spot.emoji, w.timer);
+              if (Math.random() < 0.6) w.say(D.pick(spot.lines));
             } else {
               w.state = "idle";
               w.timer = rnd(1, 4);
@@ -598,13 +1063,15 @@
 
         case "activity":
           w.timer -= dt;
-          w.arms = w.spot.arms || "down";
-          if (w.timer <= 0) {
-            w.arms = "down";
-            w.emote = null; w.uiEmote.classList.remove("show");
-            w.seat = null; // stand back up
-            const back = this.randomFloorPoint();
+          w.arms = (w.spot && w.spot.arms) || "down";
+          w.sleep = !!(w.anchor && w.anchor.kind === "lie");
+          if (w.timer <= 0 || !w.spot) {
+            w.arms = "down"; w.sleep = false;
+            w.clearEmote();
+            w.anchor = null; // get up (the Mii waits until it's standing before walking)
             w.spot = null;
+            if (this.visiting) { w.state = "idle"; w.timer = rnd(0.5, 2); break; }
+            const back = this.randomFloorPoint();
             w.goTo(back.x, back.z);
           }
           break;
@@ -613,29 +1080,41 @@
           const B = w.partner;
           if (!B) { w.state = "idle"; break; }
           B.targetYaw = Math.atan2(w.x - B.x, w.z - B.z);
+          w.approachTime = (w.approachTime || 0) + dt;
+          const dist = Math.hypot(w.x - B.x, w.z - B.z);
+          // can't get there? Talk from here instead (if far), or give up
+          const giveUp = () => {
+            if (dist > 7 && Math.random() < 0.7) this.startRemote(w, B);
+            else this.endInteraction(w);
+          };
           // plan (or re-plan) a route to a free spot next to the other Mii
           w.replanIn = (w.replanIn || 0) - dt;
           if (!w.path || w.replanIn <= 0) {
             const meet = this.meetingPoint(w, B);
             w.path = this.nav.findPath(w.x, w.z, meet.x, meet.z, this.standingMiis(w));
             w.replanIn = 1.5;
-            if (!w.path) { this.endInteraction(w); break; }
+            if (!w.path) { giveUp(); break; }
           }
           const result = this.followPath(w, dt);
-          const close = Math.hypot(w.x - B.x, w.z - B.z) < 2.3;
-          if (result === "arrived" || (close && result !== "lost") || result === "lost") {
-            if (result === "lost" && !close) { this.endInteraction(w); break; }
+          if (dist < 2.4 || (result === "arrived" && dist < 3.2)) {
             w.path = null;
             w.state = "interact";
             B.state = "interact";
             w.step = -1;
             w.stepTimer = 0;
+          } else if (result === "arrived" || result === "lost") {
+            // ended up somewhere that isn't next to them: try again a few times
+            w.path = null;
+            w.approachTries = (w.approachTries || 0) + 1;
+            if (w.approachTries > 3) giveUp();
+          } else if (w.approachTime > 25) {
+            giveUp();
           }
           break;
         }
 
         case "playing": // playing a mini-game with you
-          w.targetYaw = this.viewYaw(w);
+          if (!w.anchored) w.targetYaw = this.viewYaw(w);
           break;
 
         case "perform": // something you asked for from the Mii's menu
@@ -643,8 +1122,8 @@
           if (w.performKind === "dance") {
             w.dance = true;
             w.arms = "out";
-            w.targetYaw += Math.sin(this.time * 5) * 0.08;
-            if (w.lift <= this.baseLift(w) + 0.01) w.hop(this.world.floaty ? 1.4 : 3.2);
+            w.targetYaw += Math.sin(this.time * 5) * 0.08 * w.style.tempo;
+            if (w.style.dance !== "sway" && w.lift <= this.baseLift(w) + 0.01) w.hop(this.world.floaty ? 1.4 : 2.4 + w.style.tempo);
           }
           if (w.performKind === "nap") { w.sleep = true; }
           if (w.timer <= 0) {
@@ -661,26 +1140,52 @@
         case "interact": {
           const p = w.partner;
           if (p) {
-            // face each other, but turn a bit towards the camera so we can see their faces
             const face = Math.atan2(p.x - w.x, p.z - w.z);
-            w.targetYaw = turnToward(face, this.viewYaw(w), 0.35);
+            if (w.remote === "phone") {
+              // on the phone: pacing about a little, mostly facing you
+              w.targetYaw = turnToward(face, this.viewYaw(w), 0.7) + Math.sin(this.time * 0.8 + w.x) * 0.4;
+            } else if (w.remote === "shout") {
+              w.targetYaw = turnToward(face, this.viewYaw(w), 0.15); // shouting across to the other one
+            } else {
+              // face each other, but turn a bit towards the camera so we can see their faces
+              w.targetYaw = turnToward(face, this.viewYaw(w), 0.35);
+            }
           }
           if (w.dance) w.targetYaw += Math.sin(this.time * 5) * 0.8;
           if (w.role === "A") this.runScript(w, dt);
-          if (w.dance && w.lift <= this.baseLift(w) + 0.01) w.hop(this.world.floaty ? 1.5 : 3.5);
+          if (w.dance && w.style.dance !== "sway" && w.lift <= this.baseLift(w) + 0.01) w.hop(this.world.floaty ? 1.5 : 2.5 + w.style.tempo);
           break;
         }
       }
+    }
+
+    // At home, alone: use the furniture, wander, or come and talk to you.
+    homeIdle(w) {
+      const roll = Math.random();
+      const spots = this.world.spots || [];
+      if (roll < 0.6 && spots.length) {
+        const spot = D.pick(spots);
+        w.spot = spot;
+        if (w.goTo(spot.x, spot.z)) return;
+      }
+      if (roll < 0.82 && this.world.playerSpot) {
+        w.toPlayer = true;
+        const p = this.world.playerSpot;
+        if (w.goTo(p.x + rnd(-1, 1), p.z)) return;
+        w.toPlayer = false;
+      }
+      const p = this.randomFloorPoint();
+      w.goTo(p.x, p.z);
     }
 
     // Miis that are standing still (chatting, sitting, idling) - walking Miis plan
     // routes around these. Walking Miis aren't included: they'll have moved on.
     standingMiis(self) {
       const out = [];
-      for (const o of this.walkers) {
+      for (const o of this.active()) {
         if (o === self || o === self.partner || o.held) continue;
         if (o.state === "walk" || o.state === "approach") continue;
-        out.push({ x: o.x, z: o.z, r: 0.5 });
+        out.push({ x: o.x, z: o.z, r: 0.75 });
       }
       return out;
     }
@@ -699,13 +1204,49 @@
       return this.nav.nearestFree(B.x + sides[0] * 1.8, B.z);
     }
 
+    // Moves a Mii by (sx, sz) unless that would walk into something. If the
+    // way ahead is blocked, it slides along the obstacle instead of stopping.
+    tryMove(w, sx, sz) {
+      const nav = this.nav, pad = window.MiiNav.MOVE_PAD;
+      // already a bit inside something (e.g. pushed there)? then any move is fine: it gets out
+      if (nav.isBlocked(w.x, w.z, pad)) { w.x += sx; w.z += sz; return true; }
+      const ok = (x, z) => !nav.isBlocked(x, z, pad);
+      if (ok(w.x + sx, w.z + sz)) { w.x += sx; w.z += sz; return true; }
+      const len = Math.hypot(sx, sz);
+      if (len < 1e-6) return false;
+      // slide: try turning a little left or right of the way we wanted to go
+      for (const a of [0.5, -0.5, 1.0, -1.0, 1.4, -1.4]) {
+        const c = Math.cos(a), s = Math.sin(a);
+        const k = Math.cos(a) * 0.9; // sliding is a bit slower
+        const nx = (sx * c - sz * s) * k, nz = (sx * s + sz * c) * k;
+        if (ok(w.x + nx, w.z + nz)) { w.x += nx; w.z += nz; return true; }
+      }
+      return false;
+    }
+
     // Walks a Mii along its planned route.
     // Returns "walking", "arrived", or "lost" (stuck and can't find a way).
     followPath(w, dt) {
       if (!w.path || !w.path.length) return "arrived";
+      if (w.yieldTime > 0) {
+        // letting someone pass
+        w.yieldTime = Math.max(0, w.yieldTime - dt);
+        w.curSpeed *= Math.max(0, 1 - dt * 8);
+        return "walking";
+      }
+      const nav = this.nav;
+      // Smooth corners: if we can already see the point after the next one, head there.
+      w.skipCheckIn = (w.skipCheckIn || 0) - dt;
+      if (w.path.length > 1 && w.skipCheckIn <= 0) {
+        w.skipCheckIn = 0.25;
+        if (nav.clearLine(w.x, w.z, w.path[1].x, w.path[1].z)) { w.path.shift(); w.bestDist = Infinity; }
+      }
       const next = w.path[0];
+      const last = w.path.length === 1;
       const d = Math.hypot(next.x - w.x, next.z - w.z);
-      if (d < 0.12) {
+      // pass corners loosely (rounds them off), stop exactly at the end
+      // (or nearly there but someone's standing right on the spot: close enough)
+      if (d < (last ? 0.12 : 0.4) || (last && d < 1.0 && w.stuckTime > 0.5)) {
         w.path.shift();
         w.bestDist = Infinity;
         return w.path.length ? "walking" : "arrived";
@@ -714,14 +1255,14 @@
       // point might now go through something: if so, plan a new route.
       w.lineCheckIn = (w.lineCheckIn || 0) - dt;
       if (w.lineCheckIn <= 0) {
-        w.lineCheckIn = 0.2;
-        if (!this.nav.clearLine(w.x, w.z, next.x, next.z, this.standingMiis(w))) {
-          // re-plan once; if the new route still isn't clear, just carry on carefully
-          // (the stuck check below gives up if we really can't get anywhere)
+        w.lineCheckIn = 0.25;
+        if (!nav.clearLine(w.x, w.z, next.x, next.z, this.standingMiis(w), window.MiiNav.MOVE_PAD)) {
+          // re-plan once; if the new route still isn't clear, carry on carefully
+          // (sliding along things, and the stuck check below)
           if (!w.justReplanned) {
             w.justReplanned = true;
             const goal = w.path[w.path.length - 1];
-            const path = this.nav.findPath(w.x, w.z, goal.x, goal.z, this.standingMiis(w));
+            const path = nav.findPath(w.x, w.z, goal.x, goal.z, this.standingMiis(w));
             if (!path) return "lost";
             w.path = path;
             return "walking";
@@ -730,24 +1271,48 @@
           w.justReplanned = false;
         }
       }
-      // never take a step into an obstacle
-      const before = { x: w.x, z: w.z };
-      this.stepToward(w, next.x, next.z, dt);
-      if (this.nav.isBlocked(w.x, w.z) && !this.nav.isBlocked(before.x, before.z)) { w.x = before.x; w.z = before.z; }
+      this.stepToward(w, next.x, next.z, dt, last);
       // stuck check: if we haven't got any closer for a while, plan a new route
       if (d < w.bestDist - 0.05) { w.bestDist = d; w.stuckTime = 0; }
       else w.stuckTime = (w.stuckTime || 0) + dt;
-      if (w.stuckTime > 0.7) {
+      if (w.stuckTime > 1.0) {
         w.repaths = (w.repaths || 0) + 1;
         w.stuckTime = 0;
         w.bestDist = Infinity;
-        if (w.repaths > 1) return "lost";
+        if (w.repaths > 3) return "lost";
         const goal = w.path[w.path.length - 1];
-        const path = this.nav.findPath(w.x, w.z, goal.x, goal.z, this.standingMiis(w));
+        const path = nav.findPath(w.x, w.z, goal.x, goal.z, this.standingMiis(w));
         if (!path) return "lost";
         w.path = path;
       }
       return "walking";
+    }
+
+    // Takes one step towards (tx, tz): speeds up, slows down for sharp turns and
+    // at the end, and turns smoothly instead of snapping round.
+    stepToward(w, tx, tz, dt, last) {
+      const dx = tx - w.x, dz = tz - w.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 0.001) return;
+      const want = Math.atan2(dx, dz);
+      if (w.moveYaw === null) w.moveYaw = w.yaw;
+      w.moveYaw = turnToward(w.moveYaw, want, dt * 7);
+      const off = Math.abs(angleDiff(w.moveYaw, want));
+      const top = w.speed * (this.world.floaty ? 0.6 : 1);
+      let target = top * clamp(1.15 - off / 1.4, 0.15, 1);
+      if (last) target *= clamp(d / 0.9, 0.35, 1);
+      // speed up gently, slow down a bit faster
+      w.curSpeed += (target - w.curSpeed) * Math.min(1, dt * (target > w.curSpeed ? 3.5 : 7));
+      const step = Math.min(d, w.curSpeed * dt);
+      // close to the end: go straight there; otherwise follow our (smoothly turning) heading
+      const dir = last && d < 0.6 ? want : w.moveYaw;
+      const before = { x: w.x, z: w.z };
+      this.tryMove(w, Math.sin(dir) * step, Math.cos(dir) * step);
+      const moved = Math.hypot(w.x - before.x, w.z - before.z);
+      if (moved < step * 0.3) w.curSpeed *= 0.7; // bumped into something
+      w.targetYaw = w.moveYaw;
+      // the legs keep time with how far the Mii actually moved (no sliding feet)
+      w.phase += moved * Math.PI / (w.inst.rig.stepLength(w.style) * w.sizeScale);
     }
 
     // Runs a conversation one step at a time (the "A" Mii is in charge).
@@ -756,7 +1321,9 @@
       if (!B || !A.plan) { this.endInteraction(A); return; }
       A.stepTimer -= dt;
       if (A.stepTimer > 0) return;
-      for (const m of [A, B]) { m.arms = "down"; m.dance = false; m.laugh = false; m.sleep = false; m.nod = 0; m.shake = 0; }
+      const remote = A.remote;
+      const baseArms = remote === "phone" ? "phone" : "down";
+      for (const m of [A, B]) { m.arms = baseArms; m.dance = false; m.laugh = false; m.sleep = false; m.nod = 0; m.shake = 0; }
       A.step++;
       const step = A.plan.steps[A.step];
       if (!step) { this.finishInteraction(A); return; }
@@ -764,11 +1331,13 @@
       const floaty = this.world.floaty;
       // {A} is always the Mii who started the chat and {B} the other one,
       // no matter who is speaking (so B says "Hi Joe! I'm Sam!", not the other way round)
-      const line = step.say ? step.say.replace(/\{A\}/g, A.look.name).replace(/\{B\}/g, B.look.name) : null;
+      let line = step.say ? step.say.replace(/\{A\}/g, A.look.name).replace(/\{B\}/g, B.look.name) : null;
+      if (line && remote === "shout") line = line.toUpperCase().replace(/[.?]*$/, (m) => (m.includes("?") ? "?!" : "!"));
       for (const m of actors) {
         if (line) m.say(line, Math.max(step.dur + 0.4, 1.4));
         if (step.emote) m.showEmote(step.emote, Math.max(step.dur, 1.5));
-        if (step.arms) m.arms = step.arms;
+        if (remote === "shout" && line) m.arms = "shout";
+        if (step.arms && remote !== "phone") m.arms = step.arms;
         if (step.hop) m.hop(floaty ? 1.8 : 4.5);
         if (step.dance) m.dance = true;
         if (step.sleep) { m.sleep = true; }
@@ -782,59 +1351,81 @@
       A.stepTimer = step.dur;
     }
 
-    // Takes one step towards (tx, tz).
-    stepToward(w, tx, tz, dt) {
-      const dx = tx - w.x, dz = tz - w.z;
-      const d = Math.hypot(dx, dz);
-      if (d < 0.001) return;
-      const speed = w.speed * (this.world.floaty ? 0.6 : 1);
-      const step = Math.min(d, speed * dt);
-      w.x += (dx / d) * step;
-      w.z += (dz / d) * step;
-      w.targetYaw = Math.atan2(dx, dz);
-      w.phase += dt * speed * 5.5;
-    }
-
     // Copies the Mii's position and movement onto its 3D model.
     applyPose(w, dt) {
       const holder = w.inst.holder;
-      const sitting = w.state === "activity" && !!w.seat;
-      const walking = (w.state === "walk" || w.state === "approach") && !w.held;
-      w.walkAmt += ((walking ? 1 : 0) - w.walkAmt) * Math.min(1, dt * 8);
-      w.yaw = turnToward(w.yaw, w.targetYaw, dt * 8);
+      const rig = w.inst.rig;
+      const st = w.style;
+      const moving = (w.state === "walk" || w.state === "approach") && !w.held;
+      const target = moving ? clamp(w.curSpeed / Math.max(0.3, w.speed * 0.55), 0, 1) : 0;
+      w.walkAmt += (target - w.walkAmt) * Math.min(1, dt * 8);
+      if (!moving) { w.curSpeed = 0; w.moveYaw = null; }
+
+      // getting on / off a seat, bed or treadmill
+      const wanted = w.state === "activity" && w.anchor && !w.held;
+      if (wanted) w.lastAnchor = w.anchor;
+      if (w.held) w.seatBlend = 0;
+      w.seatBlend = clamp(w.seatBlend + (wanted ? dt : -dt) * 2.2, 0, 1);
+      const anchor = w.seatBlend > 0 ? w.lastAnchor : null;
+      const k = anchor ? smooth(w.seatBlend) : 0;
+
+      // on a seat or bed the Mii keeps facing the same way (no spinning round on a bench)
+      let yaw = w.targetYaw;
+      if (anchor) yaw = anchor.kind === "lie" ? (anchor.at.yaw || 0) + Math.PI : anchor.yaw; // lying: head on the pillow
+      w.yaw = turnToward(w.yaw, anchor ? yaw : w.targetYaw, dt * (anchor ? 6 : 8));
       if (w.shake) w.yaw += Math.sin(this.time * 20) * 0.04;
 
-      // sitting Mii slides onto the seat; everyone else stands where they are
-      w.seatBlend = clamp((w.seatBlend || 0) + (sitting ? dt : -dt) * 4, 0, 1);
-      const seat = w.seat || w.lastSeat;
-      if (w.seat) w.lastSeat = w.seat;
-      const k = w.seatBlend;
-      const px = seat ? w.x + (seat.x - w.x) * k : w.x;
-      const pz = seat ? w.z + (seat.z - w.z) * k : w.z;
-      const py = seat ? (seat.y || 0) * k : 0;
+      let px = w.x, pz = w.z, py = 0, tip = 0;
+      if (anchor) {
+        const at = anchor.at;
+        let ax = at.x, az = at.z;
+        if (anchor.kind === "lie") {
+          // feet at one end of the bed, head on the pillow
+          const len = MII_HEIGHT * w.sizeScale * 0.5;
+          ax -= Math.sin(at.yaw || 0) * len;
+          az -= Math.cos(at.yaw || 0) * len;
+          tip = -Math.PI / 2 * k;
+          py = ((at.y || 0) + 0.32 * w.sizeScale) * k + Math.sin(k * Math.PI) * 0.3;
+        } else {
+          py = (at.y || 0) * k;
+        }
+        px = w.x + (ax - w.x) * k;
+        pz = w.z + (az - w.z) * k;
+      }
+      const running = anchor && anchor.kind === "stand" && w.spot && w.spot.run && wanted;
+      if (running) w.phase += dt * 8.5;
+
       // models without leg bones (e.g. head-only exports) hop along instead of walking
-      const rig = w.inst.rig;
       const hopY = !rig.hasLegs && !rig.mixer ? Math.abs(Math.sin(w.phase)) * 0.22 * w.walkAmt : 0;
-      holder.position.set(px, w.lift + py + hopY, pz);
       holder.rotation.y = w.yaw;
+      holder.rotation.x = tip;
       holder.rotation.z = !rig.hasLegs ? Math.sin(w.phase) * 0.08 * w.walkAmt : 0;
       const pop = w.appear < 1 ? 0.3 + 0.7 * (1 - Math.pow(1 - w.appear, 3)) : 1;
-      holder.scale.setScalar(w.sizeScale * pop);
+      const gone = w.vanish > 0 ? 1 - smooth(w.vanish) : 1;
+      holder.scale.setScalar(w.sizeScale * pop * Math.max(0.01, gone));
 
-      w.inst.rig.pose({
-        t: this.time,
+      if (w.phone) w.phone.visible = w.arms === "phone" && !w.held;
+      const sitting = anchor && anchor.kind === "sit" && w.seatBlend > 0.5;
+      const lying = anchor && anchor.kind === "lie" && w.seatBlend > 0.5;
+      rig.pose({
+        t: this.time + (w.id.length % 7) * 0.37,
         dt,
-        walk: w.walkAmt,
+        walk: running ? 1 : w.walkAmt,
+        run: running,
         phase: w.phase,
         arms: w.held ? "held" : w.arms,
         held: w.held,
         dance: w.dance,
         laugh: w.laugh,
-        nod: (w.sleep ? 0.45 + Math.sin(this.time * 2) * 0.05 : 0) + (w.nod || 0),
+        style: st,
+        talking: !!w.bubble,
+        nod: (w.sleep && !lying ? 0.45 + Math.sin(this.time * 2) * 0.05 : 0) + (w.nod || 0),
         lookYaw: w.shake ? Math.sin(this.time * 14) * 0.4 : 0,
         lookUp: w.state === "activity" && w.spot && w.spot.lookUp ? w.spot.lookUp : 0,
-        sit: w.seatBlend > 0.5,
+        sit: sitting,
+        lie: lying,
       });
+      holder.position.set(px, w.lift + py + hopY - (anchor ? 0 : rig.drop * w.sizeScale), pz);
     }
 
     // ---------- floating text over each Mii ----------
@@ -842,17 +1433,19 @@
       const v = new THREE.Vector3();
       const placed = [];
       // front-most Miis first, so bubbles behind them move up out of the way
-      const sorted = this.walkers.slice().sort((a, b) => b.z - a.z);
+      const sorted = this.active().slice().sort((a, b) => b.z - a.z);
       for (const w of sorted) {
         const s = w.inst.holder.scale.y;
-        v.set(w.x, w.lift + (MII_HEIGHT + (this.world.helmet ? 0.25 : 0.05)) * s, w.z).project(this.camera);
+        const lying = w.lastAnchor && w.lastAnchor.kind === "lie" && w.seatBlend > 0.5;
+        const pos = w.inst.holder.position;
+        v.set(pos.x, (lying ? pos.y + 0.6 : w.lift + (MII_HEIGHT + (this.world.helmet ? 0.25 : 0.05)) * s), pos.z).project(this.camera);
         const visible = v.z < 1;
         const x = (v.x * 0.5 + 0.5) * this.W;
         let y = (-v.y * 0.5 + 0.5) * this.H;
         w.ui.style.display = visible ? "" : "none";
         if (!visible) continue;
         // feet position for the name tag
-        const feet = new THREE.Vector3(w.x, 0, w.z).project(this.camera);
+        const feet = new THREE.Vector3(pos.x, 0, pos.z).project(this.camera);
         w.uiName.style.transform = "translate(-50%, " + ((-feet.y * 0.5 + 0.5) * this.H - y + 6) + "px)";
         w.uiName.classList.toggle("show", this.hover === w || this.dragging === w);
 
@@ -870,6 +1463,7 @@
           w.uiBubble.style.left = bx - x + "px";
           w.uiBubble.style.top = by - y + "px";
           w.uiBubble.style.setProperty("--tail", clamp(x - bx, 14, bw - 14) + "px");
+          w.uiBubble.classList.toggle("shout", w.remote === "shout");
         }
         w.ui.style.transform = "translate(" + x + "px," + y + "px)";
       }
@@ -887,12 +1481,22 @@
     pickWalker(ray) {
       let best = null, bestDist = Infinity;
       const a = new THREE.Vector3(), b = new THREE.Vector3(), onRay = new THREE.Vector3(), onSeg = new THREE.Vector3();
-      for (const w of this.walkers) {
+      for (const w of this.active()) {
+        if (w.vanish > 0) continue;
         const s = w.inst.holder.scale.y;
-        a.set(w.x, w.lift + 0.1 * s, w.z);
-        b.set(w.x, w.lift + MII_HEIGHT * s, w.z);
+        const pos = w.inst.holder.position;
+        const lying = w.lastAnchor && w.lastAnchor.kind === "lie" && w.seatBlend > 0.5;
+        if (lying) {
+          // lying down: a capsule along the bed
+          const at = w.lastAnchor.at, h = MII_HEIGHT * s;
+          a.set(pos.x, pos.y, pos.z);
+          b.set(pos.x + Math.sin(at.yaw || 0) * h, pos.y, pos.z + Math.cos(at.yaw || 0) * h);
+        } else {
+          a.set(pos.x, pos.y + 0.1 * s, pos.z);
+          b.set(pos.x, pos.y + MII_HEIGHT * s, pos.z);
+        }
         const dist2 = ray.distanceSqToSegment(a, b, onRay, onSeg);
-        const radius = (onSeg.y - w.lift > 0.9 * s ? 0.6 : 0.4) * s;
+        const radius = (lying ? 0.55 : onSeg.y - pos.y > 0.9 * s ? 0.6 : 0.4) * s;
         if (dist2 < radius * radius) {
           const along = onRay.distanceTo(ray.origin);
           if (along < bestDist) { bestDist = along; best = w; }
@@ -905,6 +1509,22 @@
       const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
       const p = new THREE.Vector3();
       return ray.intersectPlane(plane, p) ? p : null;
+    }
+
+    // You clicked a Mii (left button): it jumps and says hi. (Right-click opens its menu.)
+    poke(w) {
+      if (!w.anchored && w.state !== "playing") {
+        w.hop(this.world.floaty ? 1.6 : 4);
+        w.targetYaw = this.viewYaw(w);
+      }
+      if (!this.isBusy(w) || w.state === "perform") {
+        const line = this.visiting && this.onHomeTalk ? this.onHomeTalk(w, "poke") : D.pick(D.CLICK_LINES);
+        w.say(line, 2);
+        if (!w.anchored || (w.lastAnchor && w.lastAnchor.kind === "sit")) {
+          w.arms = "wave";
+          this.later(w, 1.5, () => { if (w.arms === "wave" && !w.partner) w.arms = (w.state === "activity" && w.spot && w.spot.arms) || "down"; });
+        }
+      }
     }
 
     bindPointer() {
@@ -922,10 +1542,11 @@
       });
 
       c.addEventListener("pointermove", (e) => {
-        if (down && down.w && !this.dragging && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) {
+        if (down && down.w && !this.dragging && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 && down.w.state !== "playing") {
           const w = down.w;
           this.endInteraction(w);
-          w.spot = null; w.emote = null; w.uiEmote.classList.remove("show");
+          w.spot = null; w.anchor = null; w.seatBlend = 0; w.clearEmote();
+          w.sleep = false; w.arms = "down";
           w.state = "idle";
           w.held = true;
           this.dragging = w;
@@ -963,20 +1584,18 @@
             w.target = out;
             w.state = "walk";
             w.resetStuck();
-            setTimeout(() => w.say(inWater ? D.pick(["Splash! I'm soaked!", "Brr, cold water!", "I can't swim!"]) : D.pick(["Whoops!", "Oof, not here!"]), 1.8), 350);
+            this.later(w, 0.35, () => w.say(inWater ? D.pick(["Splash! I'm soaked!", "Brr, cold water!", "I can't swim!"]) : D.pick(["Whoops!", "Oof, not here!"]), 1.8));
           } else {
-            setTimeout(() => w.say(D.pick(D.DROP_LINES), 1.6), 350);
+            this.later(w, 0.35, () => w.say(D.pick(D.DROP_LINES), 1.6));
           }
-        } else if (down && down.w) {
-          const w = down.w;
-          w.hop(this.world.floaty ? 1.6 : 4);
-          w.targetYaw = this.viewYaw(w);
-          if (!this.isBusy(w)) {
-            w.say(D.pick(D.CLICK_LINES), 1.8);
-            w.arms = "wave";
-            setTimeout(() => { if (w.arms === "wave" && !w.partner) w.arms = "down"; }, 1500);
+        } else if (down && down.w && e.type === "pointerup") {
+          this.poke(down.w);
+        } else if (down && !down.w && e.type === "pointerup" && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 6) {
+          // clicked the scenery: an apartment, maybe?
+          if (this.world.pickApartment && this.onApartmentClick) {
+            const id = this.world.pickApartment(this.pointerRay(e));
+            if (id) this.onApartmentClick(id, e.clientX, e.clientY);
           }
-          if (this.onSelect) this.onSelect(w, e.clientX, e.clientY);
         }
         down = null;
         this.controls.enabled = true;
@@ -986,10 +1605,9 @@
       c.addEventListener("pointerleave", () => { if (!this.dragging) this.hover = null; });
       // right-click a Mii to open its menu
       c.addEventListener("contextmenu", (e) => {
-        const w = this.pickWalker(this.pointerRay(e));
-        if (!w) return;
         e.preventDefault();
-        if (this.onSelect) this.onSelect(w, e.clientX, e.clientY);
+        const w = this.pickWalker(this.pointerRay(e));
+        if (w && this.onSelect) this.onSelect(w, e.clientX, e.clientY);
       });
     }
 
@@ -1009,5 +1627,5 @@
     }
   }
 
-  window.MiiHub3D = { Hub3D };
+  window.MiiHub3D = { Hub3D, animStyle };
 })();

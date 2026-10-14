@@ -17,7 +17,10 @@
 (function (root) {
   "use strict";
 
-  const MII_RADIUS = 0.45; // how much room a Mii needs around obstacles
+  const MII_RADIUS = 0.45; // how much room a Mii needs around obstacles when planning a route
+  // While walking, a Mii may get a little closer than that (after being bumped,
+  // or when cutting a corner) before it counts as "touching" something.
+  const MOVE_PAD = 0.28;
 
   function insideShape(o, x, z, pad) {
     const dx = x - o.x, dz = z - o.z;
@@ -123,17 +126,18 @@
 
     // Can a Mii walk in a straight line from a to b without touching anything?
     // `others` (optional) = Miis to walk around, as circles { x, z, r }.
-    clearLine(ax, az, bx, bz, others) {
+    // `pad` (optional) = how much room to leave (default MII_RADIUS).
+    clearLine(ax, az, bx, bz, others, pad) {
       if (others) {
         const saved = this.others;
         this.others = others;
-        try { return this.clearLine(ax, az, bx, bz); } finally { this.others = saved; }
+        try { return this.clearLine(ax, az, bx, bz, null, pad); } finally { this.others = saved; }
       }
       const d = Math.hypot(bx - ax, bz - az);
       const steps = Math.ceil(d / (this.cell * 0.5));
       for (let i = 1; i <= steps; i++) {
         const t = i / steps;
-        if (this.isBlocked(ax + (bx - ax) * t, az + (bz - az) * t)) return false;
+        if (this.isBlocked(ax + (bx - ax) * t, az + (bz - az) * t, pad)) return false;
       }
       return true;
     }
@@ -143,9 +147,11 @@
     // walk around them, but if they block every route (a crowd), we ignore them.
     findPath(sx, sz, tx, tz, others) {
       if (others && others.length) {
-        // never treat the Miis at the start or the goal as blockers
+        // never treat the Miis at the goal as blockers (we might be going to meet them).
+        // Miis right next to the start still count: the route starts from the
+        // nearest free spot and goes around them, instead of squeezing past.
         const near = (o, x, z) => Math.hypot(o.x - x, o.z - z) < o.r + MII_RADIUS + 0.3;
-        this.others = others.filter((o) => !near(o, sx, sz) && !near(o, tx, tz));
+        this.others = others.filter((o) => !near(o, tx, tz));
         try {
           const path = this.findPathInner(sx, sz, tx, tz);
           if (path) return path;
@@ -253,5 +259,5 @@
     }
   }
 
-  root.MiiNav = { Nav, insideShape, MII_RADIUS };
+  root.MiiNav = { Nav, insideShape, MII_RADIUS, MOVE_PAD };
 })(typeof self !== "undefined" ? self : this);

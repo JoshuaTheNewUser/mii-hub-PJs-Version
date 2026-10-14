@@ -138,21 +138,27 @@
     },
 
     compliment(A, B, scene, points) {
-      // Only say things that are actually true about B.
+      // Only say things that are really true about B. These come from the
+      // Mii's file (its height, its hair colour, what it's wearing) or from
+      // its personality. If we're not sure about something, we don't say it.
       const f = B.facts || {};
       const b = traits(B);
       const options = [];
-      if (f.top) options.push("I love your " + f.top + " top!", "That " + f.top + " really suits you!");
+      const garment = f.garment || "top";
+      if (f.top) options.push("I love your " + f.top + " " + garment + "!", "That " + f.top + " " + garment + " really suits you!");
+      else if (f.garment) options.push("Cool " + f.garment + ", {B}!", "Where did you get that " + f.garment + "?");
       if (f.hair) options.push("Your " + f.hair + " hair looks great today!");
-      if (f.beard) options.push("Nice beard, {B}!", "Your beard is so cool!");
       if (f.tall) options.push("You're so tall, {B}!");
+      if (f.short) options.push("You're so cute and small, {B}!");
       if (points >= 4) {
         options.push("You're so fun to hang out with, {B}!");
         if (b.humor >= 60) options.push("You always make me laugh, {B}!");
         if (b.kindness >= 60) options.push("You're the nicest, {B}!");
         if (b.energy >= 65) options.push("How do you have so much energy?!");
+        if (b.energy <= 35) options.push("You're so calm. It's nice being around you.");
+        if (b.social <= 35) options.push("I'm glad you talk to me, {B}.");
       }
-      if (!options.length) options.push("I like your style, {B}!");
+      if (!options.length) options.push("I like your style, {B}!", "You seem really nice, {B}!");
       const reply = b.kindness <= 35 ? pick(["Hmph. ...Thanks.", "I know.", "...You really think so?"])
         : b.social <= 35 ? pick(["*blushes* Th-thanks...", "Oh! Um... thank you!"])
         : pick(["Aww, thanks {A}!", "You're too kind!", "*blushes*"]);
@@ -255,24 +261,58 @@
     },
   };
 
-  // Chooses what two Miis will do, based on where they are and how close they are.
+  // Greetings when two Miis talk from far away (see buildInteraction).
+  function remoteGreeting(A, B, points, mode) {
+    if (mode === "phone") {
+      return [
+        { who: "A", say: pick(["*dials*", "*ring ring*"]), dur: 1.4 },
+        { who: "B", say: points === 0 ? "Hello? Who is this?" : pick(["Hello?", "Oh hey, {A}!", "{A}! What's up?"]), dur: 1.8 },
+        { who: "A", say: points === 0 ? "Hi! It's {A}! I can see you from over here!" : pick(["Hey {B}! It's me!", "Hiya! Got a minute?"]), dur: 2.2 },
+      ];
+    }
+    return [
+      { who: "A", say: points === 0 ? "Hey, you over there! I'm {A}!" : pick(["Hey {B}!", "Yoo-hoo, {B}!", "Over here, {B}!"]), arms: "wave", dur: 1.8 },
+      { who: "B", say: points === 0 ? "Oh! Hi! I'm {B}!" : pick(["Oh, hi {A}!", "What?", "Hey!"]), arms: "wave", dur: 1.6 },
+    ];
+  }
+
   // Chooses what two Miis will do. Their personalities change the odds:
   // silly Miis tell more jokes, energetic ones dance, grumpy ones argue...
-  function buildInteraction(A, B, scene, points) {
+  // opts.remote = "shout" or "phone" when they're far apart (then only talking things).
+  function buildInteraction(A, B, scene, points, opts) {
     const a = traits(A), b = traits(B);
     const avg = (k) => (a[k] + b[k]) / 2;
-    const type = points === 0 ? "chat" : weighted([
-      ["chat", 3],
-      ["joke", 0.5 + avg("humor") / 30],
-      ["compliment", 0.3 + a.kindness / 35],
-      ["highFive", 0.4 + avg("energy") / 45],
-      ["rockPaperScissors", 1],
-      ["dance", (points >= 4 ? 0.6 : 0.2) + avg("energy") / 40 + avg("humor") / 80],
-      ["sleepy", points >= 4 ? 0.4 + (100 - a.energy) / 70 : 0],
-      ["disagree", points >= 1 ? 0.2 + (100 - avg("kindness")) / 30 : 0],
-      ["spaceBounce", scene.id === "space" ? 1.5 + avg("energy") / 50 : 0],
-    ]);
-    const steps = greeting(A, B, points).concat(interactions[type](A, B, scene, points));
+    const remote = opts && opts.remote;
+    let type;
+    if (remote) {
+      type = points === 0 ? "chat" : weighted([
+        ["chat", 3],
+        ["joke", 0.5 + avg("humor") / 30],
+        ["compliment", points >= 4 ? 0.3 + a.kindness / 35 : 0],
+        ["disagree", points >= 1 ? 0.2 + (100 - avg("kindness")) / 40 : 0],
+      ]);
+    } else {
+      type = points === 0 ? "chat" : weighted([
+        ["chat", 3],
+        ["joke", 0.5 + avg("humor") / 30],
+        ["compliment", 0.3 + a.kindness / 35],
+        ["highFive", 0.4 + avg("energy") / 45],
+        ["rockPaperScissors", 1],
+        ["dance", (points >= 4 ? 0.6 : 0.2) + avg("energy") / 40 + avg("humor") / 80],
+        ["sleepy", points >= 4 ? 0.4 + (100 - a.energy) / 70 : 0],
+        ["disagree", points >= 1 ? 0.2 + (100 - avg("kindness")) / 30 : 0],
+        ["spaceBounce", scene.id === "space" ? 1.5 + avg("energy") / 50 : 0],
+      ]);
+    }
+    const hello = remote ? remoteGreeting(A, B, points, remote) : greeting(A, B, points);
+    let steps = hello.concat(interactions[type](A, B, scene, points));
+    if (remote) {
+      // far apart: no looking at each other's clothes, no high fives
+      steps = steps.map((s) => Object.assign({}, s, { arms: remote === "phone" ? undefined : s.arms === "wave" ? "wave" : undefined, hop: remote === "phone" ? false : s.hop }));
+      if (type === "compliment") steps[steps.length - 2].say = pick(["You're so fun to talk to, {B}!", "I'm glad we're friends, {B}!"]);
+      steps.push({ who: "A", say: remote === "phone" ? pick(["Okay, talk later! Bye!", "Gotta go! Bye!"]) : pick(["See you later!", "Bye {B}!"]), dur: 1.8 });
+      if (remote === "phone") steps.push({ who: "B", say: pick(["Bye!", "Later!", "*click*"]), dur: 1.4 });
+    }
     // sometimes finish with a catchphrase
     const cp = a.catchphrase && a.catchphrase.trim();
     if (cp && Math.random() < 0.35) steps.push({ who: "A", say: cp, dur: 2.0 });
@@ -341,6 +381,6 @@
   root.Dialogue = {
     TRAITS, DEFAULT_PERSONALITY, traits, randomPersonality, personalityLabel,
     LEVELS, levelFor, buildInteraction, FRIENDSHIP_GAIN, FEED_TEXT,
-    soloLine, CLICK_LINES, PICKUP_LINES, DROP_LINES, pick,
+    soloLine, CLICK_LINES, PICKUP_LINES, DROP_LINES, pick, weighted,
   };
 })(typeof self !== "undefined" ? self : this);

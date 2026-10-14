@@ -1,6 +1,6 @@
 # Mii Hub
 
-A 3D web app where your Miis walk around, chat and become friends, a bit like the Mii plaza in the Wii's Mii Channel. The style is inspired by Tomodachi Life: soft cartoon shading, bright colours and rounded shapes. Everything is 3D: the Miis, the island park, the office and the moon base.
+A 3D web app where your Miis walk around, chat and become friends, a bit like the Mii plaza in the Wii's Mii Channel. The style is inspired by Tomodachi Life: soft cartoon shading, bright colours and rounded shapes. Everything is 3D: the Miis, the island park, the office, the moon base, the apartments and each Mii's home.
 
 ## How to run it
 
@@ -48,22 +48,46 @@ The hub uses **full-body 3D Mii models (`.glb` files)** exported from [Mii Creat
 
 The hub reads the Mii's name from the file. It also uses the height setting to make taller Miis a little bigger. Old `.miic` / `.mii` files no longer work, because they don't contain a 3D model.
 
+Your Miis always look exactly like they do in Mii Creator. To change how a Mii looks, change it in Mii Creator and export it again.
+
+**Adding a Mii with the same name as one you already have?** You'll be asked what to do:
+- **Update its look:** use the new model, but keep its personality, friends, home, coins and game skills.
+- **Add as a new Mii:** keep both (the new one gets a number after its name).
+- **Replace it:** start fresh. The old one is removed.
+
 ## What you can do
 
-- **Switch places:** use the **🌳 Park**, **🏢 Office** and **🚀 Outer Space** buttons at the top.
+- **Switch places:** use the **🌳 Park**, **🏢 Office**, **🚀 Outer Space** and **🏘️ Apartments** buttons at the top.
 - **Full screen:** click **⛶** in the corner of the scene (or press **F**) to make the scene fill your screen. Small place buttons stay in the corner. Press **F** or **Esc**, or click **✕**, to go back. In the desktop app, **F11** makes the whole window full screen.
-- **Move the camera:** drag the background to spin all the way around, and scroll (or pinch) to zoom. In the office, the wall between you and the room hides itself, like a dollhouse.
-- **Click (or right-click) a Mii** to open its menu:
+- **Move the camera:** drag the background to spin all the way around, and scroll (or pinch) to zoom. Every place has scenery all the way round. In the office and in homes, the wall between you and the room hides itself, like a dollhouse.
+- **Click a Mii** (left button) to make it jump and say hi. **Drag a Mii** to pick it up and carry it. Let go and it drops back down.
+- **Right-click a Mii** to open its menu:
   - **Quick actions:** wave, dance, jump, nap, or say its catchphrase.
-  - **Personality:** five sliders. *Calm ↔ Energetic*, *Shy ↔ Outgoing*, *Quiet ↔ Chatty*, *Serious ↔ Silly* and *Grumpy ↔ Sweet* change how it walks, how often it talks and starts conversations, what it does with friends, and what it says. Each Mii gets a Tomodachi-style label like "Lively Joker" or "Quiet Sweetheart".
+  - **Play a game** (see *Mini-games* below).
+  - **Personality:** five sliders. *Calm ↔ Energetic*, *Shy ↔ Outgoing*, *Quiet ↔ Chatty*, *Serious ↔ Silly* and *Grumpy ↔ Sweet* change how it moves, how often it talks and starts conversations, what it does with friends, and what it says. Each Mii gets a Tomodachi-style label like "Lively Joker" or "Quiet Sweetheart".
   - **Name and catchphrase:** rename it, and give it a catchphrase it says now and then.
   - **Best friends:** see who it gets along with.
-- **Drag a Mii** to pick it up and carry it. Let go and it drops back down.
-- **✏️ Edit** a Mii in the *Residents* list to change its skin, hair, top, pants and eye colours, or remove a beard.
-- **🗑️** sends a Mii home (removes it).
+  - **🏠 Send home**, **🏡 Visit home** and **📦 Move away** (see below).
+- In the **Residents** list, click a Mii's picture or name to open its menu. The 🪙 number is how many coins it has.
 - **How chatty?** sets how often Miis talk and hang out.
 
-Your Miis, their friendships and the place you picked are saved in your browser, so they'll still be there next time.
+Your Miis, their homes, coins, friendships and the place you picked are saved, so they'll still be there next time.
+
+## Homes and coins
+
+Every Mii has its own apartment in the **🏘️ Apartments**. You can see its name by its door, and its windows light up when it's home.
+
+- **🏠 Send home:** the Mii says goodbye and walks home (in the Apartments, it walks to its own front door). Nothing is lost: it keeps its friends, coins and everything else. Use **🚪 Invite out** in the *Residents* list to bring it back.
+- **🏡 Visit:** go inside a Mii's home (from its menu, the *Residents* list, or by clicking its apartment in the Apartments). It's just the Mii and its home: watch it nap in bed, watch TV, play games or water its plants, and it'll come over to chat with you. Click **← Leave** to go back outside.
+- **🛋️ Decorate:** while you visit, buy furniture with **the Mii's own coins**: beds, seats, tables, a TV or game console, rugs, lamps, plants, wall art, special things (like a fish tank or drum kit), wallpaper and flooring. Things you've bought stay owned, so you can swap back for free. Each Mii likes different things depending on its personality, and it tells you what it thinks.
+- **🍙 Give food:** every Mii has a favourite food and one it can't stand. Try things and see!
+- **📦 Move away:** removes a Mii from your world for good. Everyone else reacts depending on how close they were: best friends are heartbroken, friends are sad, and strangers might not even notice.
+
+**Coins** are earned by the Miis themselves, for *meaningful* time together, not just lots of it:
+- Doing something **outside their comfort zone** is worth the most: a shy Mii walking up to someone (especially a stranger), a grumpy Mii giving a compliment, a serious Mii telling a joke, a calm Mii dancing, a quiet Mii chatting, or two Miis making up after an argument.
+- Doing **the same thing with the same Mii** over and over earns less and less.
+- Hanging out uses up a Mii's **social energy**, which comes back with some alone time. So turning *How chatty?* all the way up doesn't make coins pour in.
+- **Playing a mini-game with you** earns 3 coins.
 
 ## What the Miis do
 
@@ -71,9 +95,12 @@ Your Miis, their friendships and the place you picked are saved in your browser,
   - Park (a little island): sit on the benches, watch the ducks, make a wish at the fountain, have a picnic, admire the cherry blossoms, look at the sea.
   - Office (an IT help desk): staff the help desk, wait for help, work on tickets at the tech desks, check the servers, fix computers at the repair bench, hunt for spare parts, watch the ticket dashboard, plan the network on the whiteboard, make coffee, and fight the out-of-order printer.
   - Outer Space (a moon base): check the rocket, salute the flag, fix the rover, gaze at Earth, visit the space garden, admire the glowing crystals.
-- **Find their own way around** trees, benches, desks, chairs, ponds and each other, and never walk on water. If you drop a Mii in the pond, it climbs out.
-- **Act like themselves:** energetic Miis walk faster and bounce around, shy ones stammer when they meet someone new, silly ones tell more jokes, and grumpy ones argue more.
-- **Give honest compliments:** they only mention things that are really true, like the actual colour of someone's top or hair, or their beard.
+- **Find their own way around** trees, benches, desks, chairs, ponds and each other, and never walk on water. They slide along things they brush against, curve around Miis who are standing still, and step aside for each other in narrow spaces. If you drop a Mii in the pond, it climbs out.
+- **Sit properly:** a Mii sits down on a bench (or a sofa, or lies down in bed at home), stays facing the same way while it sits, and stands up in the same spot before walking off.
+- **Move like themselves:** energetic Miis take big, bouncy steps and jump about; calm ones stroll; shy ones look down and keep their hands together; grumpy ones stomp and fold their arms; silly ones waddle and bop their heads; outgoing ones stand with their hands on their hips; chatty ones talk with their hands. Dances and waves change too.
+- **Act like themselves:** shy ones stammer when they meet someone new, silly ones tell more jokes, and grumpy ones argue more.
+- **Give honest compliments:** they only mention things that are really true, like someone's height, their hair colour, or their top (only when it's clearly one colour). Nothing about beards or anything else that's hard to tell from the model.
+- **Talk from far away:** sometimes two Miis who are far apart don't bother walking over. Loud, outgoing pairs **SHOUT ACROSS THE PLACE**, quieter pairs **call each other on the phone** 📱 (both always do the same thing).
 - **Talk now and then.** Some lines depend on the place they're in.
 - **Meet up in pairs** and:
   - chat
@@ -89,7 +116,7 @@ Your Miis, their friendships and the place you picked are saved in your browser,
 
 ## Mini-games
 
-Click a Mii and pick a game from **Play a game** in its menu:
+Right-click a Mii and pick a game from **Play a game** in its menu:
 
 | Game | Format |
 | --- | --- |
@@ -105,9 +132,11 @@ Every Mii has a **skill meter** for each game, from *Beginner* to *Master*. **Th
 
 While you play, the Mii stops what it's doing and faces you. It chats during the game in its own personality, and celebrates or sulks afterwards.
 
+- **Apartments:** a courtyard in front of the apartment building, where every Mii has a home.
+
 ## About the random Miis
 
-The random Miis (and the ones from **Add random Miis**) are built from the one bundled Mii model, with random colours, names, personalities and catchphrases. They share a face shape and hairstyle. Add your own `.glb` Miis for a crowd with different faces, and remove random ones with 🗑️.
+The random Miis (and the ones from **Add random Miis**) are built from the one bundled Mii model, with random colours, names, personalities and catchphrases. They share a face shape and hairstyle. Add your own `.glb` Miis for a crowd with different faces, and use **📦 Move away** to remove random ones.
 
 ## What's in each place
 
@@ -117,7 +146,7 @@ The random Miis (and the ones from **Add random Miis**) are built from the one b
   - a duck pond with ducklings, lily pads and reeds
   - a three-tier fountain, swings, a picnic blanket, lamp posts and flower beds
   - butterflies, seagulls, clouds, a lighthouse and a sailboat
-- **Office (IT help desk department):**
+- **Office (IT help desk department)** on the top floor of a tower, with real windows looking out over a sunny city (Miis like to gaze out of them):
   - a help desk counter with a "Now serving" ticket display, a take-a-number machine and a waiting area
   - tech desks with dual monitors, PC towers, headsets and a debugging rubber duck
   - a server room with blinking server racks, a cable tray and a raised floor
@@ -153,7 +182,9 @@ js/nav.js             route-finding, so Miis walk around obstacles
 js/dialogue.js        what Miis say and the activities they do together
 js/minigames.js       mini-game rules, the Mii opponents, and skill growth
 js/gamesUI.js         the window where you play a mini-game with a Mii
-js/hub3d.js           moves the Miis around, camera, clicking & dragging
+js/hub3d.js           moves the Miis around, camera, clicking & dragging, home visits, coins
+js/homes.js           furniture, food, and what each Mii likes
+js/homes3d.js         the apartment building and the inside of each home
 js/storage.js         saves Miis in the browser
 electron/main.js      runs Mii Hub as a desktop app (Electron)
 electron/updater.js   checks GitHub for new versions and installs them
@@ -184,3 +215,4 @@ npm test
 - **New place:** write a `buildSomething()` function in `js/world3d.js` (copy one of the others), and add it to `builders` and `list` at the bottom.
 - **New object Miis should walk around:** add its shape to that place's `obstacles` list (circle, oval or rectangle — see the top of `js/nav.js`).
 - **New pose:** add a case to the `switch (p.arms)` in `js/miiModel.js`.
+- **New furniture or food:** add it to `ITEMS` or `FOODS` in `js/homes.js`, and (for furniture) its 3D model in `js/homes3d.js`.

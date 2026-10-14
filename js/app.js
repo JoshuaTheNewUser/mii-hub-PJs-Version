@@ -1,7 +1,7 @@
 /*
  * app.js
  * Connects the buttons and side panels on the page to the 3D hub,
- * and loads/saves the Miis.
+ * loads/saves the Miis, and runs home visits (decorating and food).
  */
 (async function () {
   "use strict";
@@ -9,16 +9,17 @@
   const M = window.MiiModel;
   const D = window.Dialogue;
   const S = window.MiiStorage;
+  const H = window.MiiHomes;
   const $ = (id) => document.getElementById(id);
   const errorMsg = $("errorMsg");
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
-  // ---------- colour choices for the editor ----------
+  // colours for the random Miis (your own Miis keep the colours from Mii Creator)
   const SKINS = ["#ffd3ad", "#ffb669", "#de7942", "#ffaa8c", "#ad5129", "#632c18"];
   const HAIRS = ["#1e1a18", "#402010", "#5c1812", "#7c3a14", "#787878", "#4e3e10", "#84581c", "#d0a04a"];
   const SHIRTS = M.FAVORITE_COLORS.map((c) => c.hex).concat(["#191f40"]);
   const PANTS = ["#40464e", "#2b3a67", "#1c1c1c", "#6b4f2a", "#c9b38a", "#5a6b3a", "#e0e0e0"];
   const EYES = ["#0a4a35", "#000000", "#6c7070", "#663c2c", "#4870a0", "#605e30"];
-
 
   // Wait for the rounded font, so signs and posters drawn in 3D use it too.
   try {
@@ -32,6 +33,10 @@
   hub.chattiness = settings.chattiness || 1;
   $("chatty").value = hub.chattiness;
   hub.setScene(settings.scene && window.World3D.list.some((l) => l.id === settings.scene) ? settings.scene : "park");
+
+  // ---------- every Mii you have (out and about, or at home) ----------
+  const records = new Map(); // id -> record
+  const infos = new Map();   // id -> info from the .glb (name, height...)
 
   // ---------- templates (one per .glb file) ----------
   const templates = new Map();
@@ -57,20 +62,36 @@
   }
 
   function lookFor(record, template) {
-    const look = Object.assign({}, record.look || {});
+    // Your own Miis look exactly like they do in Mii Creator. Only the random
+    // Miis get colours picked here.
+    const look = record.kind === "demo" ? Object.assign({}, record.look || {}) : {};
     look.name = record.name || template.info.name;
     look.favoriteColorName = M.colorName(look.shirt || template.source.shirt, "top");
     return look;
   }
 
-  async function addRecord(record, silent) {
-    // every Mii gets a personality (you can change it from its menu)
-    if (!record.personality) {
-      record.personality = D.randomPersonality();
-      S.putMii(record);
-    }
+  const nameOf = (rec) => rec.name || (infos.get(rec.id) || {}).name || "Mii";
+  const walkerOf = (id) => hub.walkers.find((w) => w.id === id) || (hub.visiting && hub.visiting.record.id === id ? hub.visiting.walker : null);
+
+  function save(record) { S.putMii(record); }
+  let saveTimers = new Map();
+  function saveSoon(record) {
+    clearTimeout(saveTimers.get(record.id));
+    saveTimers.set(record.id, setTimeout(() => S.putMii(record), 400));
+  }
+
+  async function addRecord(record, silent, opts) {
+    // every Mii gets a personality (you can change it from its menu) and a home
+    if (!record.personality) record.personality = D.randomPersonality();
+    H.ensureHome(record);
+    // colours can only be changed in Mii Creator now, so drop any old changes
+    if (record.kind === "glb" && record.look && Object.keys(record.look).length) record.look = {};
+    records.set(record.id, record);
     const template = await templateFor(record);
-    return hub.addWalker(record, template, lookFor(record, template), silent);
+    infos.set(record.id, template.info);
+    if (!record.name) record.name = template.info.name;
+    if (record.atHome) { refreshAll(); return null; }
+    return hub.addWalker(record, template, lookFor(record, template), silent, opts);
   }
 
   // ---------- scene buttons ----------
@@ -80,15 +101,55 @@
     b.className = "scene-tab";
     b.textContent = scene.icon + " " + scene.name;
     b.dataset.scene = scene.id;
-    b.addEventListener("click", () => { hub.setScene(scene.id); saveSettings(); updateTabs(); });
+    b.addEventListener("click", () => goToScene(scene.id));
     tabs.appendChild(b);
   }
+  function goToScene(id) {
+    hub.setScene(id);
+    saveSettings();
+    updateTabs();
+  }
   function updateTabs() {
-    for (const b of document.querySelectorAll("[data-scene]")) b.setAttribute("aria-pressed", String(b.dataset.scene === hub.world.id));
+    const current = hub.visiting ? null : hub.world.id;
+    for (const b of document.querySelectorAll("[data-scene]")) b.setAttribute("aria-pressed", String(b.dataset.scene === current));
   }
 
   function saveSettings() {
-    S.saveSettings({ scene: hub.world.id, friendships: hub.friendships, chattiness: hub.chattiness });
+    const scene = hub.visiting ? (hub.mainWorld && hub.mainWorld.id) : hub.world.id;
+    S.saveSettings({ scene, friendships: hub.friendships, chattiness: hub.chattiness });
+  }
+
+  // ---------- a little pop-up with choices ----------
+  // choices: [{ label, value, kind }] -> resolves with the chosen value (or null)
+  function ask(title, text, choices) {
+    return new Promise((resolve) => {
+      const back = document.createElement("div");
+      back.className = "choice-modal";
+      const card = document.createElement("div");
+      card.className = "choice-card";
+      card.setAttribute("role", "dialog");
+      card.setAttribute("aria-modal", "true");
+      const h = document.createElement("h3");
+      h.textContent = title;
+      const p = document.createElement("p");
+      p.textContent = text;
+      card.append(h, p);
+      const done = (v) => { back.remove(); document.removeEventListener("keydown", onKey); resolve(v); };
+      const onKey = (e) => { if (e.key === "Escape") done(null); };
+      document.addEventListener("keydown", onKey);
+      for (const c of choices) {
+        const b = document.createElement("button");
+        b.className = "choice-btn" + (c.kind ? " " + c.kind : "");
+        b.innerHTML = c.label;
+        b.addEventListener("click", () => done(c.value));
+        card.appendChild(b);
+      }
+      back.appendChild(card);
+      back.addEventListener("pointerdown", (e) => { if (e.target === back) done(null); });
+      $("stage").appendChild(back);
+      const first = card.querySelector("button");
+      if (first) first.focus();
+    });
   }
 
   // ---------- loading .glb files ----------
@@ -102,15 +163,62 @@
         }
         if (file.size > 30 * 1024 * 1024) throw new Error("file is too big");
         const bytes = await file.arrayBuffer();
-        M.readInfo(new Uint8Array(bytes), file.name); // throws if it isn't a .glb
-        const record = { id: "glb-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7), kind: "glb", fileName: file.name, bytes, look: {}, added: Date.now() };
+        const info = M.readInfo(new Uint8Array(bytes), file.name); // throws if it isn't a .glb
+        // already have a Mii with this name?
+        const same = Array.from(records.values()).find((r) => nameOf(r).toLowerCase() === info.name.toLowerCase());
+        if (same) {
+          const choice = await ask("You already have a Mii called " + info.name + "!", "What would you like to do with this file?", [
+            { label: "✨ <b>Update " + escapeHtml(info.name) + "'s look</b><small>New model, same personality, friends, home and coins</small>", value: "update", kind: "primary" },
+            { label: "➕ <b>Add as a new Mii</b><small>Keep both</small>", value: "new" },
+            { label: "🔄 <b>Replace " + escapeHtml(info.name) + "</b><small>Start fresh: the old one moves away</small>", value: "replace", kind: "danger" },
+            { label: "Cancel", value: null, kind: "plain" },
+          ]);
+          if (!choice) continue;
+          if (choice === "update") { await updateModel(same, bytes, file.name); continue; }
+          if (choice === "replace") forgetMii(same, true);
+          if (choice === "new") {
+            const taken = new Set(Array.from(records.values()).map((r) => nameOf(r).toLowerCase()));
+            let n = 2;
+            while (taken.has((info.name + " " + n).toLowerCase())) n++;
+            info.name = info.name + " " + n;
+          }
+        }
+        const record = { id: "glb-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7), kind: "glb", fileName: file.name, bytes, name: info.name, look: {}, added: Date.now() };
         await addRecord(record);
-        S.putMii(record);
+        save(record);
       } catch (e) {
         problems.push(file.name + " (" + e.message + ")");
       }
     }
     if (problems.length) errorMsg.textContent = "Couldn't add: " + problems.join("; ");
+    refreshAll();
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  // A new .glb for a Mii you already have: new model, same everything else.
+  async function updateModel(rec, bytes, fileName) {
+    const template = await M.loadTemplate(bytes.slice(0), fileName);
+    rec.kind = "glb";
+    rec.bytes = bytes;
+    rec.fileName = fileName;
+    rec.look = {};
+    templates.set(rec.id, Promise.resolve(template));
+    infos.set(rec.id, template.info);
+    portraits.delete(rec.id);
+    save(rec);
+    const w = walkerOf(rec.id);
+    if (w) {
+      w.template = template;
+      w.look = lookFor(rec, template);
+      w.buildModel();
+      w.say(pick(["Do you like my new look?", "Ta-da! New me!", "How do I look?"]), 2.5);
+      w.hop(4);
+    }
+    hub.addFeed(nameOf(rec) + " got a new look! ✨");
+    refreshAll(true);
   }
 
   $("fileInput").addEventListener("change", (e) => {
@@ -127,7 +235,6 @@
     loadFiles(Array.from(e.dataTransfer.files));
   });
 
-  // ---------- demo friends ----------
   // ---------- random generic Miis ----------
   // New players start with a few of these, and "Add random Miis" makes more.
   const NAMES = ["Mia", "Leo", "Ava", "Sam", "Kai", "Zoe", "Max", "Ivy", "Ben", "Lily", "Owen", "Ruby", "Finn", "Nora", "Theo",
@@ -136,87 +243,183 @@
     "Kian", "Lena", "Milo", "Nia", "Otto", "Pax", "Quinn", "Remy", "Sol", "Tess", "Uma", "Vic", "Wren", "Xavi", "Yara"];
   const CATCHPHRASES = ["Let's gooo!", "Yay, friends!", "Boop!", "Interesting!", "Oh, um... okay!", "Back in my day...",
     "Easy peasy!", "Wowza!", "Hmph. Fine.", "Let's do this!", "Snack time?", "You got this!", "Whoopsie!", "Neat-o!", ""];
-  const rnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
   function randomMiiRecord(taken) {
     const free = NAMES.filter((n) => !taken.has(n));
-    const name = free.length ? rnd(free) : rnd(NAMES) + " " + (2 + Math.floor(Math.random() * 8));
+    const name = free.length ? pick(free) : pick(NAMES) + " " + (2 + Math.floor(Math.random() * 8));
     taken.add(name);
     const personality = D.randomPersonality();
     // spread personalities out a bit so Miis feel different from each other
     for (const k of ["energy", "social", "chatty", "humor", "kindness"]) {
       personality[k] = Math.round(Math.max(5, Math.min(95, 50 + (Math.random() - 0.5) * 90)));
     }
-    personality.catchphrase = rnd(CATCHPHRASES);
+    personality.catchphrase = pick(CATCHPHRASES);
     return {
       id: "mii-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7),
       kind: "demo", // built from the bundled model, recoloured
       name,
-      look: { skin: rnd(SKINS), hair: rnd(HAIRS), shirt: rnd(SHIRTS), pants: rnd(PANTS), eyes: rnd(EYES), beard: Math.random() < 0.2 },
+      look: { skin: pick(SKINS), hair: pick(HAIRS), shirt: pick(SHIRTS), pants: pick(PANTS), eyes: pick(EYES), beard: Math.random() < 0.2 },
       personality,
       added: Date.now(),
     };
   }
 
   async function addRandomMiis(count) {
-    const taken = new Set(hub.walkers.map((w) => w.look.name));
+    const taken = new Set(Array.from(records.values()).map(nameOf));
     for (let i = 0; i < count; i++) {
       const record = randomMiiRecord(taken);
       await addRecord(record);
-      S.putMii(record);
+      save(record);
     }
   }
   $("demoBtn").addEventListener("click", () => { errorMsg.textContent = ""; addRandomMiis(3); });
 
   $("chatty").addEventListener("input", (e) => { hub.chattiness = parseFloat(e.target.value); saveSettings(); });
 
-  $("clearBtn").addEventListener("click", () => {
-    if (hub.walkers.length && confirm("Send all Miis home? (This removes them from the hub.)")) {
-      hub.clearAll();
-      S.clearMiis();
-      saveSettings();
-    }
+  $("clearBtn").addEventListener("click", async () => {
+    if (!records.size) return;
+    const ok = await ask("Remove every Mii?", "All your Miis, their homes, coins and friendships will be gone for good.", [
+      { label: "<b>Yes, remove everyone</b>", value: true, kind: "danger" },
+      { label: "Cancel", value: false, kind: "plain" },
+    ]);
+    if (!ok) return;
+    closeHomePanel();
+    hub.clearAll();
+    S.clearMiis();
+    records.clear();
+    portraits.clear();
+    saveSettings();
+    refreshAll(true);
   });
 
+  // ---------- going home, coming out, moving away ----------
+  function sendHome(rec, then) {
+    const w = hub.walkers.find((x) => x.id === rec.id);
+    const done = () => {
+      rec.atHome = true;
+      save(rec);
+      refreshAll(true);
+      if (then) then();
+    };
+    if (w) hub.sendHome(rec.id, done);
+    else done();
+  }
+
+  async function inviteOut(rec) {
+    if (hub.visiting && hub.visiting.record.id === rec.id) leaveHome();
+    rec.atHome = false;
+    save(rec);
+    const template = await templateFor(rec);
+    const door = hub.world.doorFor && hub.world.doorFor(rec.id);
+    hub.addWalker(rec, template, lookFor(rec, template), false, {
+      at: door || null,
+      lines: ["I'm back!", "Hi everyone, I'm out!", "What did I miss?", "Fresh air!"],
+      feed: nameOf(rec) + " came out to hang out! 🚪",
+    });
+    refreshAll(true);
+  }
+
+  async function visit(rec) {
+    closeMiiMenu();
+    const go = async () => {
+      const template = await templateFor(rec);
+      hub.visitHome(rec, template, lookFor(rec, template));
+      openHomePanel(rec);
+      updateTabs();
+    };
+    if (rec.atHome) go();
+    else sendHome(rec, go);
+  }
+
+  function leaveHome() {
+    closeHomePanel();
+    hub.leaveHome();
+    updateTabs();
+  }
+  hub.onLeftHome = () => { closeHomePanel(); updateTabs(); };
+
+  // Removes a Mii for good. quiet = no goodbye scene (used when replacing it).
+  function forgetMii(rec, quiet) {
+    if (hub.visiting && hub.visiting.record.id === rec.id) leaveHome();
+    if (quiet) hub.removeWalker(rec.id, true);
+    else hub.moveAway(rec.id, nameOf(rec));
+    records.delete(rec.id);
+    templates.delete(rec.id);
+    portraits.delete(rec.id);
+    S.deleteMii(rec.id);
+    saveSettings();
+    refreshAll(true);
+  }
+
+  async function moveAway(rec) {
+    const ok = await ask(nameOf(rec) + " is moving away?", "This removes " + nameOf(rec) + " from your world for good, along with their home, coins and friendships. The other Miis will react depending on how close they were.", [
+      { label: "📦 <b>Yes, move away</b>", value: true, kind: "danger" },
+      { label: "Cancel", value: false, kind: "plain" },
+    ]);
+    if (ok) { closeMiiMenu(); forgetMii(rec, false); }
+  }
+
+  // Click an apartment in the Apartments to visit whoever lives there.
+  hub.onApartmentClick = (id) => {
+    const rec = records.get(id);
+    if (rec) visit(rec);
+  };
+
   // ---------- roster ----------
-  let editingId = null;
   const portraits = new Map(); // id -> { key, url }
 
-  function portraitFor(w) {
-    const key = JSON.stringify(w.look);
-    const cached = portraits.get(w.id);
+  function portraitFor(rec) {
+    const tpl = templates.get(rec.id) || (rec.kind !== "glb" ? templates.get("sample") : null);
+    const cached = portraits.get(rec.id);
+    const key = JSON.stringify(rec.look || {}) + (rec.fileName || "");
     if (cached && cached.key === key) return cached.url;
-    const url = M.portrait(w.template, w.look, 96);
-    portraits.set(w.id, { key, url });
-    return url;
+    // the template might still be loading: draw the picture once it's ready
+    if (!cached || cached.key !== key) {
+      portraits.set(rec.id, { key, url: cached ? cached.url : "" });
+      Promise.resolve(tpl || templateFor(rec)).then((t) => {
+        const url = M.portrait(t, lookFor(rec, t), 96);
+        portraits.set(rec.id, { key, url });
+        document.querySelectorAll('img[data-portrait="' + rec.id + '"]').forEach((img) => { img.src = url; });
+      });
+    }
+    return portraits.get(rec.id).url;
+  }
+
+  function sortedRecords() {
+    return Array.from(records.values()).sort((a, b) => (a.added || 0) - (b.added || 0));
   }
 
   function renderRoster() {
     const list = $("roster");
     list.innerHTML = "";
-    $("count").textContent = hub.walkers.length;
-    if (!hub.walkers.length) {
+    const all = sortedRecords();
+    $("count").textContent = all.length;
+    if (!all.length) {
       list.innerHTML = '<li class="empty">No Miis yet. Add some above!</li>';
       return;
     }
-    for (const w of hub.walkers) {
+    for (const rec of all) {
+      const w = hub.walkers.find((x) => x.id === rec.id);
       const li = document.createElement("li");
+      if (rec.atHome) li.className = "at-home";
       const row = document.createElement("div");
       row.className = "row";
 
       const img = document.createElement("img");
       img.alt = "";
-      img.src = portraitFor(w);
+      img.dataset.portrait = rec.id;
+      img.src = portraitFor(rec);
 
       const info = document.createElement("div");
       info.className = "info";
       const name = document.createElement("div");
       name.className = "name";
-      name.textContent = w.look.name;
+      name.textContent = nameOf(rec);
       const meta = document.createElement("div");
       meta.className = "meta";
-      meta.textContent = D.personalityLabel(w.record.personality);
-      if (!w.inst.rig.canAnimate) {
+      meta.innerHTML = '<span class="coins" data-coins="' + rec.id + '">🪙 ' + (rec.coins || 0) + "</span> · " +
+        escapeHtml(D.personalityLabel(rec.personality)) + (rec.atHome ? ' · <span class="home-tag">🏠 At home</span>' : "");
+      if (w && !w.inst.rig.canAnimate) {
         // e.g. a "head only" export: it can't walk properly
         const warn = document.createElement("div");
         warn.className = "warn";
@@ -227,101 +430,55 @@
 
       const actions = document.createElement("div");
       actions.className = "actions";
-      const edit = document.createElement("button");
-      edit.textContent = "✏️";
-      edit.title = "Change " + w.look.name + "'s colours";
-      edit.addEventListener("click", () => { editingId = editingId === w.id ? null : w.id; renderRoster(); });
-      const remove = document.createElement("button");
-      remove.textContent = "🗑️";
-      remove.title = "Send " + w.look.name + " home";
-      remove.addEventListener("click", () => {
-        hub.removeWalker(w.id);
-        S.deleteMii(w.id);
-        portraits.delete(w.id);
-        saveSettings();
-      });
-      actions.append(edit, remove);
+      const btn = (icon, title, fn) => {
+        const b = document.createElement("button");
+        b.textContent = icon;
+        b.title = title;
+        b.setAttribute("aria-label", title);
+        b.addEventListener("click", fn);
+        actions.appendChild(b);
+      };
+      if (rec.atHome) {
+        btn("🏡", "Visit " + nameOf(rec) + " at home", () => visit(rec));
+        btn("🚪", "Invite " + nameOf(rec) + " out", () => inviteOut(rec));
+      } else {
+        btn("🏠", "Send " + nameOf(rec) + " home", () => sendHome(rec));
+      }
 
       row.append(img, info, actions);
-      // click the picture or name to open the Mii's menu
+      // click the picture or name to open the Mii's menu (or visit, if they're home)
       for (const el of [img, info]) {
         el.style.cursor = "pointer";
-        el.addEventListener("click", (e) => openMiiMenu(w, e.clientX, e.clientY));
+        el.addEventListener("click", (e) => {
+          const ww = walkerOf(rec.id);
+          if (ww) openMiiMenu(ww, e.clientX, e.clientY);
+          else visit(rec);
+        });
       }
       li.appendChild(row);
-      if (editingId === w.id) li.appendChild(buildEditor(w));
       list.appendChild(li);
     }
   }
 
-  function changeLook(w, change) {
-    w.record.look = Object.assign({}, w.record.look, change);
-    const look = lookFor(w.record, w.template);
-    w.look = look;
-    w.buildModel();
-    S.putMii(w.record);
-    renderRoster();
-  }
-
-  function buildEditor(w) {
-    const box = document.createElement("div");
-    box.className = "editor";
-    const current = w.record.look || {};
-
-    function swatchRow(label, colors, key) {
-      const l = document.createElement("div");
-      l.className = "editor-row";
-      const span = document.createElement("span");
-      span.textContent = label;
-      const row = document.createElement("div");
-      row.className = "swatches";
-      for (const c of colors) {
-        const s = document.createElement("button");
-        s.type = "button";
-        s.className = "swatch" + (current[key] === c ? " selected" : "");
-        s.style.background = c;
-        s.title = label + " " + c;
-        s.addEventListener("click", () => changeLook(w, { [key]: c }));
-        row.appendChild(s);
-      }
-      l.append(span, row);
-      return l;
+  // Updates just the coin numbers (cheap, so it can happen often).
+  function renderCoins() {
+    for (const el of document.querySelectorAll("[data-coins]")) {
+      const rec = records.get(el.dataset.coins);
+      if (rec) el.textContent = "🪙 " + (rec.coins || 0);
     }
-
-    const beardRow = document.createElement("div");
-    beardRow.className = "editor-row";
-    const beardLabel = document.createElement("span");
-    beardLabel.textContent = "Beard";
-    const sel = document.createElement("select");
-    sel.innerHTML = '<option value="keep">As in the file</option><option value="no">No beard</option>';
-    sel.value = current.beard === false ? "no" : "keep";
-    sel.addEventListener("change", () => changeLook(w, { beard: sel.value === "no" ? false : true }));
-    beardRow.append(beardLabel, sel);
-
-    const reset = document.createElement("button");
-    reset.className = "link-btn";
-    reset.textContent = "Reset to original colours";
-    reset.addEventListener("click", () => { w.record.look = {}; changeLook(w, {}); });
-
-    box.append(
-      swatchRow("Skin", SKINS, "skin"),
-      swatchRow("Hair", HAIRS, "hair"),
-      swatchRow("Top", SHIRTS, "shirt"),
-      swatchRow("Pants", PANTS, "pants"),
-      swatchRow("Eyes", EYES, "eyes"),
-      beardRow,
-      reset,
-    );
-    return box;
   }
+
+  hub.onCoins = (w) => {
+    saveSoon(w.record);
+    renderCoins();
+  };
 
   // ---------- friendships & feed ----------
   function renderFriends() {
     const list = $("friends");
     list.innerHTML = "";
-    const byId = new Map(hub.walkers.map((w) => [w.id, w]));
     const pairs = Object.entries(hub.friendships)
-      .map(([key, pts]) => { const [a, b] = key.split("|"); return { a: byId.get(a), b: byId.get(b), pts }; })
+      .map(([key, pts]) => { const [a, b] = key.split("|"); return { a: records.get(a), b: records.get(b), pts }; })
       .filter((p) => p.a && p.b && p.pts > 0)
       .sort((x, y) => y.pts - x.pts)
       .slice(0, 10);
@@ -332,7 +489,7 @@
     for (const p of pairs) {
       const level = D.levelFor(p.pts);
       const li = document.createElement("li");
-      li.textContent = p.a.look.name + " & " + p.b.look.name;
+      li.textContent = nameOf(p.a) + " & " + nameOf(p.b);
       const lv = document.createElement("span");
       lv.className = "level";
       lv.textContent = level.emoji + " " + level.name;
@@ -355,18 +512,27 @@
     }
   }
 
+  // who lives in which apartment (for the Apartments place)
+  function updateResidents() {
+    hub.setResidents(sortedRecords().map((r) => ({ id: r.id, name: nameOf(r), home: !!r.atHome })));
+  }
+
   let pending = false;
-  let rosterCount = -1;
+  let rosterKey = "";
+  // force = rebuild the roster even if nobody came or went
+  function refreshAll(force) {
+    const key = sortedRecords().map((r) => r.id + (r.atHome ? "h" : "") + nameOf(r)).join(",");
+    if (force || key !== rosterKey) { rosterKey = key; renderRoster(); updateResidents(); }
+    renderFriends();
+    renderFeed();
+    updateTabs();
+  }
   hub.onChange = () => {
     if (pending) return;
     pending = true;
     setTimeout(() => {
       pending = false;
-      // only rebuild the roster when Miis come or go (portraits are slow-ish to draw)
-      if (hub.walkers.length !== rosterCount) { rosterCount = hub.walkers.length; renderRoster(); }
-      renderFriends();
-      renderFeed();
-      updateTabs();
+      refreshAll(false);
       saveSettings();
     }, 250);
   };
@@ -376,12 +542,15 @@
   hub.start();
 
   const saved = (await S.getAllMiis()).sort((a, b) => (a.added || 0) - (b.added || 0));
-  if (saved.length) {
-    for (const r of saved) {
-      try { await addRecord(r, true); } catch (e) { console.warn("Couldn't load saved Mii", e); }
-    }
+  for (const r of saved) {
+    try {
+      const hadLook = r.kind === "glb" && r.look && Object.keys(r.look).length;
+      const hadHome = !!r.home;
+      await addRecord(r, true);
+      if (hadLook || !hadHome) save(r);
+    } catch (e) { console.warn("Couldn't load saved Mii", e); }
   }
-  if (!hub.walkers.length) {
+  if (!records.size) {
     // First visit: a few random generic Miis to get things going.
     try {
       await addRandomMiis(5);
@@ -389,11 +558,10 @@
       errorMsg.textContent = "Couldn't create the starter Miis: " + e.message;
     }
   }
-  rosterCount = -1;
-  hub.onChange();
+  refreshAll(true);
 
 
-  // ---------- the Mii menu (click or right-click a Mii) ----------
+  // ---------- the Mii menu (right-click a Mii) ----------
   const MG = window.MiniGames;
   // each Mii's record of how good it is at each game
   function gameStats(rec, id) {
@@ -406,31 +574,24 @@
   menu.className = "mii-menu";
   menu.hidden = true;
   $("stage").appendChild(menu);
-  let menuFor = null;
-  let saveTimer = null;
-
-  function saveSoon(record) {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => S.putMii(record), 300);
-  }
 
   function closeMiiMenu() {
     menu.hidden = true;
-    menuFor = null;
   }
 
   function openMiiMenu(w, clientX, clientY) {
-    menuFor = w;
     const rec = w.record;
     rec.personality = Object.assign({}, D.DEFAULT_PERSONALITY, rec.personality || {});
     const p = rec.personality;
+    const atHomeVisit = hub.visiting && hub.visiting.walker === w;
     menu.innerHTML = "";
 
-    // header: picture, name, personality type
+    // header: picture, name, personality type, coins
     const head = document.createElement("div");
     head.className = "mm-head";
     const img = document.createElement("img");
-    img.src = portraitFor(w);
+    img.src = portraitFor(rec);
+    img.dataset.portrait = rec.id;
     img.alt = "";
     const titles = document.createElement("div");
     titles.className = "mm-titles";
@@ -446,12 +607,11 @@
       w.look.name = name;
       w.uiName.textContent = name;
       saveSoon(rec);
-      rosterCount = -1;
       hub.onChange();
     });
     const label = document.createElement("div");
     label.className = "mm-label";
-    label.textContent = D.personalityLabel(p);
+    label.innerHTML = escapeHtml(D.personalityLabel(p)) + ' · <span data-coins="' + rec.id + '">🪙 ' + (rec.coins || 0) + "</span>";
     titles.append(nameInput, label);
     const close = document.createElement("button");
     close.className = "mm-close";
@@ -484,10 +644,10 @@
       r.setAttribute("aria-label", t.low + " to " + t.high);
       r.addEventListener("input", () => {
         p[t.key] = Number(r.value);
-        label.textContent = D.personalityLabel(p);
+        label.firstChild.textContent = D.personalityLabel(p) + " · ";
         saveSoon(rec);
       });
-      r.addEventListener("change", () => { rosterCount = -1; hub.onChange(); });
+      r.addEventListener("change", () => refreshAll(true));
       row.append(lo, r, hi);
       pers.appendChild(row);
     }
@@ -510,9 +670,9 @@
       const st = gameStats(rec, g.id);
       const row = document.createElement("div");
       row.className = "mm-game";
-      const label = document.createElement("div");
-      label.className = "mm-game-name";
-      label.innerHTML = "<span>" + g.icon + "</span>" + g.short;
+      const glabel = document.createElement("div");
+      glabel.className = "mm-game-name";
+      glabel.innerHTML = "<span>" + g.icon + "</span>" + g.short;
       const meterWrap = document.createElement("div");
       meterWrap.className = "mm-game-meter";
       const meter = document.createElement("div");
@@ -533,19 +693,20 @@
         closeMiiMenu();
         window.MiiGamesUI.open({
           walker: w, game: g.id, hub, stage: $("stage"),
-          portrait: portraitFor(w), stats: gameStats(rec, g.id),
+          portrait: portraitFor(rec), stats: gameStats(rec, g.id),
           onSave: () => saveSoon(rec),
         });
       });
-      row.append(label, meterWrap, play);
+      row.append(glabel, meterWrap, play);
       games.appendChild(row);
     }
 
-    // best friends
+    // best friends (including Miis who are at home right now)
     const fr = document.createElement("div");
     fr.className = "mm-section";
-    const pals = hub.walkers.filter((o) => o !== w)
-      .map((o) => ({ o, pts: hub.points(w, o) })).filter((x) => x.pts > 0)
+    const pals = sortedRecords().filter((o) => o.id !== rec.id)
+      .map((o) => ({ o, pts: hub.friendships[rec.id < o.id ? rec.id + "|" + o.id : o.id + "|" + rec.id] || 0 }))
+      .filter((x) => x.pts > 0)
       .sort((a, b) => b.pts - a.pts).slice(0, 3);
     fr.innerHTML = "<h3>Best friends</h3>";
     const ul = document.createElement("ul");
@@ -553,7 +714,7 @@
     for (const { o, pts } of pals) {
       const li = document.createElement("li");
       const lv = D.levelFor(pts);
-      li.textContent = lv.emoji + " " + o.look.name + " — " + lv.name;
+      li.textContent = lv.emoji + " " + nameOf(o) + " — " + lv.name;
       ul.appendChild(li);
     }
     fr.appendChild(ul);
@@ -561,27 +722,27 @@
     // footer
     const foot = document.createElement("div");
     foot.className = "mm-foot";
-    const look = document.createElement("button");
-    look.textContent = "🎨 Change look";
-    look.addEventListener("click", () => {
-      editingId = w.id;
-      renderRoster();
-      closeMiiMenu();
-      const li = document.querySelector(".roster .editor");
-      if (li) li.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
-    const home = document.createElement("button");
-    home.className = "danger";
-    home.textContent = "🏠 Send home";
-    home.addEventListener("click", () => {
-      if (!confirm("Send " + w.look.name + " home? (This removes them from the hub.)")) return;
-      closeMiiMenu();
-      hub.removeWalker(w.id);
-      S.deleteMii(w.id);
-      portraits.delete(w.id);
-      saveSettings();
-    });
-    foot.append(look, home);
+    const homeBtn = document.createElement("button");
+    if (atHomeVisit) {
+      homeBtn.textContent = "🚪 Invite out";
+      homeBtn.title = "Bring " + nameOf(rec) + " back out to hang out";
+      homeBtn.addEventListener("click", () => { closeMiiMenu(); inviteOut(rec); });
+    } else {
+      homeBtn.textContent = "🏠 Send home";
+      homeBtn.title = nameOf(rec) + " goes home. You can visit them there, and invite them back out any time.";
+      homeBtn.addEventListener("click", () => { closeMiiMenu(); sendHome(rec); });
+    }
+    const visitBtn = document.createElement("button");
+    visitBtn.textContent = "🏡 Visit home";
+    visitBtn.addEventListener("click", () => visit(rec));
+    const away = document.createElement("button");
+    away.className = "danger";
+    away.textContent = "📦 Move away";
+    away.title = "Remove " + nameOf(rec) + " from your world for good";
+    away.addEventListener("click", () => moveAway(rec));
+    foot.append(homeBtn);
+    if (!atHomeVisit) foot.append(visitBtn);
+    foot.append(away);
 
     menu.append(head, acts, games, pers, fr, foot);
     menu.hidden = false;
@@ -603,9 +764,170 @@
     if (!menu.hidden && !menu.contains(e.target) && e.target !== $("hub")) closeMiiMenu();
   });
   $("hub").addEventListener("pointerdown", (e) => {
-    if (!menu.hidden && e.button === 0 && !hub.pickWalker(hub.pointerRay(e))) closeMiiMenu();
+    if (!menu.hidden && e.button === 0) closeMiiMenu();
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMiiMenu(); });
+
+
+  // ---------- visiting a Mii's home: decorating and food ----------
+  const panel = document.createElement("div");
+  panel.className = "home-panel";
+  panel.hidden = true;
+  $("stage").appendChild(panel);
+  let panelTab = "decorate";
+  let panelSlot = "bed";
+
+  // What the Mii says to you while you visit.
+  hub.onHomeTalk = (w, kind) => {
+    const rec = w.record;
+    const p = w.personality;
+    if (kind === "hello") {
+      if (p.social <= 35) return pick(["Oh! A visitor... h-hi!", "You came to see me? Um, come in..."]);
+      if (p.kindness <= 35) return pick(["Oh. It's you. Come in, I guess.", "Wipe your feet."]);
+      if (p.energy >= 70) return pick(["YOU'RE HERE! Come in, come in!", "A visitor! Yay!"]);
+      return pick(["Welcome to my home!", "Oh, hi! Come on in!", "Make yourself at home!"]);
+    }
+    return H.homeLine(rec, p, rec.home && rec.home.lastGift);
+  };
+
+  function openHomePanel(rec) {
+    panel.hidden = false;
+    panel.dataset.id = rec.id;
+    renderHomePanel();
+  }
+  function closeHomePanel() {
+    panel.hidden = true;
+    delete panel.dataset.id;
+  }
+
+  const EMOTE = { love: "😍", like: "😊", okay: "🙂", dislike: "😒" };
+
+  function renderHomePanel() {
+    const rec = records.get(panel.dataset.id);
+    if (!rec) { closeHomePanel(); return; }
+    const p = D.traits(rec);
+    panel.innerHTML = "";
+
+    const head = document.createElement("div");
+    head.className = "hp-head";
+    head.innerHTML = "<div><b>🏠 " + escapeHtml(nameOf(rec)) + "'s home</b><div class=\"hp-sub\">Mood " + H.moodFace(rec.mood) +
+      ' · <span class="hp-coins" data-coins="' + rec.id + '">🪙 ' + (rec.coins || 0) + "</span></div></div>";
+    const leave = document.createElement("button");
+    leave.className = "hp-leave";
+    leave.textContent = "← Leave";
+    leave.title = "Go back outside";
+    leave.addEventListener("click", leaveHome);
+    head.appendChild(leave);
+
+    const tabsEl = document.createElement("div");
+    tabsEl.className = "hp-tabs";
+    for (const [id, text] of [["decorate", "🛋️ Decorate"], ["food", "🍙 Give food"], ["more", "⋯ More"]]) {
+      const b = document.createElement("button");
+      b.textContent = text;
+      b.setAttribute("aria-pressed", String(panelTab === id));
+      b.addEventListener("click", () => { panelTab = id; renderHomePanel(); });
+      tabsEl.appendChild(b);
+    }
+    panel.append(head, tabsEl);
+
+    const body = document.createElement("div");
+    body.className = "hp-body";
+    if (panelTab === "decorate") {
+      const slots = document.createElement("div");
+      slots.className = "hp-slots";
+      for (const s of H.SLOTS) {
+        const b = document.createElement("button");
+        b.textContent = s.icon;
+        b.title = s.name;
+        b.setAttribute("aria-label", s.name);
+        b.setAttribute("aria-pressed", String(panelSlot === s.id));
+        b.addEventListener("click", () => { panelSlot = s.id; renderHomePanel(); });
+        slots.appendChild(b);
+      }
+      const slotName = document.createElement("div");
+      slotName.className = "hp-slotname";
+      slotName.textContent = H.SLOTS.find((s) => s.id === panelSlot).name;
+      const grid = document.createElement("div");
+      grid.className = "hp-grid";
+      for (const it of H.ITEMS.filter((i) => i.slot === panelSlot)) {
+        const owned = rec.home.owned.includes(it.id);
+        const placed = rec.home.items[it.slot] === it.id;
+        const b = document.createElement("button");
+        b.className = "hp-item" + (placed ? " placed" : "");
+        b.innerHTML = "<span class=\"hp-icon\">" + it.icon + "</span><span class=\"hp-name\">" + escapeHtml(it.name) + "</span><span class=\"hp-price\">" +
+          (placed ? "✓ In use" : owned ? "Owned" : "🪙 " + it.price) + "</span>";
+        b.disabled = placed || (!owned && (rec.coins || 0) < it.price);
+        if (!owned && (rec.coins || 0) < it.price) b.title = nameOf(rec) + " needs " + (it.price - (rec.coins || 0)) + " more coins";
+        b.addEventListener("click", () => placeItem(rec, it));
+        grid.appendChild(b);
+      }
+      body.append(slots, slotName, grid);
+    } else if (panelTab === "food") {
+      const grid = document.createElement("div");
+      grid.className = "hp-grid";
+      for (const f of H.FOODS) {
+        const b = document.createElement("button");
+        b.className = "hp-item";
+        b.innerHTML = "<span class=\"hp-icon\">" + f.icon + "</span><span class=\"hp-name\">" + escapeHtml(f.name) + "</span><span class=\"hp-price\">🪙 " + f.price + "</span>";
+        b.disabled = (rec.coins || 0) < f.price;
+        b.addEventListener("click", () => giveFood(rec, f));
+        grid.appendChild(b);
+      }
+      const tip = document.createElement("p");
+      tip.className = "hp-tip";
+      tip.textContent = "Every Mii has a favourite food (and one they can't stand). Find out by trying!";
+      body.append(tip, grid);
+    } else {
+      const tip = document.createElement("p");
+      tip.className = "hp-tip";
+      tip.innerHTML = "Miis earn 🪙 coins by spending meaningful time with each other: trying new things, making new friends and stepping out of their comfort zone. " +
+        "Chatting about the same thing with the same Mii over and over doesn't earn much. Playing games with you earns coins too.";
+      const out = document.createElement("button");
+      out.className = "hp-wide";
+      out.textContent = "🚪 Invite " + nameOf(rec) + " out";
+      out.addEventListener("click", () => inviteOut(rec));
+      const away = document.createElement("button");
+      away.className = "hp-wide danger";
+      away.textContent = "📦 Move away for good";
+      away.addEventListener("click", () => moveAway(rec));
+      body.append(tip, out, away);
+    }
+    panel.appendChild(body);
+  }
+
+  function placeItem(rec, it) {
+    const owned = rec.home.owned.includes(it.id);
+    if (!owned) {
+      if ((rec.coins || 0) < it.price) return;
+      rec.coins -= it.price;
+      rec.home.owned.push(it.id);
+    }
+    rec.home.items[it.slot] = it.id;
+    hub.refreshHome();
+    if (it.price > 0 || it.tags.length) {
+      const p = D.traits(rec);
+      const op = H.opinion(p, rec, it);
+      // a Mii only gets excited about something the first time
+      if (!owned) rec.mood = Math.max(0, Math.min(100, (rec.mood || 60) + H.MOOD_CHANGE[op]));
+      if (op !== "dislike") rec.home.lastGift = it.name;
+      hub.homeReact(H.reaction("item", op, it, p), EMOTE[op], it.id);
+    }
+    save(rec);
+    renderHomePanel();
+    renderCoins();
+  }
+
+  function giveFood(rec, f) {
+    if ((rec.coins || 0) < f.price) return;
+    rec.coins -= f.price;
+    const p = D.traits(rec);
+    const op = H.opinion(p, rec, f);
+    rec.mood = Math.max(0, Math.min(100, (rec.mood || 60) + H.MOOD_CHANGE[op] * 0.6));
+    hub.giveFood(f, H.reaction("food", op, f, p), op === "dislike" ? "🤢" : EMOTE[op]);
+    save(rec);
+    renderHomePanel();
+    renderCoins();
+  }
 
 
   // ---------- full screen (just the 3D scene) ----------
@@ -641,7 +963,7 @@
     b.title = scene.name;
     b.setAttribute("aria-label", scene.name);
     b.dataset.scene = scene.id;
-    b.addEventListener("click", () => { hub.setScene(scene.id); saveSettings(); updateTabs(); });
+    b.addEventListener("click", () => goToScene(scene.id));
     stageScenes.appendChild(b);
   }
 
@@ -672,4 +994,5 @@
   }
 
   window.hub = hub; // handy for poking around in the browser console
+  window.miiApp = { records, visit, sendHome, inviteOut, moveAway, forgetMii, loadFiles, leaveHome }; // for tests
 })();

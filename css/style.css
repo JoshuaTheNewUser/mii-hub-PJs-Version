@@ -163,6 +163,10 @@ body {
 
 .bubble.show { opacity: 1; transform: scale(1); }
 
+/* shouting from far away: big, bold letters */
+.bubble.shout { font-size: 1rem; font-weight: 800; letter-spacing: 0.02em; background: #fff8d6; }
+.bubble.shout::after { border-top-color: #fff8d6; }
+
 .emote {
   position: absolute;
   left: 18px;
@@ -202,6 +206,23 @@ body {
   animation: floatUp 1.8s ease-out forwards;
   opacity: 0;
 }
+
+/* "+2 🪙" when a Mii earns coins */
+.coin-pop {
+  position: absolute;
+  z-index: 5;
+  translate: -50% 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #fff3b8;
+  color: #7a5a00;
+  font-weight: 800;
+  font-size: 0.85rem;
+  pointer-events: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  animation: floatUp 1.8s ease-out forwards;
+}
+.coin-pop.big { font-size: 1rem; background: #ffe36b; }
 
 @keyframes floatUp {
   0% { opacity: 1; transform: translateY(0) scale(0.6); }
@@ -394,47 +415,6 @@ body {
   cursor: pointer;
   font-size: 1rem;
   padding: 4px;
-  color: var(--text);
-}
-
-.editor {
-  margin-top: 8px;
-  padding: 8px;
-  border-radius: 10px;
-  background: var(--bg);
-  display: grid;
-  gap: 6px;
-}
-
-.editor-row {
-  display: grid;
-  grid-template-columns: 56px 1fr;
-  align-items: center;
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-
-.editor .link-btn { justify-self: start; padding: 0; }
-
-.swatches { display: flex; flex-wrap: wrap; gap: 4px; }
-
-.swatch {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 2px solid rgba(0, 0, 0, 0.15);
-  cursor: pointer;
-  padding: 0;
-}
-
-.swatch.selected { outline: 3px solid var(--accent); outline-offset: 1px; }
-
-.editor select {
-  font: inherit;
-  padding: 3px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--panel);
   color: var(--text);
 }
 
@@ -911,3 +891,153 @@ body {
   .ttt-grid { grid-template-columns: repeat(3, 64px); }
   .ttt-cell { height: 64px; }
 }
+
+/* ---------- roster: Miis at home ---------- */
+.roster li.at-home img { filter: saturate(0.6); opacity: 0.85; }
+.roster .home-tag { color: var(--accent); font-weight: 700; }
+.roster .coins { font-weight: 700; color: #a07800; }
+
+/* ---------- pop-up choices (same-name import, moving away...) ---------- */
+.choice-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(20, 30, 60, 0.35);
+  backdrop-filter: blur(2px);
+}
+
+.choice-card {
+  width: min(380px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  display: grid;
+  gap: 8px;
+  animation: menuPop 0.18s ease-out;
+}
+
+.choice-card h3 { margin: 0; font-size: 1.1rem; font-weight: 800; }
+.choice-card p { margin: 0 0 4px; color: var(--muted); font-size: 0.9rem; }
+
+.choice-btn {
+  display: block;
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.choice-btn small { display: block; color: var(--muted); font-size: 0.78rem; }
+.choice-btn:hover, .choice-btn:focus-visible { border-color: var(--accent); outline: none; }
+.choice-btn.primary { border-color: var(--accent); }
+.choice-btn.danger b { color: var(--danger); }
+.choice-btn.plain { text-align: center; border-color: transparent; color: var(--muted); }
+
+/* ---------- home visit panel ---------- */
+.home-panel {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 14;
+  width: min(300px, calc(100% - 20px));
+  max-height: calc(100% - 20px);
+  overflow-y: auto;
+  padding: 10px 12px 12px;
+  border-radius: 16px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+}
+
+.home-panel[hidden] { display: none; }
+
+.hp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.hp-head b { font-size: 1.05rem; font-weight: 800; }
+.hp-sub { font-size: 0.85rem; color: var(--muted); font-weight: 700; }
+.hp-coins { color: #a07800; }
+
+.hp-leave {
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.hp-tabs { display: flex; gap: 4px; margin: 10px 0 8px; }
+
+.hp-tabs button, .hp-slots button {
+  flex: 1;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 5px 2px;
+  cursor: pointer;
+}
+
+.hp-tabs button[aria-pressed="true"], .hp-slots button[aria-pressed="true"] { border-color: var(--accent); background: rgba(47, 164, 231, 0.12); }
+.hp-slots { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.hp-slots button { font-size: 1rem; padding: 3px 0; }
+.hp-slotname { margin: 8px 0 4px; font-size: 0.85rem; font-weight: 800; }
+
+.hp-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+
+.hp-item {
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  padding: 6px 4px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.hp-item:hover:not(:disabled) { border-color: var(--accent); }
+.hp-item:disabled { cursor: default; opacity: 0.5; }
+.hp-item.placed { opacity: 1; border-color: #5cc84a; }
+.hp-icon { font-size: 1.5rem; }
+.hp-name { font-size: 0.75rem; font-weight: 700; text-align: center; line-height: 1.15; }
+.hp-price { font-size: 0.72rem; font-weight: 800; color: #a07800; }
+.hp-item.placed .hp-price { color: #3d9a2e; }
+.hp-tip { margin: 0 0 8px; font-size: 0.8rem; color: var(--muted); }
+
+.hp-wide {
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 2px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hp-wide:hover { border-color: var(--accent); }
+.hp-wide.danger { color: var(--danger); }

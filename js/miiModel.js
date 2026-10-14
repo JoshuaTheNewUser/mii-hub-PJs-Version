@@ -158,12 +158,16 @@
       const key = (px[i] >> 3) + "," + (px[i + 1] >> 3) + "," + (px[i + 2] >> 3);
       counts.set(key, (counts.get(key) || 0) + 1);
     }
-    let best = null, bestN = 0;
-    for (const [k, n] of counts) if (n > bestN) { best = k; bestN = n; }
+    let best = null, bestN = 0, total = 0;
+    for (const [k, n] of counts) { total += n; if (n > bestN) { best = k; bestN = n; } }
     if (!best) return null;
     // look up the exact colour of one pixel in the winning bucket
     for (let i = 0; i < px.length; i += 4) {
-      if ((px[i] >> 3) + "," + (px[i + 1] >> 3) + "," + (px[i + 2] >> 3) === best) return [px[i], px[i + 1], px[i + 2]];
+      if ((px[i] >> 3) + "," + (px[i + 1] >> 3) + "," + (px[i + 2] >> 3) === best) {
+        const rgb = [px[i], px[i + 1], px[i + 2]];
+        rgb.share = bestN / total; // how much of the picture is this colour
+        return rgb;
+      }
     }
     return null;
   }
@@ -177,41 +181,40 @@
     return a && b && (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2 < tol;
   }
 
+  // Kinds of clothes, from the names Mii Creator gives the clothes parts
+  // (like "clothes_m_Hoodie"), so Miis can say "nice hoodie!" and be right.
+  const GARMENTS = [
+    [/dress/i, "dress"], [/hoodie|parka/i, "hoodie"], [/sweater|jumper|knit/i, "sweater"], [/jacket|blazer/i, "jacket"],
+    [/coat/i, "coat"], [/overall/i, "overalls"], [/kimono/i, "kimono"], [/suit/i, "suit"], [/vest|tank/i, "vest"],
+    [/polo/i, "polo shirt"], [/tee|tshirt|t_shirt/i, "T-shirt"], [/shirt|top/i, "shirt"],
+  ];
+
   function detectSourceColors(scene) {
     const src = Object.assign({}, SOURCE);
     const shirtVotes = [];
+    const clothes = [];
     scene.traverse((o) => {
+      if (/^clothes/i.test(o.name)) clothes.push(o.name);
       if (!o.isMesh || !o.material) return;
       const m = o.material;
       const mname = (m.name || "").toLowerCase();
       if (mname === "nose") src.skin = colorToRgb255(m.color);
-      if (mname === "hair") src.hair = colorToRgb255(m.color);
+      if (mname === "hair") { src.hair = colorToRgb255(m.color); src.hasHair = true; }
       if (/^clothes/i.test(o.name) && m.map) {
         const dom = dominantColor(m.map);
-        if (/pants|bottom|skirt/i.test(o.name)) src.pants = dom || src.pants;
+        if (/pants|bottom|skirt|shorts|trouser/i.test(o.name)) src.pants = dom || src.pants;
         else if (dom) shirtVotes.push(dom);
       }
     });
     const tops = shirtVotes.filter((c) => !near(c, src.skin, 2400));
-    if (tops.length) src.shirt = tops[0];
-    // a beard shows up as hair-coloured parts on the face picture
-    scene.traverse((o) => {
-      if (o.isMesh && o.material && (o.material.name || "").toLowerCase() === "faceline" && o.material.map) {
-        const img = o.material.map.image;
-        const c = document.createElement("canvas");
-        c.width = c.height = 48;
-        const ctx = c.getContext("2d");
-        ctx.drawImage(img, 0, 0, 48, 48);
-        const px = ctx.getImageData(0, 0, 48, 48).data;
-        let hairy = 0, total = 0;
-        for (let i = 0; i < px.length; i += 4) {
-          if (px[i + 3] < 200) continue;
-          total++;
-          if (near([px[i], px[i + 1], px[i + 2]], src.hair, 2400)) hairy++;
-        }
-        src.hasBeard = total > 0 && hairy / total > 0.08;
-      }
-    });
+    if (tops.length) {
+      src.shirt = tops[0];
+      // only talk about the top's colour if it's clearly one main colour
+      src.topReliable = tops[0].share >= 0.3;
+    }
+    // what kind of top it is (ignoring trousers and sleeve parts)
+    const topNames = clothes.filter((n) => !/pants|bottom|skirt|shorts|trouser|shoe|sock|arms/i.test(n)).join(" ");
+    for (const [re, word] of GARMENTS) if (re.test(topNames)) { src.garment = word; break; }
     return src;
   }
 
@@ -402,12 +405,42 @@
     }
 
     const rig = new Rig(bones, mixer, actions);
+    // How long the legs are (hip to ankle), so steps match the walking speed
+    // and the feet stay on the ground instead of sliding.
+    const hipBone = found.Leg_1_L || found.Leg_1_R;
+    const kneeBone = found.Leg_2_L || found.Leg_2_R;
+    if (hipBone && kneeBone) {
+      const ankle = kneeBone.children.find((c) => c.isBone || /ankle|foot/i.test(c.name));
+      const wp = (o) => new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
+      const hipY = wp(hipBone).y;
+      const footY = ankle ? wp(ankle).y : Math.max(0, hipY - 2 * (hipY - wp(kneeBone).y));
+      if (hipY - footY > 0.1) rig.legLen = hipY - footY + 0.05;
+    }
     return { holder, inner, object, rig };
   }
 
   // ---- posing ----
   const tmpQ = new THREE.Quaternion();
   const tmpE = new THREE.Euler();
+
+  // How a Mii moves depends on its personality (see animStyle in hub3d.js).
+  // These are the "average Mii" values.
+  const DEFAULT_STYLE = {
+    stride: 0.55,     // how far the legs swing
+    armSwing: 0.9,    // how much the arms swing when walking
+    armsOut: 0.06,    // arms held away from the body
+    bounce: 0.03,     // springy steps
+    lean: 0.03,       // leaning forward when walking
+    headDown: 0,      // shy Miis look down a bit
+    wobble: 0,        // goofy side-to-side waddle
+    stomp: 0.3,       // heavy, stompy steps
+    gesture: 0.5,     // hand movements while talking
+    waveSize: 1,      // big or small waves
+    tempo: 1,         // how fast they dance and fidget
+    dance: "sway",    // "sway" (calm), "jumpy" (energetic) or "silly"
+    idle: "relaxed",  // what they do when standing around (see below)
+    fidget: 0.4,      // swinging legs when sitting, etc.
+  };
 
   class Rig {
     constructor(bones, mixer, actions) {
@@ -418,6 +451,8 @@
       this.hasLegs = !!(bones.Leg_1_L && bones.Leg_1_R);
       this.canAnimate = this.hasLegs || !!mixer;
       this.missing = Object.keys(BONE_PATTERNS).filter((k) => !bones[k]);
+      this.legLen = 0.75; // measured in createInstance when possible
+      this.drop = 0;      // how far the body should move down (legs apart = hips lower)
     }
 
     // Rotates a bone by (x, y, z) radians measured in the Mii's own space:
@@ -431,15 +466,25 @@
       b.bone.quaternion.copy(b.parentQInv).multiply(tmpQ).multiply(b.base).multiply(b.parentQ).multiply(b.rest);
     }
 
+    // How far one step carries the Mii (used to time the walk cycle to the speed).
+    stepLength(style) {
+      const st = style || DEFAULT_STYLE;
+      return Math.max(0.2, 2 * this.legLen * Math.sin(st.stride) * 0.95);
+    }
+
     /*
      * p = {
-     *   t, walk (0..1 how much walking), phase (walk cycle),
-     *   arms: "down" | "wave" | "up" | "cheer" | "out" | "type" | "held",
-     *   lookYaw, nod, dance, sit
+     *   t, dt, walk (0..1 how much walking), phase (walk cycle), run (on a treadmill),
+     *   arms: "down" | "wave" | "up" | "cheer" | "out" | "type" | "held" | "phone" |
+     *         "shout" | "eat" | "drum" | "punch",
+     *   style (see DEFAULT_STYLE), talking, lookYaw, lookUp, nod, laugh, dance, sit, lie
      * }
+     * Afterwards, this.drop says how much lower the body should be (so feet stay planted).
      */
     pose(p) {
       const t = p.t || 0;
+      const st = p.style || DEFAULT_STYLE;
+      this.drop = 0;
       if (this.mixer) {
         // the file's own animations: blend between standing and walking
         const w = p.walk || 0;
@@ -450,50 +495,142 @@
         if (!p.arms || p.arms === "down") return;
       }
       const w = p.walk || 0;
+      const still = 1 - w;
       const ph = p.phase || 0;
-      const swing = Math.sin(ph) * 0.6 * w;
+      const s = Math.sin(ph), c = Math.cos(ph);
+      const run = p.run ? 1 : 0;
+      const amp = st.stride * (1 + run * 0.35);
+      const tempo = st.tempo || 1;
 
-      // legs: forward swing is a negative X rotation
-      let legL = -swing, legR = swing;
-      let kneeL = Math.max(0, Math.sin(ph + Math.PI)) * 0.7 * w;
-      let kneeR = Math.max(0, Math.sin(ph)) * 0.7 * w;
+      // ---- legs: forward swing is a negative X rotation ----
+      let legL = -s * amp * w, legR = s * amp * w;
+      // the knee bends while that leg swings forward (lifting the foot);
+      // stompy walkers lift their feet higher
+      const lift = (0.6 + st.stomp * 0.6 + run * 0.6) * w;
+      let kneeL = Math.max(0, Math.cos(ph + 0.35)) * lift;
+      let kneeR = Math.max(0, -Math.cos(ph + 0.35)) * lift;
+      // legs apart = hips a little lower, so the feet stay on the ground
+      this.drop = this.legLen * (1 - Math.cos(amp * Math.abs(s) * w)) * 0.75;
+      // springy walkers bounce up between steps
+      this.drop -= st.bounce * w * c * c;
+
       if (p.held) {
         legL = Math.sin(t * 9) * 0.35; legR = -legL;
         kneeL = kneeR = 0.2;
+        this.drop = 0;
       }
       if (p.sit) {
         legL = legR = -1.45;
         kneeL = kneeR = 1.45;
+        // fidgety Miis swing their legs while sitting
+        const f = st.fidget * 0.35;
+        kneeL += Math.sin(t * 3.2 * tempo) * f;
+        kneeR += Math.sin(t * 3.2 * tempo + 2.2) * f;
+        this.drop = 0;
       }
-      this.set("Leg_1_L", legL, 0, 0);
-      this.set("Leg_1_R", legR, 0, 0);
-      this.set("Leg_2_L", kneeL, 0, 0);
-      this.set("Leg_2_R", kneeR, 0, 0);
+      if (p.lie) { legL = legR = 0; kneeL = kneeR = 0.05; this.drop = 0; }
 
-      // arms: left arm raises outward with +Z, right arm with -Z
-      let aL = { x: swing * 0.9, z: 0.05 }, aR = { x: -swing * 0.9, z: -0.05 };
-      let elbowL = 0, elbowR = 0;      // elbow bend forward/back
-      let elbowLz = 0, elbowRz = 0;    // elbow bend up/down (sideways)
-      switch (p.arms) {
+      // ---- arms: left arm raises outward with +Z, right arm with -Z ----
+      const out = st.armsOut + w * 0.04;
+      const swingA = s * amp * w * st.armSwing;
+      let aL = { x: swingA, z: out }, aR = { x: -swingA, z: -out };
+      let elbowL = -0.15 * w - run * 1.1, elbowR = -0.15 * w - run * 1.1; // elbow bend forward/back
+      let elbowLz = 0, elbowRz = 0;                                     // elbow bend up/down (sideways)
+      let headX = st.headDown * (1 - w * 0.5), headY = 0, headZ = 0;
+      let spineZ = 0, spineY = 0;
+      let arms = p.arms || "down";
+
+      // standing around: each personality has its own way of standing
+      if (arms === "down" && !p.sit && !p.lie && !p.held && !p.dance && still > 0.5) {
+        const k = still;
+        if (p.talking && st.gesture > 0.3) {
+          // talking with their hands
+          const g = st.gesture;
+          aR = { x: -0.45 * g + Math.sin(t * 4.1) * 0.2 * g, z: -0.12 - g * 0.15 };
+          elbowR = -0.9 * g + Math.sin(t * 5.3) * 0.35 * g;
+          if (g > 0.65) { aL = { x: -0.3 * g + Math.sin(t * 3.7 + 1) * 0.15, z: 0.15 }; elbowL = -0.6 * g; }
+        } else if (st.idle === "bouncy") {
+          // can't keep still: bouncing on the spot
+          this.drop -= Math.abs(Math.sin(t * 5 * tempo)) * 0.05 * k;
+          aL.z += Math.sin(t * 5 * tempo) * 0.08; aR.z -= Math.sin(t * 5 * tempo) * 0.08;
+        } else if (st.idle === "shy") {
+          // hands together in front, looking down, swaying a little
+          aL = { x: -0.35, z: 0.3 }; aR = { x: -0.35, z: -0.3 };
+          elbowL = elbowR = -1.2; elbowLz = -1.4; elbowRz = 1.4;
+          headX += 0.08; spineZ = Math.sin(t * 1.3) * 0.04;
+        } else if (st.idle === "grumpy") {
+          // arms folded, tapping a foot
+          aL = { x: -0.45, z: 0.15 }; aR = { x: -0.45, z: -0.15 };
+          elbowL = elbowR = -1.5; elbowLz = -1.2; elbowRz = 1.2;
+          kneeR = Math.max(0, Math.sin(t * 6)) * 0.25 * k;
+          legR = -kneeR * 0.4;
+          headY = 0.15;
+        } else if (st.idle === "silly") {
+          // bopping along to music only they can hear
+          headZ = Math.sin(t * 4 * tempo) * 0.12;
+          spineZ = Math.sin(t * 4 * tempo) * 0.05;
+          aL.x = Math.sin(t * 4 * tempo) * 0.25; aR.x = -aL.x;
+        } else if (st.idle === "proud") {
+          // hands on hips
+          aL = { x: 0.2, z: 0.5 }; aR = { x: 0.2, z: -0.5 };
+          elbowLz = -1.4; elbowRz = 1.4;
+          headX -= 0.06;
+        } else {
+          // relaxed: just breathing
+          aL.z += Math.sin(t * 1.6) * 0.02; aR.z -= Math.sin(t * 1.6) * 0.02;
+        }
+      }
+
+      if (p.dance && (arms === "down" || arms === "out")) arms = "dance-" + (st.dance || "sway");
+      const ws = st.waveSize || 1;
+      switch (arms) {
         // Mii heads are big, so raised arms bend at the elbow and keep the
         // hands beside the head instead of sweeping through it.
         case "wave": // right arm out to the side, forearm angled up and out, hand waving
-          aR = { x: -0.2, z: -1.5 };
-          elbowRz = -0.85 + Math.sin(t * 11) * 0.35;
+          aR = { x: -0.2, z: -(1.05 + 0.45 * Math.min(1.3, ws)) };
+          elbowRz = -0.85 + Math.sin(t * (8 + 4 * tempo)) * 0.35 * ws;
+          if (ws < 0.85) headX += 0.08; // shy little wave
           break;
         case "up": // one hand up and forward, for a high five
           aR = { x: -0.95, z: -1.25 };
           elbowR = -0.35; elbowRz = -0.7;
           break;
-        case "cheer": // both arms out and up, bouncing
-          aL = { x: -0.15, z: 1.6 + Math.sin(t * 10) * 0.15 };
-          aR = { x: -0.15, z: -1.6 - Math.sin(t * 10 + 1) * 0.15 };
+        case "cheer": { // both arms out and up, bouncing
+          const big = 0.1 + 0.12 * tempo;
+          aL = { x: -0.15, z: 1.6 + Math.sin(t * 10) * big };
+          aR = { x: -0.15, z: -1.6 - Math.sin(t * 10 + 1) * big };
           elbowLz = 0.75; elbowRz = -0.75;
           break;
+        }
         case "out":
           aL = { x: Math.sin(t * 8) * 0.4, z: 1.2 + Math.sin(t * 8) * 0.4 };
           aR = { x: -Math.sin(t * 8) * 0.4, z: -1.2 - Math.sin(t * 8 + 2) * 0.4 };
           break;
+        case "dance-jumpy": { // energetic: punching the air
+          const b = Math.sin(t * 8 * tempo);
+          aL = { x: -0.3, z: 1.3 + b * 0.5 }; aR = { x: -0.3, z: -1.3 + b * 0.5 };
+          elbowLz = 0.6; elbowRz = -0.6;
+          legL = -Math.max(0, b) * 0.5; kneeL = Math.max(0, b) * 0.7;
+          spineZ = b * 0.08;
+          break;
+        }
+        case "dance-silly": { // silly: flailing arms and a bobbing head
+          aL = { x: Math.sin(t * 7) * 1.0, z: 0.9 + Math.sin(t * 5) * 0.6 };
+          aR = { x: -Math.sin(t * 6.3) * 1.0, z: -0.9 - Math.sin(t * 5.5 + 1) * 0.6 };
+          elbowL = Math.sin(t * 9) * 0.8; elbowR = -Math.sin(t * 8) * 0.8;
+          headZ = Math.sin(t * 6) * 0.2;
+          spineZ = Math.sin(t * 3) * 0.15;
+          kneeL = Math.max(0, Math.sin(t * 6)) * 0.5; kneeR = Math.max(0, -Math.sin(t * 6)) * 0.5;
+          break;
+        }
+        case "dance-sway": { // calm: a gentle side-to-side sway
+          const b = Math.sin(t * 3.2 * tempo);
+          aL = { x: -0.2, z: 0.5 + b * 0.25 }; aR = { x: -0.2, z: -0.5 + b * 0.25 };
+          elbowL = elbowR = -0.5;
+          spineZ = b * 0.12; headZ = -b * 0.1;
+          kneeL = Math.max(0, b) * 0.25; kneeR = Math.max(0, -b) * 0.25;
+          break;
+        }
         case "type":
           aL = { x: -0.9, z: 0.15 }; aR = { x: -0.9, z: -0.15 };
           elbowL = elbowR = -0.6 + Math.sin(t * 18) * 0.12;
@@ -502,18 +639,60 @@
           aL = { x: Math.sin(t * 8) * 0.3, z: 1.0 + Math.sin(t * 8) * 0.3 };
           aR = { x: -Math.sin(t * 8) * 0.3, z: -1.0 - Math.sin(t * 8 + 1) * 0.3 };
           break;
+        case "phone": // holding a phone to the side of the head
+          aR = { x: -0.2, z: -1.45 };
+          elbowR = -0.3; elbowRz = -1.4;
+          headZ = 0.12;
+          break;
+        case "shout": // hands cupped around the mouth
+          aL = { x: -1.2, z: 0.35 }; aR = { x: -1.2, z: -0.35 };
+          elbowL = elbowR = -1.5; elbowLz = -0.4; elbowRz = 0.4;
+          headX -= 0.18;
+          break;
+        case "eat": { // bringing food to the mouth
+          const b = Math.max(0, Math.sin(t * 3.5));
+          aR = { x: -0.65 - b * 0.35, z: -0.3 };
+          elbowR = -0.9 - b * 0.9; elbowRz = 0.3;
+          headX += 0.05 - b * 0.05;
+          break;
+        }
+        case "drum": { // drumsticks going up and down
+          aL = { x: -0.7, z: 0.3 }; aR = { x: -0.7, z: -0.3 };
+          elbowL = -0.5 - Math.max(0, Math.sin(t * 14)) * 0.7;
+          elbowR = -0.5 - Math.max(0, -Math.sin(t * 14)) * 0.7;
+          headX += Math.sin(t * 14) * 0.05;
+          break;
+        }
+        case "punch": { // left, right, left, right...
+          const b = Math.sin(t * 6);
+          aL = { x: -0.6 - Math.max(0, b) * 0.9, z: 0.2 }; aR = { x: -0.6 - Math.max(0, -b) * 0.9, z: -0.2 };
+          elbowL = -1.4 + Math.max(0, b) * 1.3; elbowR = -1.4 + Math.max(0, -b) * 1.3;
+          spineY = b * 0.15;
+          break;
+        }
       }
+      if (p.sit && arms === "down") { aL = { x: -0.4, z: 0.12 }; aR = { x: -0.4, z: -0.12 }; elbowL = elbowR = -0.45; }
+      if (p.lie && arms === "down") { aL = { x: 0, z: 0.12 }; aR = { x: 0, z: -0.12 }; elbowL = elbowR = 0; }
+
+      this.set("Leg_1_L", legL, 0, 0);
+      this.set("Leg_1_R", legR, 0, 0);
+      this.set("Leg_2_L", kneeL, 0, 0);
+      this.set("Leg_2_R", kneeR, 0, 0);
       this.set("Arm_1_L", aL.x, 0, aL.z);
       this.set("Arm_1_R", aR.x, 0, aR.z);
       this.set("Arm_2_L", elbowL, 0, elbowLz);
       this.set("Arm_2_R", elbowR, 0, elbowRz);
 
-      // body: a little bounce from side to side when walking or dancing
-      const sway = p.dance ? Math.sin(t * 8) * 0.18 : Math.sin(ph) * 0.05 * w;
-      this.set("Spine_1", w * 0.05, 0, sway);
-      // head: look around, nod, laugh
+      // body: hips turn with the legs and the shoulders turn the other way when walking;
+      // goofy Miis waddle from side to side
+      const lean = st.lean * w + run * 0.12;
+      this.set("Spine_1", lean, s * 0.07 * w + spineY, s * (0.03 + st.wobble) * w + spineZ);
+      this.set("Spine_2", 0, -s * 0.09 * w, 0);
+      // head: look around, nod, laugh (and stay steady while walking)
       const laugh = p.laugh ? Math.sin(t * 18) * 0.08 : 0;
-      this.set("Head", (p.nod || 0) + laugh - (p.lookUp || 0), p.lookYaw || 0, p.dance ? -sway * 0.8 : Math.sin(t * 0.7) * 0.03);
+      this.set("Head", headX + (p.nod || 0) + laugh - (p.lookUp || 0) - lean * 0.6,
+        (p.lookYaw || 0) + headY - s * 0.02 * w,
+        headZ + (p.dance ? 0 : Math.sin(t * 0.7) * 0.03) - s * (0.03 + st.wobble) * w * 0.5);
     }
   }
 
@@ -558,5 +737,5 @@
     });
   }
 
-  root.MiiModel = Object.assign(api, { loadTemplate, createInstance, applyLook, portrait, disposeObject, srgbColor, rgbToHex });
+  root.MiiModel = Object.assign(api, { loadTemplate, createInstance, applyLook, portrait, disposeObject, srgbColor, rgbToHex, DEFAULT_STYLE });
 })(typeof self !== "undefined" ? self : this);
