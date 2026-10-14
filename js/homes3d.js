@@ -146,10 +146,16 @@
   // APARTMENTS — the building where every Mii has a home
   // =====================================================================
 
-  // The building: 3 floors x 4 apartments. Ground floor doors open straight onto
-  // the courtyard; upper floors open onto walkway balconies, reached by the lift
-  // (left tower) or the stairs (right tower).
+  // The building: 4 apartments per floor, at least 3 floors. When every apartment
+  // is taken, the building gets another floor (like in Tomodachi Life), up to
+  // MAX_FLOORS. Ground floor doors open straight onto the courtyard; upper floors
+  // open onto walkway balconies, reached by the lift (left) or the stairs (right).
   const APT = { front: -11.6, back: -18, floorH: 3.5, unitW: 6.4, cols: 4, floors: 3 };
+  const MAX_FLOORS = 10;
+  // How many floors the building needs for this many Miis.
+  function floorsFor(residents) {
+    return Math.max(APT.floors, Math.min(MAX_FLOORS, Math.ceil((residents || 0) / APT.cols)));
+  }
   const UNIT_COLORS = [
     [0xff7a8a, 0xffb3c1], [0x5cb8ff, 0xa8d8ff], [0x6fcf6a, 0xbdecb8], [0xffad3a, 0xffd99a],
     [0xb58cff, 0xdccbff], [0xff8a5c, 0xffc2a6], [0x3fc2b9, 0xa5e8e2], [0xf06fb0, 0xf9b5d8],
@@ -163,7 +169,7 @@
       i, f, c, cx, y: f * APT.floorH,
       doorX: cx - 1.75, winX: cx + 1.05,
       num: (f + 1) * 100 + c + 1,
-      door: UNIT_COLORS[i][0], curtain: UNIT_COLORS[i][1],
+      door: UNIT_COLORS[i % UNIT_COLORS.length][0], curtain: UNIT_COLORS[i % UNIT_COLORS.length][1],
     };
   }
 
@@ -189,7 +195,10 @@
     });
   }
 
-  function buildApartments() {
+  // opts.residents = how many Miis live here (decides how many floors to build)
+  function buildApartments(opts) {
+    const FL = floorsFor(opts && opts.residents);
+    const N = FL * APT.cols; // number of apartments
     const root = new THREE.Group();
     const anim = [];
     addLights(root, { sky: 0xd6f0ff, ground: 0x9ad27a, hemi: 0.5, sun: 0.9, ambient: 0.24 });
@@ -228,13 +237,13 @@
     const W = APT.unitW * APT.cols; // 25.6
     const D = APT.back - FZ;
     const wallC = 0xffe6c7, trimC = 0xff8a7a, railC = 0x6fcfbf;
-    block(root, wallC, 0, (H * 3) / 2, (FZ + APT.back) / 2, W, H * 3, -D, 0.08);
+    block(root, wallC, 0, (H * FL) / 2, (FZ + APT.back) / 2, W, H * FL, -D, 0.08);
     block(root, 0xf0c9a4, 0, 0.2, FZ + 0.02, W, 0.4, 0.12, 0.03); // base trim
     // gentle stripes between the floors
-    for (let f = 1; f < 3; f++) block(root, 0xffd3a8, 0, f * H + 0.6, FZ + 0.01, W, 0.18, 0.06, 0.02, { shadow: false });
+    for (let f = 1; f < FL; f++) block(root, 0xffd3a8, 0, f * H + 0.6, FZ + 0.01, W, 0.18, 0.06, 0.02, { shadow: false });
     // walkway balconies (2nd and 3rd floor) with railings, held up by pillars
     const balusters = [];
-    for (let f = 1; f < 3; f++) {
+    for (let f = 1; f < FL; f++) {
       const y = f * H;
       block(root, 0xfdf8f0, 0, y - 0.11, FZ + 0.76, W + 0.1, 0.22, 1.52, 0.04);
       block(root, trimC, 0, y - 0.12, FZ + 1.53, W + 0.2, 0.3, 0.1, 0.04);
@@ -245,10 +254,10 @@
     scatter(root, G.cyl(6), toon(railC), balusters, true);
     const pillarXs = [];
     for (let c = 0; c <= APT.cols; c++) pillarXs.push(-W / 2 + c * APT.unitW);
-    for (const x of pillarXs) cylinder(root, 0xfdf8f0, x, H, FZ + 1.3, 0.15, H * 2);
+    for (const x of pillarXs) cylinder(root, 0xfdf8f0, x, (H * (FL - 1)) / 2, FZ + 1.3, 0.15, H * (FL - 1));
     // roof with a parapet, a sign, a water tank and a TV aerial
-    block(root, trimC, 0, H * 3 + 0.22, (FZ + APT.back) / 2, W + 0.4, 0.44, -D + 0.4, 0.08);
-    block(root, 0xd9cfc2, 0, H * 3 + 0.46, (FZ + APT.back) / 2, W - 0.4, 0.06, -D - 0.4, 0.02, { shadow: false });
+    block(root, trimC, 0, H * FL + 0.22, (FZ + APT.back) / 2, W + 0.4, 0.44, -D + 0.4, 0.08);
+    block(root, 0xd9cfc2, 0, H * FL + 0.46, (FZ + APT.back) / 2, W - 0.4, 0.06, -D - 0.4, 0.02, { shadow: false });
     const roofSign = canvasTexture(512, 96, (ctx, w, h) => {
       ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
       ctx.lineWidth = 8; ctx.strokeStyle = "#ff8a7a"; roundRect(ctx, 8, 8, w - 16, h - 16, 22); ctx.stroke();
@@ -256,21 +265,21 @@
       fitFont(ctx, "Mii Apartments", w - 60, 58);
       ctx.fillText("Mii Apartments", w / 2, h / 2 + 3);
     });
-    for (const sx of [-2.6, 2.6]) block(root, 0x8f96a3, sx, H * 3 + 0.9, FZ + 0.4, 0.12, 1.0, 0.12, 0.03);
-    block(root, 0xffffff, 0, H * 3 + 1.55, FZ + 0.4, 7.0, 1.3, 0.14, 0.12);
-    plane(root, 6.9, 1.29, toon(0xffffff, { map: roofSign }), { y: H * 3 + 1.55, z: FZ + 0.48 });
-    plane(root, 6.9, 1.29, toon(0xffffff, { map: roofSign }), { y: H * 3 + 1.55, z: FZ + 0.32, ry: PI });
-    const tank = group(root, 8.5, H * 3 + 0.45, -15.5);
+    for (const sx of [-2.6, 2.6]) block(root, 0x8f96a3, sx, H * FL + 0.9, FZ + 0.4, 0.12, 1.0, 0.12, 0.03);
+    block(root, 0xffffff, 0, H * FL + 1.55, FZ + 0.4, 7.0, 1.3, 0.14, 0.12);
+    plane(root, 6.9, 1.29, toon(0xffffff, { map: roofSign }), { y: H * FL + 1.55, z: FZ + 0.48 });
+    plane(root, 6.9, 1.29, toon(0xffffff, { map: roofSign }), { y: H * FL + 1.55, z: FZ + 0.32, ry: PI });
+    const tank = group(root, 8.5, H * FL + 0.45, -15.5);
     for (const [sx, sz] of [[-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]]) block(tank, 0x8f96a3, sx, 0.6, sz, 0.12, 1.2, 0.12, 0.03);
     cylinder(tank, 0x7cc6e8, 0, 1.9, 0, 1.1, 1.5);
     put(tank, G.cone(), toon(0x5aa8d0), { y: 2.9, s: 1.15, sy: 0.5 });
-    const aer = group(root, -7, H * 3 + 0.45, -14.5);
+    const aer = group(root, -7, H * FL + 0.45, -14.5);
     cylinder(aer, 0x8f96a3, 0, 1.0, 0, 0.04, 2.0);
     for (let i = 0; i < 3; i++) cylinder(aer, 0x8f96a3, 0, 1.4 + i * 0.25, 0, 0.025, 1.2 - i * 0.25, { rz: PI / 2 });
-    for (let i = 0; i < 5; i++) block(root, [0x5cc84a, 0x4fbf47][i % 2], -11 + i * 1.3, H * 3 + 0.75, -17.4, 0.9, 0.6, 0.6, 0.25);
+    for (let i = 0; i < 5; i++) block(root, [0x5cc84a, 0x4fbf47][i % 2], -11 + i * 1.3, H * FL + 0.75, -17.4, 0.9, 0.6, 0.6, 0.25);
 
     // the back of the building: a window (with a little balcony upstairs) for every flat
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < N; i++) {
       const u = unitInfo(i);
       const wx = -u.cx, by = u.y + 1.8, bz = APT.back - 0.02;
       bx(root, 0xffffff, wx, by, bz, 2.6, 1.6, 0.1);
@@ -291,7 +300,7 @@
 
     // ---------- the two towers: lift (left) and stairs (right) ----------
     const TX = W / 2 + 1.8; // 14.6
-    const towerTop = H * 3 + 1.4;
+    const towerTop = H * FL + 1.4;
     const stairTex = canvasTexture(64, 256, (ctx, w, h) => {
       ctx.fillStyle = "#cfeaff"; ctx.fillRect(0, 0, w, h);
       ctx.strokeStyle = "#8aa6c4"; ctx.lineWidth = 6;
@@ -322,9 +331,9 @@
         ball(root, 0xffcf5a, tx + 0.18, 1.1, FZ + 0.4, 0.06);
       }
       // tall window showing the lift shaft / the zig-zag stairs
-      put(root, new THREE.PlaneGeometry(1.4, H * 2 + 0.6), toon(0xffffff, { map: side > 0 ? stairTex : null, color: side > 0 ? 0xffffff : 0xd6ecff }), { x: tx, y: H * 2 - 0.1, z: FZ + 0.32, shadow: false });
+      put(root, new THREE.PlaneGeometry(1.4, H * (FL - 1) + 0.6), toon(0xffffff, { map: side > 0 ? stairTex : null, color: side > 0 ? 0xffffff : 0xd6ecff }), { x: tx, y: H + (H * (FL - 1)) / 2 - 0.1, z: FZ + 0.32, shadow: false });
       block(root, 0xffffff, tx, H + 0.15, FZ + 0.3, 1.6, 0.12, 0.1, 0.03);
-      block(root, 0xffffff, tx, H * 3 + 0.65, FZ + 0.3, 1.6, 0.12, 0.1, 0.03);
+      block(root, 0xffffff, tx, H * FL + 0.65, FZ + 0.3, 1.6, 0.12, 0.1, 0.03);
       const lbl = canvasTexture(256, 64, (ctx, w, h) => {
         ctx.fillStyle = "#2f6f9f"; ctx.fillRect(0, 0, w, h);
         ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -333,7 +342,7 @@
       });
       plane(root, 1.6, 0.4, toon(0xffffff, { map: lbl }), { x: tx, y: side < 0 ? 3.35 : 2.86, z: FZ + 0.34 });
       // windows on the outer side of the tower
-      for (let f = 0; f < 3; f++) {
+      for (let f = 0; f < FL; f++) {
         bx(root, 0xffffff, tx + side * 1.82, f * H + 1.9, (FZ + APT.back) / 2, 0.1, 1.3, 1.3);
         bx(root, 0x9fd0f0, tx + side * 1.86, f * H + 1.9, (FZ + APT.back) / 2, 0.04, 1.05, 1.05);
       }
@@ -353,7 +362,7 @@
     const curtainGeo = G.rbox(1, 1, 1, 0.08);
     const lampSpots = [];
     const units = [];
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < N; i++) {
       const u = unitInfo(i);
       const y = u.y;
       // door (with a little round window and a knob) and its frame
@@ -432,11 +441,12 @@
     const mb = group(root, MB.x, 0, MB.z, PI / 2);
     for (const sx of [-1.0, 1.0]) block(mb, 0x8f96a3, sx, 0.4, 0, 0.12, 0.8, 0.12, 0.03);
     block(mb, 0xdfe4ea, 0, 1.35, 0, 2.5, 1.3, 0.55, 0.08);
-    for (let i = 0; i < 12; i++) {
+    const rowH = Math.min(0.4, 1.2 / FL); // more floors = more (smaller) mailboxes
+    for (let i = 0; i < N; i++) {
       const u = unitInfo(i);
-      const bx = -0.87 + u.c * 0.58, by = 1.82 - u.f * 0.4;
-      block(mb, u.door, bx, by, 0.27, 0.5, 0.32, 0.04, 0.03);
-      block(mb, 0x2f3542, bx, by + 0.08, 0.3, 0.26, 0.03, 0.02, 0.01);
+      const bx = -0.87 + u.c * 0.58, by = 1.82 - u.f * rowH;
+      block(mb, u.door, bx, by, 0.27, 0.5, rowH * 0.8, 0.04, 0.03);
+      block(mb, 0x2f3542, bx, by + rowH * 0.2, 0.3, 0.26, 0.03, 0.02, 0.01);
     }
     block(mb, 0x9aa3b0, 0, 2.05, 0, 2.6, 0.08, 0.65, 0.03);
     // a cat napping on top of the mailboxes, swishing its tail
@@ -657,16 +667,14 @@
     };
     hedge(-9.9, 10.9, 16.2, 0.8); hedge(9.9, 10.9, 16.2, 0.8);
     hedge(-18.2, -0.3, 0.8, 22.4); hedge(18.2, -0.3, 0.8, 22.4);
-    const gateSign = canvasTexture(256, 64, (ctx, w, h) => {
-      ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = "#e2574c"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.font = "bold 34px 'Nunito', sans-serif"; ctx.fillText("Welcome home!", w / 2, h / 2 + 2);
-    });
-    for (const sx of [-1.75, 1.75]) cylinder(root, 0xffffff, sx, 1.4, 10.9, 0.14, 2.8);
-    put(root, new THREE.TorusGeometry(1.75, 0.1, 10, 30, PI), toon(0xffffff), { y: 2.8, z: 10.9 });
-    block(root, 0xffffff, 0, 3.15, 10.9, 2.3, 0.62, 0.1, 0.1);
-    plane(root, 2.2, 0.55, toon(0xffffff, { map: gateSign }), { y: 3.15, z: 10.96 });
-    plane(root, 2.2, 0.55, toon(0xffffff, { map: gateSign }), { y: 3.15, z: 10.84, ry: PI });
+    // the gate: two brick pillars with lamps on top where the hedge opens up
+    for (const sx of [-1.75, 1.75]) {
+      block(root, 0xd98a6a, sx, 0.65, 10.9, 0.7, 1.3, 0.7, 0.08);
+      block(root, 0xf0c9a4, sx, 1.36, 10.9, 0.84, 0.14, 0.84, 0.05);
+      cylinder(root, 0x2f4f46, sx, 1.55, 10.9, 0.06, 0.3);
+      ball(root, glow(0xfff1b8, 0.9), sx, 1.85, 10.9, 0.22);
+      put(root, G.cone(), toon(0x2f4f46), { x: sx, y: 2.1, z: 10.9, s: 0.26, sy: 0.18 });
+    }
 
     // ---------- outside the courtyard: the street, houses, hills ----------
     // pavement, road with a zebra crossing, and the far pavement
@@ -793,7 +801,7 @@
       const u = units[i];
       if (u.f === 0) return { x: u.doorX, z: FZ + 1.3 };
       const side = u.c < 2 ? -1 : 1;
-      const k = (u.f - 1) * 2 + (u.c % 2); // 0..3, so they don't all stand on one spot
+      const k = ((u.f - 1) * 2 + (u.c % 2)) % 4; // 0..3, so they don't all stand on one spot
       return { x: side * TX + (k - 1.5) * 0.55, z: FZ + 1.4 };
     }
 
@@ -837,7 +845,8 @@
       background: 0xcdeeff,
       fog: [0xd8f2ff, 70, 190],
       cameraTilt: 0.42,
-      cameraTargetY: 3.4,
+      cameraTargetY: 3.4 + (FL - 3) * 0.5,
+      capacity: N, // how many apartments there are
       bounds: { minX: -17, maxX: 17, minZ: -11, maxZ: 10 },
       water: [{ x: KP.x, z: KP.z, rx: KP.rx, rz: KP.rz }],
       obstacles: [
@@ -855,7 +864,7 @@
         { x: BR.x + 0.1, z: BR.z, w: 1.5, d: 3.4 },                  // bikes
         { x: KP.x, z: KP.z, rx: KP.rx + 0.3, rz: KP.rz + 0.3 },      // koi pond
         { x: KP.x + KP.rx + 1.0, z: KP.z - 1.2, r: 0.4 },            // stone lantern
-        { x: 1.75, z: 10.9, r: 0.2 }, { x: -1.75, z: 10.9, r: 0.2 }, // gate posts
+        { x: 1.75, z: 10.9, r: 0.45 }, { x: -1.75, z: 10.9, r: 0.45 }, // gate pillars
       ].concat(trees.map(([x, z, s]) => ({ x, z, r: 0.55 * s })))
         .concat(lampsAt.map(([x, z]) => ({ x, z, r: 0.25 })))
         .concat(bushes.map(([x, z]) => ({ x, z, r: 0.9 })))
@@ -2129,5 +2138,5 @@
   root.World3D.addPlace({ id: "apartments", name: "Apartments", icon: "🏘️" }, buildApartments);
   root.World3D.addPlace({ id: "home", name: "Home", icon: "🏠" }, buildHome, true);
   // for tests and other files
-  root.MiiHomes3D = { FURNITURE, SLOT_PLACES, unitInfo, APT };
+  root.MiiHomes3D = { FURNITURE, SLOT_PLACES, unitInfo, APT, floorsFor, MAX_FLOORS };
 })(typeof self !== "undefined" ? self : this);

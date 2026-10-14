@@ -334,7 +334,7 @@
         this.scene.remove(this.world.group);
         window.World3D.dispose(this.world);
       }
-      this.useWorld(window.World3D.build(id));
+      this.useWorld(window.World3D.build(id, { residents: this.residents.length }));
 
       for (const w of this.walkers) {
         if (w.leaving) { this.finishLeaving(w); continue; }
@@ -366,9 +366,45 @@
 
     // Who lives in which apartment: [{ id, name, home }]. Shown in the Apartments place.
     setResidents(list) {
+      const before = this.residents.length;
       this.residents = list;
       const w = this.visiting ? this.mainWorld : this.world;
-      if (w && w.setResidents) w.setResidents(list);
+      if (!w || !w.setResidents) return;
+      // every apartment taken? The building gets a new floor (if it can still grow)
+      const MH = window.MiiHomes3D;
+      const canGrow = MH && w.capacity && MH.floorsFor(list.length) * MH.APT.cols > w.capacity;
+      if (canGrow) {
+        if (this.visiting) this.growLater = true; // done when you come back outside
+        else this.growApartments(before > 0);
+        return;
+      }
+      w.setResidents(list);
+    }
+
+    // Rebuilds the apartment building with enough floors for everyone.
+    // The Miis outside stay where they are.
+    // announce = say so in the feed (not when the app is just starting up)
+    growApartments(announce) {
+      const before = this.world.capacity;
+      const cam = { pos: this.camera.position.clone(), target: this.controls.target.clone() };
+      this.scene.remove(this.world.group);
+      window.World3D.dispose(this.world);
+      this.useWorld(window.World3D.build("apartments", { residents: this.residents.length }));
+      this.camera.position.copy(cam.pos);
+      this.controls.target.copy(cam.target);
+      this.controls.update();
+      for (const w of this.walkers) {
+        // routes were planned for the old building: plan again from where they are
+        if (w.path) { w.path = null; if (w.state === "walk") { w.state = "idle"; w.timer = 0.3; w.spot = null; } }
+        if (w.anchored || w.state === "activity") { w.anchor = null; w.lastAnchor = null; w.seatBlend = 0; w.spot = null; w.state = "idle"; w.timer = 1; }
+        if (this.nav.isBlocked(w.x, w.z)) { const p = this.nav.nearestFree(w.x, w.z); w.x = p.x; w.z = p.z; }
+      }
+      if (announce && this.world.capacity > before) {
+        const floors = (this.world.capacity - before) / 4;
+        this.addFeed("The apartments got " + (floors > 1 ? floors + " new floors" : "a new floor") + " for the new neighbours! 🏗️");
+        const w = this.walkers[Math.floor(Math.random() * this.walkers.length)];
+        if (w) w.say(D.pick(["Whoa, the building got taller!", "A new floor! Hi, neighbours!", "Look, more apartments!"]), 2.6);
+      }
     }
 
     // The direction a Mii at w should face to look at the camera.
@@ -569,6 +605,10 @@
       this.useWorld(this.mainWorld);
       this.nav = this.mainNav;
       this.mainWorld = null;
+      if (this.growLater) {
+        this.growLater = false;
+        if (this.world.capacity && this.residents.length > this.world.capacity) this.growApartments(true);
+      }
       if (this.mainCamera) {
         this.camera.position.copy(this.mainCamera.pos);
         this.controls.target.copy(this.mainCamera.target);

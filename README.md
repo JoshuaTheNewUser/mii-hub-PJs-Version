@@ -75,7 +75,7 @@ Your Miis, their homes, coins, friendships and the place you picked are saved, s
 
 ## Homes and coins
 
-Every Mii has its own apartment in the **🏘️ Apartments**. You can see its name by its door, and its windows light up when it's home.
+Every Mii has its own apartment in the **🏘️ Apartments**. You can see its name by its door, and its windows light up when it's home. The building starts with 3 floors of 4 apartments. When every apartment is taken, it gets a new floor (up to 10 floors, so 40 homes). A Mii who doesn't have an apartment yet can still be visited from its menu.
 
 - **🏠 Send home:** the Mii says goodbye and walks home (in the Apartments, it walks to its own front door). Nothing is lost: it keeps its friends, coins and everything else. Use **🚪 Invite out** in the *Residents* list to bring it back.
 - **🏡 Visit:** go inside a Mii's home (from its menu, the *Residents* list, or by clicking its apartment in the Apartments). It's just the Mii and its home: watch it nap in bed, watch TV, play games or water its plants, and it'll come over to chat with you. Click **← Leave** to go back outside.
