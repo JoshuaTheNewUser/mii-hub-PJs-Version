@@ -302,12 +302,15 @@
       const vfov = (this.camera.fov * Math.PI) / 180;
       const hfov = 2 * Math.atan(Math.tan(vfov / 2) * this.camera.aspect);
       // the front of the area is closer than the middle, so we don't need the full width
-      const near = this.world.isHome ? 12 : 17;
-      const dist = clamp((halfW / Math.tan(hfov / 2)) * 0.8, near, 30);
+      // (a home is a small room seen from close by, so it needs the full width)
+      const dist = clamp((halfW / Math.tan(hfov / 2)) * (this.world.isHome ? 1.05 : 0.8), 17, 30);
       const ty = this.world.cameraTargetY || 1;
       const dir = new THREE.Vector3(0, this.world.cameraTilt || 0.55, 1).normalize();
-      this.camera.position.copy(dir.multiplyScalar(dist)).add(new THREE.Vector3(0, ty, 0));
-      this.controls.target.set(0, ty, 0);
+      // in a home, the decorating panel covers the left of the view, so look a bit
+      // further left (which moves the room to the right on screen)
+      const tx = this.world.isHome ? -2.6 : 0;
+      this.camera.position.copy(dir.multiplyScalar(dist)).add(new THREE.Vector3(tx, ty, 0));
+      this.controls.target.set(tx, ty, 0);
       this.controls.minDistance = this.world.isHome ? 6 : 8;
       this.controls.maxDistance = Math.max(this.world.isHome ? 28 : 45, dist * 1.4);
       this.controls.update();
@@ -445,7 +448,8 @@
 
     // The Mii says goodbye and walks to its front door (in the Apartments) or
     // just heads off, then disappears. Nothing is forgotten.
-    sendHome(id, done) {
+    // quick = don't walk all the way to the door (you're about to visit them)
+    sendHome(id, done, quick) {
       const w = this.walkers.find((x) => x.id === id);
       if (!w) { if (done) done(); return; }
       this.endInteraction(w);
@@ -455,8 +459,8 @@
       w.onLeft = done;
       w.say(D.pick(["Time to go home!", "See you later!", "Home sweet home, here I come!", "Bye for now!"]), 2.2);
       w.showEmote("🏠", 4);
-      const door = this.world.doorFor && this.world.doorFor(id);
-      w.leaveAfter = this.time + (door ? 0 : 1.8);
+      const door = !quick && this.world.doorFor && this.world.doorFor(id);
+      w.leaveAfter = this.time + (door ? 0 : quick ? 1.2 : 1.8);
       w.leaveBy = this.time + 14;
       if (door) w.goTo(door.x, door.z);
       else { w.state = "idle"; w.timer = 99; w.targetYaw = this.viewYaw(w); w.arms = "wave"; }

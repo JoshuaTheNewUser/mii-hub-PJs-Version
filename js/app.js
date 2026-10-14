@@ -293,7 +293,7 @@
   });
 
   // ---------- going home, coming out, moving away ----------
-  function sendHome(rec, then) {
+  function sendHome(rec, then, quick) {
     const w = hub.walkers.find((x) => x.id === rec.id);
     const done = () => {
       rec.atHome = true;
@@ -301,7 +301,7 @@
       refreshAll(true);
       if (then) then();
     };
-    if (w) hub.sendHome(rec.id, done);
+    if (w) hub.sendHome(rec.id, done, quick);
     else done();
   }
 
@@ -328,7 +328,7 @@
       updateTabs();
     };
     if (rec.atHome) go();
-    else sendHome(rec, go);
+    else sendHome(rec, go, true);
   }
 
   function leaveHome() {
