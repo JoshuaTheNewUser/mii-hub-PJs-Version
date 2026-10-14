@@ -882,7 +882,8 @@
           lines: ["My castle needs a moat!", "Sand everywhere!", "King of the sandbox!"] },
         { x: SL.x, z: SL.z + 3.25, yaw: 0, arms: "cheer", emoji: "🛝", activity: "playing on the slide",
           lines: ["Wheee!", "One more time!", "I'm too big for this... again!"] },
-        { x: BQ.x, z: BQ.z - 1.35, yaw: 0, arms: "out", emoji: "🍖", activity: "grilling at the BBQ",
+        // stand on the open side (the lid is propped up at the back, towards the building)
+        { x: BQ.x, z: BQ.z + 1.35, yaw: PI, arms: "type", emoji: "🍖", activity: "grilling at the BBQ",
           lines: ["Who wants a sausage?", "*sizzle sizzle*", "Smells amazing!", "Medium or well done?"] },
         { x: PT.x, z: PT.z - 1.95, yaw: 0, arms: "eat", emoji: "🍙", activity: "having a snack",
           seat: { x: PT.x, z: PT.z - 0.8, y: -0.06 },
