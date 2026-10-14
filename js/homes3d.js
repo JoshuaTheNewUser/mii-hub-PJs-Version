@@ -21,6 +21,7 @@
     skyDome, addLights, mergeStatic, scatter, roundTree, bush, parkBench, lampPost,
   } = root.World3D.kit;
   const PI = Math.PI;
+  const W3D = root.World3D;
 
   // =====================================================================
   // Small helpers shared by both places
@@ -173,26 +174,52 @@
     };
   }
 
-  // What you see through a lit window: a cosy room (a few different ones).
-  function interiorTexture(kind) {
-    return canvasTexture(128, 64, (ctx, w, h) => {
-      ctx.fillStyle = ["#ffe9c4", "#ffdfe6", "#e3f1ff"][kind]; ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = ["#f4d29c", "#f7c3cf", "#c9e0f7"][kind]; ctx.fillRect(0, h * 0.72, w, h * 0.28);
-      // a hanging lamp
-      ctx.strokeStyle = "#8a6a4a"; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(w * 0.3, 0); ctx.lineTo(w * 0.3, 14); ctx.stroke();
-      ctx.fillStyle = "#ffcf5a"; ctx.beginPath(); ctx.arc(w * 0.3, 20, 8, PI, 0); ctx.fill();
-      // a picture and a plant or a shelf
-      ctx.fillStyle = "#ffffff"; ctx.fillRect(w * 0.6, 12, 26, 18);
-      ctx.fillStyle = ["#7cc6e8", "#ff9ec7", "#5cc84a"][kind]; ctx.fillRect(w * 0.6 + 3, 15, 20, 12);
-      if (kind === 1) {
-        ctx.fillStyle = "#c98b4a"; ctx.fillRect(10, h * 0.45, 30, 6);
-        ctx.fillStyle = "#ff7a59"; ctx.fillRect(14, h * 0.45 - 8, 6, 8); ctx.fillStyle = "#4a90e2"; ctx.fillRect(22, h * 0.45 - 10, 6, 10);
-      } else {
-        ctx.fillStyle = "#c98b4a"; ctx.fillRect(w * 0.85, h * 0.58, 10, 12);
-        ctx.fillStyle = "#5cc84a"; ctx.beginPath(); ctx.arc(w * 0.85 + 5, h * 0.5, 9, 0, TAU); ctx.fill();
+  // Each flat's front window (heights above the flat's floor) and the little
+  // room behind it: 4 wide, 2.9 deep, behind a front wall 0.25 thick.
+  const WIN = { w: 2.8, sill: 0.42, top: 2.78 };
+  const FLAT = { hw: 2.0, depth: 2.9, wall: 0.25, ceil: 3.15 };
+
+  // Grass and paving pictures (shared by the courtyard and the view from a flat).
+  function grassTexture(repeat, seed, blades) {
+    return canvasTexture(256, 256, (ctx, w, h) => {
+      ctx.fillStyle = "#86d65e"; ctx.fillRect(0, 0, w, h);
+      const r = seeded(seed || 12);
+      for (let i = 0; i < (blades || 150); i++) {
+        const x = r() * w, y = r() * h;
+        ctx.strokeStyle = r() < 0.5 ? "rgba(70,150,45,0.5)" : "rgba(180,240,130,0.55)";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 2, y - 6); ctx.moveTo(x + 3, y); ctx.lineTo(x + 4, y - 7); ctx.stroke();
       }
+    }, repeat);
+  }
+  function paveTexture(repeat) {
+    return canvasTexture(256, 256, (ctx, w, h) => {
+      ctx.fillStyle = "#c9a982"; ctx.fillRect(0, 0, w, h);
+      const r = seeded(3);
+      for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+        const off = (y % 2) * 32;
+        ctx.fillStyle = ["#e4c9a0", "#dcc095", "#e0c49a", "#d4b68a"][Math.floor(r() * 4)];
+        roundRect(ctx, x * 64 + off - 64 + 3, y * 64 + 3, 58, 58, 8); ctx.fill();
+        roundRect(ctx, x * 64 + off + 3, y * 64 + 3, 58, 58, 8); ctx.fill();
+      }
+    }, repeat);
+  }
+
+  // Window glass: almost clear, with a faint blue tint and two soft streaks of shine.
+  function glassMaterial() {
+    const tex = canvasTexture(128, 128, (ctx, w, h) => {
+      ctx.fillStyle = "rgba(205,235,255,0.10)"; ctx.fillRect(0, 0, w, h);
+      ctx.save();
+      ctx.translate(w / 2, h / 2); ctx.rotate(-0.7); ctx.translate(-w / 2, -h / 2);
+      const streak = (x, sw, a) => {
+        const g = ctx.createLinearGradient(x - sw, 0, x + sw, 0);
+        g.addColorStop(0, "rgba(255,255,255,0)"); g.addColorStop(0.5, "rgba(255,255,255," + a + ")"); g.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = g; ctx.fillRect(x - sw, -h, sw * 2, h * 3);
+      };
+      streak(w * 0.3, 13, 0.34); streak(w * 0.47, 5, 0.26); streak(w * 0.82, 9, 0.16);
+      ctx.restore();
     });
+    return new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
   }
 
   // opts.residents = how many Miis live here (decides how many floors to build)
@@ -206,28 +233,8 @@
     const FZ = APT.front, H = APT.floorH;
 
     // ---------- ground: grass everywhere, a paved courtyard in the middle ----------
-    const grassTex = canvasTexture(256, 256, (ctx, w, h) => {
-      ctx.fillStyle = "#86d65e"; ctx.fillRect(0, 0, w, h);
-      const r = seeded(12);
-      for (let i = 0; i < 150; i++) {
-        const x = r() * w, y = r() * h;
-        ctx.strokeStyle = r() < 0.5 ? "rgba(70,150,45,0.5)" : "rgba(180,240,130,0.55)";
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 2, y - 6); ctx.moveTo(x + 3, y); ctx.lineTo(x + 4, y - 7); ctx.stroke();
-      }
-    }, [60, 60]);
-    disc(root, toon(0xffffff, { map: grassTex }), 0, -0.02, 0, 170, { receive: true });
-
-    const paveTex = canvasTexture(256, 256, (ctx, w, h) => {
-      ctx.fillStyle = "#c9a982"; ctx.fillRect(0, 0, w, h);
-      const r = seeded(3);
-      for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
-        const off = (y % 2) * 32;
-        ctx.fillStyle = ["#e4c9a0", "#dcc095", "#e0c49a", "#d4b68a"][Math.floor(r() * 4)];
-        roundRect(ctx, x * 64 + off - 64 + 3, y * 64 + 3, 58, 58, 8); ctx.fill();
-        roundRect(ctx, x * 64 + off + 3, y * 64 + 3, 58, 58, 8); ctx.fill();
-      }
-    }, [9, 6]);
+    disc(root, toon(0xffffff, { map: grassTexture([60, 60]) }), 0, -0.02, 0, 170, { receive: true });
+    const paveTex = paveTexture([9, 6]);
     put(root, new THREE.PlaneGeometry(36, 22.6), toon(0xffffff, { map: paveTex }), { y: 0.01, z: (FZ + 11) / 2, rx: -PI / 2, shadow: false });
     // two lawns (left and right) with the playground and the picnic area
     block(root, 0x7fd05a, -11.8, 0.03, 5.6, 10.6, 0.06, 8.4, 0.03, { shadow: false });
@@ -237,10 +244,27 @@
     const W = APT.unitW * APT.cols; // 25.6
     const D = APT.back - FZ;
     const wallC = 0xffe6c7, trimC = 0xff8a7a, railC = 0x6fcfbf;
-    block(root, wallC, 0, (H * FL) / 2, (FZ + APT.back) / 2, W, H * FL, -D, 0.08);
+    // The back part of the building is one solid block. The front part is a wall
+    // with a real window opening for every flat, and a little room behind each one
+    // (built further down). Between the rooms it's hollow, but nobody can see that.
+    const RZ0 = FZ - FLAT.wall;          // inside face of the front wall
+    const RZ1 = RZ0 - FLAT.depth;        // back wall of the rooms
+    const bodyD = RZ1 - 0.03 - APT.back;
+    block(root, wallC, 0, (H * FL) / 2, APT.back + bodyD / 2, W, H * FL, bodyD, 0.08);
+    const wallM = toon(wallC);
+    const fwz = FZ - FLAT.wall / 2;
+    for (let f = 0; f < FL; f++) {
+      bx(root, wallM, 0, f * H + WIN.sill / 2, fwz, W, WIN.sill, FLAT.wall);                       // below the windows
+      bx(root, wallM, 0, f * H + (WIN.top + H) / 2, fwz, W, H - WIN.top, FLAT.wall);              // above them
+    }
+    // the bits of wall between the windows, all the way up
+    const winXs = [];
+    for (let c = 0; c < APT.cols; c++) winXs.push(unitInfo(c).winX);
+    const edges = [-W / 2].concat(...winXs.map((x) => [x - WIN.w / 2, x + WIN.w / 2]), [W / 2]);
+    for (let k = 0; k < edges.length; k += 2) bx(root, wallM, (edges[k] + edges[k + 1]) / 2, (H * FL) / 2, fwz, edges[k + 1] - edges[k], H * FL, FLAT.wall);
     block(root, 0xf0c9a4, 0, 0.2, FZ + 0.02, W, 0.4, 0.12, 0.03); // base trim
     // gentle stripes between the floors
-    for (let f = 1; f < FL; f++) block(root, 0xffd3a8, 0, f * H + 0.6, FZ + 0.01, W, 0.18, 0.06, 0.02, { shadow: false });
+    for (let f = 1; f < FL; f++) block(root, 0xffd3a8, 0, f * H - 0.42, FZ + 0.01, W, 0.18, 0.06, 0.02, { shadow: false });
     // walkway balconies (2nd and 3rd floor) with railings, held up by pillars
     const balusters = [];
     for (let f = 1; f < FL; f++) {
@@ -351,17 +375,17 @@
     }
 
     // ---------- each apartment: a door, a name plate, a window ----------
-    const interiors = [interiorTexture(0), interiorTexture(1), interiorTexture(2)];
     const forRentTex = canvasTexture(128, 64, (ctx, w, h) => {
       ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
       ctx.strokeStyle = "#e2574c"; ctx.lineWidth = 5; roundRect(ctx, 5, 5, w - 10, h - 10, 8); ctx.stroke();
       ctx.fillStyle = "#e2574c"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.font = "bold 24px 'Nunito', sans-serif"; ctx.fillText("FOR RENT", w / 2, h / 2 + 1);
     });
-    const forRentMat = toon(0xffffff, { map: forRentTex });
-    const curtainGeo = G.rbox(1, 1, 1, 0.08);
+    const glassMat = glassMaterial();
     const lampSpots = [];
     const units = [];
+    const WH = WIN.top - WIN.sill, WY = (WIN.top + WIN.sill) / 2;
+    const roomZ = RZ0 - FLAT.depth / 2; // the middle of each little room
     for (let i = 0; i < N; i++) {
       const u = unitInfo(i);
       const y = u.y;
@@ -374,43 +398,82 @@
       // wall lamp by the door (lit when someone's home)
       block(root, 0x55606e, u.doorX - 0.9, y + 1.85, FZ + 0.08, 0.1, 0.22, 0.12, 0.03);
       lampSpots.push({ x: u.doorX - 0.9, y: y + 1.85, z: FZ + 0.2 });
-      // name plate under the window: on the wall downstairs, hung on the railing upstairs
-      const pz = u.f === 0 ? FZ + 0.04 : FZ + 1.53;
-      block(root, 0x9a6a3c, u.winX, y + 0.58, pz, 2.62, 0.72, 0.06, 0.05);
+      // name plate: hung on the railing upstairs, on a flower box under the window downstairs
+      let plateAt;
+      if (u.f === 0) {
+        block(root, 0xc98b4a, u.winX, 0.32, FZ + 0.4, WIN.w + 0.2, 0.64, 0.62, 0.06);
+        block(root, 0x7a4e2c, u.winX, 0.62, FZ + 0.4, WIN.w, 0.06, 0.48, 0.02, { shadow: false });
+        for (let k = 0; k < 7; k++) {
+          const fx = u.winX - 1.2 + k * 0.4;
+          put(root, G.lowSphere(), toon(0x5cc84a), { x: fx, y: 0.7, z: FZ + 0.38 + (k % 2) * 0.1, s: 0.2, sy: 0.15 });
+          put(root, G.lowSphere(), toon([0xff6fa5, 0xffe25a, 0xffffff, 0xb58cff][(k + u.c) % 4]), { x: fx + 0.06, y: 0.8, z: FZ + 0.44, s: 0.09, shadow: false });
+        }
+        plateAt = { y: 0.32, z: FZ + 0.72, w: 2.5, h: 0.56 };
+      } else {
+        block(root, 0x9a6a3c, u.winX, y + 0.58, FZ + 1.53, 2.62, 0.72, 0.06, 0.05);
+        plateAt = { y: y + 0.58, z: FZ + 1.57, w: 2.5, h: 0.65 };
+      }
       const plateCanvas = document.createElement("canvas");
       plateCanvas.width = 384; plateCanvas.height = 100;
       const plateTex = new THREE.CanvasTexture(plateCanvas);
       plateTex.encoding = THREE.sRGBEncoding;
       plateTex.anisotropy = 8;
-      dynamic(plane(root, 2.5, 0.65, toon(0xffffff, { map: plateTex }), { x: u.winX, y: y + 0.58, z: pz + 0.04 }));
-      // window: frame, sill with flowers, the room inside, curtains and a rod
-      const wy = y + 1.75;
-      const glass = toon(0xffffff, { map: interiors[i % 3], emissive: 0xffffff, emissiveMap: interiors[i % 3], emissiveIntensity: 0 });
-      dynamic(plane(root, 2.7, 1.35, glass, { x: u.winX, y: wy, z: FZ + 0.02 }));
-      block(root, 0xffffff, u.winX, wy + 0.74, FZ + 0.08, 3.05, 0.14, 0.18, 0.04);
-      block(root, 0xffffff, u.winX, wy - 0.74, FZ + 0.14, 3.2, 0.14, 0.3, 0.04);
-      for (const sx of [-1, 1]) block(root, 0xffffff, u.winX + sx * 1.42, wy, FZ + 0.08, 0.14, 1.5, 0.18, 0.04);
-      cylinder(root, 0x9a6a3c, u.winX, wy + 0.6, FZ + 0.12, 0.03, 2.8, { rz: PI / 2, shadow: false });
+      dynamic(plane(root, plateAt.w, plateAt.h, toon(0xffffff, { map: plateTex }), { x: u.winX, y: plateAt.y, z: plateAt.z }));
+      // window: an opening in the wall with a frame, a sill and real glass
+      const wy = y + WY;
+      block(root, 0xffffff, u.winX, y + WIN.top + 0.07, FZ + 0.03, WIN.w + 0.34, 0.16, 0.16, 0.04);
+      block(root, 0xffffff, u.winX, y + WIN.sill - 0.05, FZ + 0.06, WIN.w + 0.46, 0.12, 0.34, 0.04);
+      for (const sx of [-1, 1]) block(root, 0xffffff, u.winX + sx * (WIN.w / 2 + 0.07), wy, FZ + 0.03, 0.16, WH + 0.1, 0.16, 0.04);
+      plane(root, WIN.w, WH, glassMat, { x: u.winX, y: wy, z: FZ - 0.07 });
+      cylinder(root, 0x9a6a3c, u.winX, y + WIN.top - 0.1, FZ - 0.13, 0.03, WIN.w, { rz: PI / 2, shadow: false });
       if (u.f === 0) {
         // a potted plant by each ground floor door
         put(root, G.taper(0.2, 0.15), toon(u.door), { x: u.doorX + 0.95, y: 0.2, z: FZ + 0.35, sy: 0.4 });
         ball(root, 0x5cc84a, u.doorX + 0.95, 0.6, FZ + 0.35, 0.28);
         ball(root, [0xff6fa5, 0xffe25a, 0xffffff, 0xb58cff][u.c], u.doorX + 0.95, 0.82, FZ + 0.42, 0.1);
       }
-      const curtains = [];
-      for (const sx of [-1, 1]) {
-        const c = put(root, curtainGeo, toon(u.curtain), { x: u.winX + sx * 0.7, y: wy - 0.02, z: FZ + 0.07, sx: 1.36, sy: 1.3, sz: 0.06, shadow: false });
-        dynamic(c);
-        curtains.push(c);
+      // the little room behind the window (filled in when someone lives here)
+      const room = dynamic(group(root, u.winX, y, roomZ));
+      room.visible = false;
+      units.push(Object.assign(u, {
+        plateCanvas, plateTex, room, shell: null, contents: null, anim: [], spot: null,
+        open: 0, openNow: -1, home: null, plateKey: null, builtKey: null, resident: null,
+      }));
+    }
+    // curtains (two per window) and the "For rent" signs: one shape each, drawn in one go
+    const curtains = new THREE.InstancedMesh(G.rbox(1, 1, 1, 0.08), toon(0xffffff), N * 2);
+    const rentSigns = new THREE.InstancedMesh(new THREE.PlaneGeometry(1.0, 0.5), toon(0xffffff, { map: forRentTex }), N);
+    const tmpO = new THREE.Object3D();
+    const curtainCol = new THREE.Color();
+    units.forEach((u, i) => {
+      curtainCol.set(u.curtain);
+      curtains.setColorAt(i * 2, curtainCol);
+      curtains.setColorAt(i * 2 + 1, curtainCol);
+    });
+    for (const m of [curtains, rentSigns]) { m.castShadow = false; m.frustumCulled = false; root.add(dynamic(m)); }
+    function placeCurtains(u) {
+      const cw = (WIN.w / 2 + 0.06) + (0.34 - (WIN.w / 2 + 0.06)) * Math.max(0, u.openNow); // each curtain's width
+      for (const s of [0, 1]) {
+        tmpO.position.set(s ? u.winX + WIN.w / 2 + 0.02 - cw / 2 : u.winX - WIN.w / 2 - 0.02 + cw / 2, u.y + WY - 0.05, FZ - 0.17);
+        tmpO.rotation.set(0, 0, 0);
+        tmpO.scale.set(cw, WH - 0.04, 0.06);
+        tmpO.updateMatrix();
+        curtains.setMatrixAt(u.i * 2 + s, tmpO.matrix);
       }
-      const rent = dynamic(plane(root, 1.0, 0.5, forRentMat, { x: u.winX - 0.6, y: wy + 0.1, z: FZ + 0.05, rz: 0.06 }));
-      units.push(Object.assign(u, { plateCanvas, plateTex, glass, curtains, rent, open: 0, openNow: 0, lit: 0, litNow: 0, key: null, resident: null }));
+      curtains.instanceMatrix.needsUpdate = true;
+    }
+    function placeRentSign(u, show) {
+      tmpO.position.set(u.winX - 0.6, u.y + WY + 0.1, FZ - 0.03);
+      tmpO.rotation.set(0, 0, 0.06);
+      tmpO.scale.setScalar(show ? 1 : 0.0001);
+      tmpO.updateMatrix();
+      rentSigns.setMatrixAt(u.i, tmpO.matrix);
+      rentSigns.instanceMatrix.needsUpdate = true;
     }
     // porch lamps: one shape drawn 12 times, coloured on/off
     const lamps = new THREE.InstancedMesh(new THREE.SphereGeometry(0.12, 12, 8), new THREE.MeshBasicMaterial({ toneMapped: false }), lampSpots.length);
-    const tmpO = new THREE.Object3D();
     const lampOn = new THREE.Color(0xffe08a), lampOff = new THREE.Color(0x9aa3b0);
-    lampSpots.forEach((q, i) => { tmpO.position.set(q.x, q.y, q.z); tmpO.updateMatrix(); lamps.setMatrixAt(i, tmpO.matrix); lamps.setColorAt(i, lampOff); });
+    lampSpots.forEach((q, i) => { tmpO.position.set(q.x, q.y, q.z); tmpO.rotation.set(0, 0, 0); tmpO.scale.setScalar(1); tmpO.updateMatrix(); lamps.setMatrixAt(i, tmpO.matrix); lamps.setColorAt(i, lampOff); });
     root.add(dynamic(lamps));
 
     function drawPlate(u, res) {
@@ -433,7 +496,6 @@
       }
       u.plateTex.needsUpdate = true;
     }
-    units.forEach((u) => drawPlate(u, null));
 
     // ---------- courtyard things to do ----------
     // mailboxes (one little box per apartment, in each apartment's colour)
@@ -774,27 +836,69 @@
     mergeStatic(root);
 
     // ---------- residents ----------
+    // list = [{ id, name, home, items, activity }]
+    //   items     the Mii's furniture ({ slot: itemId }, like record.home.items)
+    //   activity  null, or what it's doing at home: { itemId, slot, activity, sit, lie, run, arms, lookUp }
+    // This is called often, so a flat's room is only rebuilt when what's in it changes.
     let residents = [];
     function setResidents(list) {
       residents = Array.isArray(list) ? list.slice(0, units.length) : [];
+      let lampsDirty = false;
       units.forEach((u, i) => {
         const r = residents[i] || null;
-        const key = r ? r.id + "|" + r.name + "|" + (r.home ? 1 : 0) : "";
-        if (key === u.key) return;
-        u.key = key;
         u.resident = r;
-        drawPlate(u, r);
-        u.open = r && r.home ? 1 : 0;
-        u.lit = r && r.home ? 1 : 0;
-        u.rent.visible = !r;
-        u.curtains.forEach((c) => { c.visible = !!r; });
-        lamps.setColorAt(i, r && r.home ? lampOn : lampOff);
+        const plateKey = r ? r.id + "|" + r.name : "";
+        if (plateKey !== u.plateKey) {
+          u.plateKey = plateKey;
+          drawPlate(u, r);
+          placeRentSign(u, !r);
+        }
+        const home = !!(r && r.home);
+        if (home !== u.home) {
+          u.home = home;
+          u.open = home ? 1 : 0;
+          lamps.setColorAt(i, home ? lampOn : lampOff);
+          lampsDirty = true;
+        }
+        if (home) {
+          const key = flatKey(r);
+          if (key !== u.builtKey) { u.builtKey = key; furnish(u, r); }
+        }
       });
-      lamps.instanceColor.needsUpdate = true;
+      if (lampsDirty) lamps.instanceColor.needsUpdate = true;
     }
-    setResidents([]);
+
+    // Fills a flat's little room: wallpaper, floor, a ceiling light, and the
+    // furniture the Mii is using right now (plus a couple of its other things).
+    function furnish(u, r) {
+      const items = resolveItems({ home: { items: r.items || {} } });
+      if (!u.shell) u.shell = flatShell(u.room);
+      u.shell.walls.material = flatMaterial(items.wallpaper, false);
+      u.shell.floor.material = flatMaterial(items.floor, true);
+      if (u.contents) { u.room.remove(u.contents); disposeFlat(u.contents); }
+      u.anim = [];
+      const f = flatContents(items, r.activity || null, r.name, u.anim);
+      u.contents = f.group;
+      u.spot = f.spot;
+      u.room.add(u.contents);
+    }
 
     const indexOf = (id) => residents.findIndex((r) => r && r.id === id);
+
+    // Where the hub should put this Mii so you can see it through its window,
+    // doing what it's doing (feet position in world coordinates), or null if it's out.
+    //   { x, y, z, yaw, pose: "stand" | "sit" | "lie" | "run", arms, lookUp }
+    //   sit: (x, y, z) = the seat point (y = seat height - 0.56, like the home spots)
+    //   lie: (x, z) = the middle of the mattress, y = its top, yaw = from feet to head
+    //   otherwise yaw = the way the Mii faces (0 = towards the courtyard)
+    function windowSpot(id) {
+      const i = indexOf(id);
+      if (i < 0) return null;
+      const u = units[i];
+      if (!u.home || !u.spot) return null;
+      const s = u.spot;
+      return { x: u.winX + s.x, y: u.y + s.y, z: roomZ + s.z, yaw: s.yaw, pose: s.pose, arms: s.arms, lookUp: s.lookUp };
+    }
 
     // The courtyard spot in front of someone's door. Upper floors are reached by
     // the lift (left) or the stairs (right), so they head for that door.
@@ -825,19 +929,24 @@
       return best;
     }
 
-    function updateWindows(dt) {
+    setResidents([]);
+
+    // curtains slide open when the Mii comes home (and shut when it goes out);
+    // the room behind is only drawn while you can see into it
+    function updateWindows(dt, t) {
+      let moved = false;
       for (const u of units) {
-        u.openNow += (u.open - u.openNow) * Math.min(1, dt * 3);
-        u.litNow += (u.lit - u.litNow) * Math.min(1, dt * 3);
-        const open = u.openNow;
-        const cw = 1.36 + (0.36 - 1.36) * open; // each curtain's width
-        u.curtains[0].scale.x = cw; u.curtains[0].position.x = u.winX - 1.35 + cw / 2;
-        u.curtains[1].scale.x = cw; u.curtains[1].position.x = u.winX + 1.35 - cw / 2;
-        const rent = !u.resident;
-        u.glass.emissiveIntensity = 0.95 * u.litNow;
-        u.glass.color.setRGB(0.18 + 0.82 * u.litNow, 0.22 + 0.78 * u.litNow, 0.38 + 0.62 * u.litNow);
-        if (rent) u.glass.color.setRGB(0.6, 0.66, 0.76);
+        if (u.openNow < 0) { u.openNow = u.open; placeCurtains(u); moved = true; }
+        if (Math.abs(u.open - u.openNow) > 0.002) {
+          u.openNow += (u.open - u.openNow) * Math.min(1, dt * 3);
+          if (Math.abs(u.open - u.openNow) <= 0.002) u.openNow = u.open;
+          placeCurtains(u);
+          moved = true;
+        }
+        u.room.visible = !!u.contents && u.openNow > 0.01;
+        if (u.room.visible) for (const a of u.anim) a(t);
       }
+      return moved;
     }
 
     let lastT = null;
@@ -868,6 +977,7 @@
         { x: KP.x, z: KP.z, rx: KP.rx + 0.3, rz: KP.rz + 0.3 },      // koi pond
         { x: KP.x + KP.rx + 1.0, z: KP.z - 1.2, r: 0.4 },            // stone lantern
         { x: 1.75, z: 10.9, r: 0.45 }, { x: -1.75, z: 10.9, r: 0.45 }, // gate pillars
+        ...units.filter((u) => u.f === 0).map((u) => ({ x: u.winX, z: FZ + 0.4, w: WIN.w + 0.3, d: 0.7 })), // flower boxes
       ].concat(trees.map(([x, z, s]) => ({ x, z, r: 0.55 * s })))
         .concat(lampsAt.map(([x, z]) => ({ x, z, r: 0.25 })))
         .concat(bushes.map(([x, z]) => ({ x, z, r: 0.9 })))
@@ -907,11 +1017,12 @@
       setResidents,
       doorFor,
       pickApartment,
+      windowSpot,
       update(t, camera) {
         const dt = lastT === null ? 0.016 : Math.min(0.1, Math.max(0, t - lastT));
         lastT = t;
         anim.forEach((a) => a(t));
-        updateWindows(dt);
+        updateWindows(dt, t);
       },
     };
   }
@@ -924,11 +1035,15 @@
   const TILE = 2; // one wallpaper / floor picture covers 2 x 2 units
 
   // Wallpaper and floor pictures (they repeat across the walls and floor).
-  function patternTexture(it, isFloor) {
+  // (size: the picture is drawn at 256 x 256 and scaled down to size x size)
+  function patternTexture(it, isFloor, size) {
     const base = it.color || (isFloor ? "#c98a52" : "#f6ead2");
     const acc = it.accent || base;
     const pat = it.pattern || "plain";
-    return canvasTexture(256, 256, (ctx, w, h) => {
+    const S = size || 256;
+    return canvasTexture(S, S, (ctx) => {
+      const w = 256, h = 256;
+      ctx.scale(S / 256, S / 256);
       ctx.fillStyle = base; ctx.fillRect(0, 0, w, h);
       const r = seeded(17);
       if (pat === "stripes") {
@@ -1865,30 +1980,329 @@
     });
   }
 
-  // The painted view out of the window: sky, hills, trees and other houses.
-  function windowView() {
-    return canvasTexture(256, 224, (c, w, h) => {
-      const gr = c.createLinearGradient(0, 0, 0, h);
-      gr.addColorStop(0, "#5cb8f5"); gr.addColorStop(1, "#d6f0ff");
-      c.fillStyle = gr; c.fillRect(0, 0, w, h);
-      c.fillStyle = "#fff6c2"; c.beginPath(); c.arc(200, 40, 18, 0, TAU); c.fill();
-      c.fillStyle = "#8fd36a"; c.beginPath(); c.ellipse(60, h, 120, 70, 0, PI, 0); c.fill();
-      c.fillStyle = "#7cc85a"; c.beginPath(); c.ellipse(210, h, 110, 60, 0, PI, 0); c.fill();
-      const housesAt = [[30, "#ffe0ec", "#b58cff"], [110, "#fff1dc", "#e2574c"], [180, "#dff3ff", "#4a90e2"]];
-      for (const [x, wall, roof] of housesAt) {
-        c.fillStyle = wall; c.fillRect(x, h - 80, 46, 40);
-        c.fillStyle = roof; c.beginPath(); c.moveTo(x - 6, h - 80); c.lineTo(x + 23, h - 104); c.lineTo(x + 52, h - 80); c.fill();
-        c.fillStyle = "#ffe9a8"; c.fillRect(x + 8, h - 70, 10, 10); c.fillRect(x + 28, h - 70, 10, 10);
+  // =====================================================================
+  // The little rooms you see through the apartment windows
+  // =====================================================================
+  // Room-local coordinates: (0, 0, 0) is the middle of the room's floor, x runs
+  // across (-2..2), z runs from the back wall (-1.45) to the window wall (+1.45).
+
+  // Wallpaper and floor for the little rooms: one material per item, shared by
+  // every flat that has it (smaller pictures than in a home: they're far away).
+  const flatMats = new Map();
+  function flatMaterial(it, isFloor) {
+    const key = (isFloor ? "f:" : "w:") + ((it && it.id) || "-");
+    if (!flatMats.has(key)) {
+      const tex = patternTexture(it || {}, isFloor, 128);
+      // a warm glow, as if the ceiling light were on
+      const m = toon(0xffffff, { map: tex, emissive: 0xffe2b8, emissiveMap: tex, emissiveIntensity: isFloor ? 0.08 : 0.12 });
+      m.userData.keep = true;
+      flatMats.set(key, m);
+    }
+    return flatMats.get(key);
+  }
+  let flatLightMats = null;
+  function flatLight() {
+    if (!flatLightMats) {
+      flatLightMats = {
+        shade: toon(0xfff1dc, { emissive: 0xffd890, emissiveIntensity: 0.55 }),
+        bulb: new THREE.MeshBasicMaterial({ color: 0xfff2c4, toneMapped: false }),
+      };
+      flatLightMats.shade.userData.keep = flatLightMats.bulb.userData.keep = true;
+    }
+    return flatLightMats;
+  }
+
+  // The walls, floor and ceiling of a little room (inside faces only).
+  function flatShell(room) {
+    const hw = FLAT.hw, d = FLAT.depth, ch = FLAT.ceil;
+    const back = patchGeo(hw * 2, ch, 0, 0); back.translate(0, ch / 2, -d / 2);
+    const left = patchGeo(d, ch, 0, 0); left.rotateY(PI / 2); left.translate(-hw, ch / 2, 0);
+    const right = patchGeo(d, ch, 0, 0); right.rotateY(-PI / 2); right.translate(hw, ch / 2, 0);
+    const floorGeo = patchGeo(hw * 2, d, 0, 0); floorGeo.rotateX(-PI / 2);
+    const ceilGeo = new THREE.PlaneGeometry(hw * 2, d); ceilGeo.rotateX(PI / 2); ceilGeo.translate(0, ch, 0);
+    const walls = new THREE.Mesh(THREE.BufferGeometryUtils.mergeBufferGeometries([back, left, right]), toon(0xffffff));
+    const floor = new THREE.Mesh(floorGeo, toon(0xffffff));
+    const ceil = new THREE.Mesh(ceilGeo, toon(0xfff8ee));
+    [back, left, right].forEach((g) => g.dispose());
+    for (const m of [walls, floor, ceil]) { m.castShadow = m.receiveShadow = false; room.add(m); }
+    return { walls, floor };
+  }
+
+  // What's in a flat, as a short text: the room is only rebuilt when this changes.
+  function flatKey(r) {
+    const a = r.activity;
+    return JSON.stringify(r.items || {}) + "|" + r.name + "|" +
+      (a ? [a.itemId, a.slot, !!a.sit, !!a.lie, !!a.run, a.arms, a.lookUp].join(",") : "-");
+  }
+
+  // Where the piece a Mii is using goes in its little room: x, z, turn (ry) and
+  // size (k). stand = where the Mii stands (yaw, or toward: true = facing the
+  // piece / { lx, lz } = a point on it); otherwise it's worked out from the
+  // furniture's own spot. plant = a free corner for a pot plant.
+  const FLAT_SLOTS = {
+    bed: { x: -0.35, z: -0.38, ry: PI / 2, k: 0.85, plant: [1.55, -1.05] },        // along the back, head to the left wall
+    sofa: { x: 0.1, z: -0.6, ry: 0, k: 1, plant: [-1.68, -1.1] },                    // facing the window
+    table: { x: 0.2, z: 0.5, ry: 0, k: 0.9, plant: [-1.6, -1.05] },                  // the Mii stands behind it, facing you
+    tv: { x: 1.45, z: 0.1, ry: -PI / 2, k: 0.9, plant: [-1.6, -1.05] },             // against the right wall (seen from the side)
+    lamp: { x: 1.4, z: 0.4, ry: 0, k: 1, stand: { x: 0.2, z: -0.3, toward: true }, plant: [-1.6, -1.05] },
+    plant: { x: 1.3, z: 0.5, ry: 0, k: 0.85, stand: { x: 0.1, z: -0.2, toward: true } },
+    art: { x: -1.97, y: 1.75, z: 0.1, ry: PI / 2, k: 0.75, stand: { x: -0.75, z: 0.45, yaw: -1.2 }, plant: [1.55, -1.05] }, // on the left wall
+    special: { x: 0.2, z: -0.15, ry: 0, k: 0.9, plant: [-1.6, -1.05] },
+    window: { stand: { x: 0.35, z: 0.75, yaw: 0 }, plant: [-1.68, -1.1] },           // just looking out
+  };
+  const FLAT_ITEMS = {
+    "table-picnic": { z: 0.4, k: 0.8 },
+    "table-desk": { x: 0.55, z: 0.3, ry: PI / 2 },                                   // side on, so you see the screen and the Mii
+    "lamp-lava": { nightstand: true },
+    "lamp-chandelier": { x: -0.3, z: 0, k: 0.8, hang: true, stand: { x: 0.75, z: 0.35, yaw: -0.3 } },
+    "plant-tree": { k: 0.7 },
+    "tv-treadmill": { x: 0.9 },                                                      // (more in the middle, so you see the runner)
+    "special-fishtank": { x: 0.95, z: 0, ry: -PI / 2 },
+    "special-drums": { x: 0.1 },
+    "special-telescope": { x: 0.3, z: 0.15, ry: PI, k: 1 },                          // pointing out of the window
+    "special-plushies": { x: -0.95, z: 0.45, k: 0.85, stand: { x: 0.75, z: -0.3, toward: { lx: 0.3, lz: -0.35 } }, plant: [1.55, -1.05] },
+    "special-punchbag": { x: 0.35 },
+  };
+
+  // Where the Mii goes (room-local), following the same rules as the spots in a home.
+  function flatSpot(def, L, act) {
+    const k = L.k || 1, c = Math.cos(L.ry || 0), s = Math.sin(L.ry || 0);
+    const tw = (lx, lz) => ({ x: L.x + (lx * c + lz * s) * k, z: L.z + (-lx * s + lz * c) * k });
+    const spot = { pose: "stand", y: 0, arms: (act && act.arms) || undefined, lookUp: (act && act.lookUp) || 0 };
+    if (act && act.lie && def.lie) return Object.assign(spot, tw(def.lie.lx, def.lie.lz), { y: def.lie.h * k, yaw: (L.ry || 0) + def.lie.yaw, pose: "lie" });
+    if (act && act.sit && def.seat) return Object.assign(spot, tw(def.seat.lx, def.seat.lz), { y: def.seat.h * k - 0.56, yaw: L.ry || 0, pose: "sit" });
+    if (act && act.run && def.stand) return Object.assign(spot, tw(def.stand.lx, def.stand.lz), { y: def.stand.h * k, yaw: (L.ry || 0) + ((def.spot && def.spot.yaw) || 0), pose: "run" });
+    const st = L.stand || def.spot || { lx: 0, lz: 1, yaw: PI };
+    const at = st.x !== undefined ? { x: st.x, z: st.z } : tw(st.lx, st.lz);
+    let yaw = st.x !== undefined ? st.yaw : (L.ry || 0) + (st.yaw || 0);
+    if (st.toward) {
+      const tgt = st.toward === true ? { x: L.x, z: L.z } : tw(st.toward.lx, st.toward.lz);
+      yaw = Math.atan2(tgt.x - at.x, tgt.z - at.z);
+    }
+    return Object.assign(spot, at, { yaw });
+  }
+
+  // Builds what's inside a flat (detached, around the room's origin) and works
+  // out where its Mii goes. act = the resident's activity (or null).
+  function flatContents(items, act, name, anim) {
+    const H = root.MiiHomes;
+    const g = new THREE.Group();
+    const ctx = { anim, record: { name } };
+    let it = act && act.itemId && H ? H.item(act.itemId) : null;
+    let def = it && FURNITURE[it.id];
+    let slot = it ? it.slot : "window";
+    if (!def || !FLAT_SLOTS[slot] || !it.use) { it = null; def = null; slot = "window"; }
+    const L = Object.assign({ ry: 0, k: 1 }, FLAT_SLOTS[slot], it ? FLAT_ITEMS[it.id] : null);
+    const add = (item, p) => {
+      const d = item && FURNITURE[item.id];
+      if (!d) return null;
+      const ig = group(g, p.x, p.y || 0, p.z, p.ry || 0, p.k || 1);
+      d.build(ig, ctx);
+      return ig;
+    };
+    let spot;
+    if (def) {
+      const ig = add(it, L);
+      if (L.nightstand) {
+        // (the lava lamp stands on a little bedside table, like at home)
+        block(ig, 0xc98b4a, 0, 0.36, 0, 0.75, 0.72, 0.65, 0.06);
+        block(ig, 0xe0a868, 0, 0.42, 0.33, 0.6, 0.25, 0.02, 0.03);
       }
-      c.fillStyle = "#4fbf47";
-      for (const x of [90, 160, 240, 10]) { c.fillStyle = "#9a6a3c"; c.fillRect(x - 3, h - 50, 6, 20); c.fillStyle = "#4fbf47"; c.beginPath(); c.arc(x, h - 58, 16, 0, TAU); c.fill(); }
+      if (L.hang) {
+        // a chandelier: no long chain (this room has a ceiling), hung just under it
+        ig.remove(ig.children[0]);
+        const ringY = FLAT.ceil - 0.42;
+        ig.position.y = ringY - (ROOM.h - 1.2) * L.k;
+        cylinder(g, 0xd9a441, L.x, (ringY + FLAT.ceil) / 2, L.z, 0.02, FLAT.ceil - ringY, { shadow: false });
+      }
+      spot = flatSpot(def, L, act);
+    } else {
+      // nothing in particular: the armchair at the back, and the Mii looks out of the window
+      if (items.sofa) add(items.sofa, FLAT_SLOTS.sofa);
+      spot = Object.assign({ pose: "stand", y: 0, arms: undefined, lookUp: 0.1 }, FLAT_SLOTS.window.stand);
+    }
+    // a couple of the Mii's other things, so it looks like its home
+    if (items.rug && items.rug.id !== "rug-none") add(items.rug, { x: 0, y: 0.015, z: 0.15, k: 0.5 });
+    if (items.plant && items.plant.id !== "plant-none" && slot !== "plant" && L.plant) {
+      add(items.plant, { x: L.plant[0], z: L.plant[1], k: items.plant.id === "plant-tree" ? 0.55 : 0.6 });
+    }
+    if (items.art && items.art.id !== "art-none" && slot !== "art") add(items.art, { x: 0.65, y: 2.05, z: -FLAT.depth / 2 + 0.03, k: 0.5 });
+    // the ceiling light
+    if (!L.hang) {
+      const lm = flatLight(), lx = 1.1, lz = -0.15, ly = 2.82;
+      cylinder(g, 0x8a7a6a, lx, (FLAT.ceil + ly) / 2, lz, 0.015, FLAT.ceil - ly, { shadow: false });
+      put(g, G.taper(0.1, 0.28, 14), lm.shade, { x: lx, y: ly, z: lz, sy: 0.2, shadow: false });
+      put(g, G.lowSphere(), lm.bulb, { x: lx, y: ly - 0.1, z: lz, s: 0.07, shadow: false });
+    }
+    g.traverse((o) => { if (o.isMesh || o.isSprite) { o.castShadow = false; o.receiveShadow = false; } });
+    bakeFlat(g);
+    return { group: g, spot };
+  }
+
+  // Joins all the plain-coloured parts of a little room into ONE shape that keeps
+  // their colours (so a whole room is only a few draw calls), then merges the rest.
+  let flatPaint = null;
+  function bakeFlat(g) {
+    if (W3D.debug && W3D.debug.noMerge) return;
+    g.updateMatrixWorld(true);
+    // moving parts (swaying leaves, swimming fish...) are baked one by one, in their own space
+    const movers = [];
+    g.traverse((o) => { if (o !== g && o.userData.dynamic && !o.isMesh && !o.isSprite) movers.push(o); });
+    for (const m of movers) paintTogether(m);
+    paintTogether(g);
+    mergeStatic(g);
+  }
+  // Joins the plain-coloured shapes under c (but not inside its moving parts)
+  // into one shape that keeps their colours.
+  const tmpInv = new THREE.Matrix4(), tmpM = new THREE.Matrix4();
+  function paintTogether(c) {
+    if (!flatPaint) flatPaint = new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: toon(0xffffff).gradientMap, vertexColors: true });
+    tmpInv.copy(c.matrixWorld).invert();
+    const geos = [], remove = [];
+    const visit = (o) => {
+      for (const ch of o.children) {
+        if (ch.userData.dynamic) continue;
+        visit(ch);
+        if (!ch.isMesh || ch.isInstancedMesh) continue;
+        const m = ch.material;
+        if (Array.isArray(m) || !m.isMeshToonMaterial || m.map || m.transparent || m.vertexColors || m.side !== THREE.FrontSide || (m.emissive && m.emissive.getHex())) continue;
+        const src = ch.geometry.index ? ch.geometry.toNonIndexed() : ch.geometry.clone();
+        if (!src.attributes.normal) src.computeVertexNormals();
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", src.attributes.position);
+        geo.setAttribute("normal", src.attributes.normal);
+        geo.applyMatrix4(tmpM.multiplyMatrices(tmpInv, ch.matrixWorld));
+        const n = geo.attributes.position.count, col = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) { col[i * 3] = m.color.r; col[i * 3 + 1] = m.color.g; col[i * 3 + 2] = m.color.b; }
+        geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+        geos.push(geo);
+        remove.push(ch);
+      }
+    };
+    visit(c);
+    if (geos.length < 2) { if (geos.length) geos[0].dispose(); return; }
+    for (const o of remove) o.parent.remove(o);
+    const mesh = new THREE.Mesh(THREE.BufferGeometryUtils.mergeBufferGeometries(geos, false), flatPaint);
+    geos.forEach((x) => x.dispose());
+    mesh.castShadow = mesh.receiveShadow = false;
+    c.add(dynamic(mesh)); // (dynamic: it's already in place, mergeStatic must leave it alone)
+  }
+
+  // Frees a little room's contents (keeps the shapes and materials that are shared).
+  function disposeFlat(g) {
+    W3D.dispose({ group: g });
+    g.traverse((o) => {
+      const m = o.material;
+      if (m && !Array.isArray(m) && !m.userData.keep && (m.map || m.transparent || (m.emissive && m.emissive.getHex()))) m.dispose();
     });
   }
-  function cloudStrip() {
-    return canvasTexture(256, 64, (c) => {
-      c.fillStyle = "rgba(255,255,255,0.95)";
-      for (const [x, y] of [[40, 30], [150, 22], [220, 38]]) { c.beginPath(); c.arc(x, y, 12, 0, TAU); c.arc(x + 14, y - 5, 14, 0, TAU); c.arc(x + 28, y, 10, 0, TAU); c.fill(); }
-    }, [1, 1]);
+
+  // What a flat looks out on: the courtyard, the street, the houses across the
+  // road, trees, hills and clouds. A lighter copy of the apartments place, in the
+  // same coordinates (the ground is at y = 0, the building's front at z = APT.front).
+  // It's only a backdrop, so: few, simple shapes, all merged later.
+  function courtyardView(p, anim) {
+    const FZ = APT.front;
+    disc(p, toon(0xffffff, { map: grassTexture([60, 60], 12, 90) }), 0, -0.02, 0, 170);
+    put(p, new THREE.PlaneGeometry(36, 22.6), toon(0xffffff, { map: paveTexture([9, 6]) }), { y: 0.01, z: (FZ + 11) / 2, rx: -PI / 2, shadow: false });
+    block(p, 0x7fd05a, -11.8, 0.03, 5.6, 10.6, 0.06, 8.4, 0.03, { shadow: false });
+    block(p, 0x7fd05a, 12.6, 0.03, 5.2, 9.6, 0.06, 9.2, 0.03, { shadow: false });
+    // the round flower bed with its cherry tree
+    cylinder(p, 0xd98a6a, 0, 0.22, -5, 1.6, 0.44, { seg: 20 });
+    disc(p, toon(0x8a5a3a), 0, 0.45, -5, 1.48);
+    const fr = seeded(7);
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * TAU, d = 0.6 + fr() * 0.7;
+      put(p, G.tinySphere(), toon([0xff6fa5, 0xffe25a, 0xffffff, 0xb58cff, 0xff8a4c][i % 5]), { x: Math.cos(a) * d, y: 0.62, z: -5 + Math.sin(a) * d, s: 0.16, sy: 0.11, shadow: false });
+    }
+    farTree(group(p, 0, 0.45, 0), 0, -5, 0.5, [0xff9ec7, 0xffc3dc]);
+    // koi pond, sandbox, bench, picnic table, washing line
+    disc(p, toon(0x5aa646), 4.6, 0.02, 5.6, 1, { sx: 3.15, sy: 2.05 });
+    disc(p, toon(0x4fb8e8), 4.6, 0.05, 5.6, 1, { sx: 2.8, sy: 1.7 });
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * TAU;
+      put(p, G.tinySphere(), toon(i % 2 ? 0xc9c4b8 : 0xb3ada0), { x: 4.6 + Math.cos(a) * 3.0, y: 0.1, z: 5.6 + Math.sin(a) * 1.9, s: 0.36, sy: 0.2, shadow: false });
+    }
+    bx(p, 0xd9894a, -11, 0.2, 5.6, 3.8, 0.4, 3.2);
+    bx(p, 0xf6dd9a, -11, 0.22, 5.6, 3.5, 0.4, 2.9);
+    parkBench(p, -5.6, 0.6, 0);
+    bx(p, 0xc98b4a, 13.2, 0.8, 2.2, 2.4, 0.1, 0.95);
+    for (const sz of [-0.8, 0.8]) bx(p, 0xc98b4a, 13.2, 0.48, 2.2 + sz, 2.4, 0.08, 0.38);
+    for (const x of [7.2, 12.6]) bx(p, 0xd9894a, x, 1.3, -7.4, 0.12, 2.6, 0.12);
+    [[7.9, 0x8fd3ff], [9.0, 0xff9ec7], [9.9, 0xffffff], [11.1, 0xffd166]].forEach(([x, c]) => bx(p, c, x, 1.95, -7.4, 0.8, 1.0, 0.04));
+    for (const [x, z] of [[-5.0, -4.6], [5.0, -4.6], [-12.4, -1.2], [12.0, -1.2]]) lampPost(p, x, z);
+    for (const [x, z, c] of [[-16, -2.4, 0], [15.9, -2.6, 0], [-16, 9.3, 0], [16.3, 9.6, 1]]) farTree(p, x, z, 0.95, c ? [0xff9ec7, 0xffc3dc] : null);
+    // the hedge with the gate at the front
+    for (const [x, z, w, d] of [[-9.9, 10.9, 16.2, 0.8], [9.9, 10.9, 16.2, 0.8], [-18.2, -0.3, 0.8, 22.4], [18.2, -0.3, 0.8, 22.4]]) bx(p, 0x4fae3f, x, 0.5, z, w, 1.0, d);
+    for (const sx of [-1.75, 1.75]) {
+      bx(p, 0xd98a6a, sx, 0.65, 10.9, 0.7, 1.3, 0.7);
+      ball(p, glow(0xfff1b8, 0.9), sx, 1.6, 10.9, 0.22);
+    }
+    // the street, with a zebra crossing
+    bx(p, 0xd8d4cc, 0, 0.06, 12.4, 300, 0.12, 1.8, { shadow: false });
+    bx(p, 0x6b6f78, 0, 0.02, 16.0, 300, 0.04, 5.4, { shadow: false });
+    bx(p, 0xd8d4cc, 0, 0.06, 19.6, 300, 0.12, 1.8, { shadow: false });
+    for (let x = -90; x < 90; x += 3) if (Math.abs(x) > 3) bx(p, 0xfdfdf5, x, 0.05, 16, 1.6, 0.02, 0.14, { shadow: false });
+    for (let k = 0; k < 7; k++) bx(p, 0xfdfdf5, -2.4 + k * 0.8, 0.05, 16, 0.45, 0.02, 5.0, { shadow: false });
+    for (let x = -36; x <= 36; x += 12) lampPost(p, x, 19.1);
+    // houses across the street, to the sides and further away
+    const cols = [[0xfff1dc, 0xe2574c], [0xdff3ff, 0x4a90e2], [0xffe0ec, 0xb58cff], [0xeaffd9, 0xff8a4c], [0xfff6c2, 0x3fb39a]];
+    let hc = 0;
+    for (let x = -44; x <= 44; x += 11) {
+      const [wall, roof] = cols[hc++ % cols.length];
+      house(p, x, 25.5, PI, { w: 5, d: 4.2, h: 2.8, rh: 2.0, wall, roof, door: [0x9a6a3c, 0x4a90e2, 0xff7a8a][hc % 3] });
+      farTree(p, x + 5.5, 22.5, 0.8, hc % 2 ? [0x5cc84a, 0x7fdc5c] : [0x4fbf47, 0x8ae065]);
+    }
+    for (let x = -50; x <= 50; x += 12.5) {
+      const [wall, roof] = cols[hc++ % cols.length];
+      house(p, x + 3, 40, PI, { w: 5, d: 4.2, h: 2.8, rh: 2.0, wall, roof, s: 1.2 });
+      farTree(p, x - 2, 34 + (hc % 3) * 2, 1.1, hc % 2 ? [0x5cc84a, 0x7fdc5c] : [0x4fbf47, 0x8ae065]);
+      farTree(p, x + 5, 50 + (hc % 2) * 4, 1.3);
+    }
+    for (const side of [-1, 1]) {
+      for (let k = 0; k < 3; k++) {
+        const [wall, roof] = cols[(k + (side > 0 ? 2 : 0)) % cols.length];
+        house(p, side * (25 + (k % 2) * 3), -6 + k * 8, -side * PI / 2, { w: 4.6, d: 4.0, h: 2.6, rh: 1.8, wall, roof });
+        farTree(p, side * 21.5, -9 + k * 8, 0.9 + (k % 2) * 0.15);
+      }
+    }
+    // soft hills all the way round, and clouds
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * TAU + 0.2, r = 95 + (i % 3) * 12, s = 28 + ((i * 7) % 5) * 6;
+      put(p, G.lowSphere(), toon(i % 2 ? 0x7fcf5a : 0x6cc24a), { x: Math.cos(a) * r, y: -s * 0.45, z: Math.sin(a) * r, sx: s, sy: s * 0.75, sz: s * 0.7, shadow: false, receive: false });
+    }
+    const cloudMat = toon(0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.25 });
+    const clouds = [];
+    for (let i = 0; i < 7; i++) clouds.push({ c: cloud(p, cloudMat, 0, 20 + (i % 3) * 4, 0, 1 + (i % 2) * 0.3), a: (i / 7) * TAU, r: 50 + (i % 3) * 14 });
+    anim.push((t) => clouds.forEach((q) => { const a = q.a + t * 0.006; q.c.position.x = Math.cos(a) * q.r; q.c.position.z = Math.sin(a) * q.r; }));
+  }
+
+  // The front of the apartment building (doors, windows, curtains) as a picture,
+  // one floor of two flats per tile: for the floors under a home's room.
+  // (back = the back and sides of the building: just windows)
+  function facadeTexture(floors, back) {
+    return canvasTexture(512, 128, (c, w, h) => {
+      c.fillStyle = "#ffe6c7"; c.fillRect(0, 0, w, h);
+      c.fillStyle = "#ffd3a8"; c.fillRect(0, 0, w, 6);
+      if (back) {
+        for (let k = 0; k < 3; k++) {
+          const x0 = k * 170 + 30;
+          c.fillStyle = "#ffffff"; c.fillRect(x0, 34, 110, 64);
+          c.fillStyle = "#9fd0f0"; c.fillRect(x0 + 6, 40, 98, 52);
+          c.fillStyle = hex(UNIT_COLORS[(k * 5 + 2) % UNIT_COLORS.length][1]); c.fillRect(x0 + 6, 40, 30, 52);
+        }
+        return;
+      }
+      for (let k = 0; k < 2; k++) {
+        const x0 = k * 256, col = UNIT_COLORS[(k * 3 + 1) % UNIT_COLORS.length];
+        c.fillStyle = "#ffffff"; c.fillRect(x0 + 32, 46, 54, 82);
+        c.fillStyle = hex(col[0]); c.fillRect(x0 + 36, 50, 46, 78);
+        c.fillStyle = "#ffffff"; c.fillRect(x0 + 108, 22, 124, 94);
+        c.fillStyle = "#bfe6ff"; c.fillRect(x0 + 114, 28, 112, 84);
+        c.fillStyle = hex(col[1]); c.fillRect(x0 + 114, 28, 26, 84); c.fillRect(x0 + 200, 28, 26, 84);
+        c.fillStyle = "rgba(255,255,255,0.5)"; c.fillRect(x0 + 150, 32, 8, 76);
+      }
+    }, [1, floors]);
   }
 
   function buildHome(opts) {
@@ -1901,32 +2315,45 @@
     skyDome(rootG, 0x4fb0f2, 0xd6f0ff, 0x9fd47f);
     const RX = ROOM.x, RZ = ROOM.z, RH = ROOM.h;
 
-    // ---------- outside: a garden around the dollhouse ----------
-    const grassTex = canvasTexture(128, 128, (c, w, h) => {
-      c.fillStyle = "#86d65e"; c.fillRect(0, 0, w, h);
-      const r = seeded(5);
-      for (let i = 0; i < 60; i++) { c.fillStyle = r() < 0.5 ? "rgba(70,150,45,0.45)" : "rgba(180,240,130,0.5)"; c.fillRect(r() * w, r() * h, 2, 6); }
-    }, [50, 50]);
-    disc(rootG, toon(0xffffff, { map: grassTex }), 0, -0.3, 0, 140, { receive: true });
-    block(rootG, 0xf3e6d2, 0, -0.17, 0, RX * 2 + 1.2, 0.3, RZ * 2 + 1.2, 0.1);
-    const outR = seeded(9);
-    for (let i = 0; i < 14; i++) {
-      const a = (i / 14) * TAU + 0.2, d = 14 + outR() * 8;
-      farTree(rootG, Math.cos(a) * d * 1.2, Math.sin(a) * d, 0.9 + outR() * 0.4, i % 4 === 0 ? [0xff9ec7, 0xffc3dc] : [0x5cc84a, 0x7fdc5c]);
+    // ---------- outside ----------
+    // This room is one of the flats in the apartment building (opts.floor = which
+    // floor, 0 = the ground floor), so out of the window you see the courtyard,
+    // the street and the houses across the road, from up on that floor. The
+    // window is in the back wall, so the outside is turned round to face it.
+    const floorNo = Number.isFinite(+(opts && opts.floor)) && opts.floor !== null ? Math.max(0, Math.min(MAX_FLOORS - 1, Math.round(+opts.floor))) : 1;
+    const drop = floorNo * APT.floorH + 0.3; // how far below the room's floor the ground is
+    const FACE = -RZ - 0.3;                  // the outside of the back wall = the front of the building
+    const view = group(rootG, WINDOW.x, -drop, FACE + APT.front, PI); // (turned round: the building front ends up along the back wall)
+    courtyardView(view, anim);
+    // the building under the room (it carries on a little to each side)
+    const BW = RX + 1.5;
+    bx(rootG, 0xffe6c7, 0, (-drop - 0.02) / 2, (FACE + RZ + 0.6) / 2, BW * 2, drop - 0.02, RZ + 0.6 - FACE);
+    bx(rootG, 0xff8a7a, 0, -0.12, FACE - 0.03, BW * 2, 0.2, 0.08);
+    if (floorNo > 0) {
+      const fac = facadeTexture(floorNo);
+      fac.repeat.x = (BW * 2) / (APT.unitW * 2);
+      const fy = -drop + (floorNo * APT.floorH) / 2, fh = floorNo * APT.floorH;
+      plane(rootG, BW * 2, fh, toon(0xffffff, { map: fac }), { y: fy, z: FACE - 0.01, ry: PI });
+      // the back and the sides of the building, with their windows
+      const backTex = facadeTexture(floorNo, true);
+      backTex.repeat.x = (BW * 2) / 9;
+      plane(rootG, BW * 2, fh, toon(0xffffff, { map: backTex }), { y: fy, z: RZ + 0.61 });
+      const sideTex = facadeTexture(floorNo, true);
+      sideTex.repeat.x = (RZ + 0.6 - FACE) / 9;
+      for (const sx of [-1, 1]) plane(rootG, RZ + 0.6 - FACE, fh, toon(0xffffff, { map: sideTex }), { x: sx * (BW + 0.01), y: fy, z: (FACE + RZ + 0.6) / 2, ry: sx * PI / 2 });
+      // the walkway balconies (the top one runs right past the window), held up by pillars
+      for (let k = 1; k <= floorNo; k++) {
+        const y = (k - floorNo) * APT.floorH;
+        bx(rootG, 0xfdf8f0, 0, y - 0.11, FACE - 0.76, BW * 2 + 0.1, 0.22, 1.52);
+        bx(rootG, 0xff8a7a, 0, y - 0.12, FACE - 1.53, BW * 2 + 0.2, 0.3, 0.1);
+        bx(rootG, 0x6fcfbf, 0, y + 0.95, FACE - 1.45, BW * 2 + 0.1, 0.1, 0.12);
+        bx(rootG, 0x6fcfbf, 0, y + 0.18, FACE - 1.45, BW * 2 + 0.1, 0.07, 0.08);
+        for (let x = -BW + 0.2; x <= BW - 0.1; x += 0.32) put(rootG, G.cyl(6), toon(0x6fcfbf), { x, y: y + 0.56, z: FACE - 1.45, sx: 0.035, sy: 0.78, sz: 0.035 });
+      }
+      for (let x = -APT.unitW * 2; x <= APT.unitW * 2 + 0.1; x += APT.unitW) cylinder(rootG, 0xfdf8f0, x + WINDOW.x, -drop / 2 - 0.15, FACE - 1.3, 0.15, drop - 0.3);
     }
-    const hc = [[0xfff1dc, 0xe2574c], [0xdff3ff, 0x4a90e2], [0xffe0ec, 0xb58cff], [0xeaffd9, 0xff8a4c]];
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * TAU + 0.6, d = 30;
-      house(rootG, Math.cos(a) * d * 1.2, Math.sin(a) * d, -a - PI / 2, { w: 5, d: 4, h: 2.8, rh: 2, wall: hc[i % 4][0], roof: hc[i % 4][1], s: 1.2 });
-    }
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * TAU, r = 90 + (i % 3) * 10, s = 26 + (i % 4) * 5;
-      put(rootG, G.lowSphere(), toon(i % 2 ? 0x7fcf5a : 0x6cc24a), { x: Math.cos(a) * r, y: -s * 0.45, z: Math.sin(a) * r, sx: s, sy: s * 0.7, sz: s * 0.7, shadow: false, receive: false });
-    }
-    const cloudMat = toon(0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.25 });
-    const clouds = [];
-    for (let i = 0; i < 6; i++) clouds.push({ c: cloud(rootG, cloudMat, 0, 18 + (i % 3) * 4, 0, 1), a: (i / 6) * TAU, r: 50 + (i % 2) * 15 });
-    anim.push((t) => clouds.forEach((q) => { const a = q.a + t * 0.008; q.c.position.set(Math.cos(a) * q.r, q.c.position.y, Math.sin(a) * q.r); }));
+    // (the scenery is only a backdrop: no shadows, so it's quick to draw)
+    view.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
 
     // ---------- the room: floor, walls, window, door ----------
     const wallIt = items.wallpaper || {}, floorIt = items.floor || {};
@@ -1976,13 +2403,10 @@
     const leftWall = wall(-RX, 0, PI / 2, RZ * 2, null);
     const rightWall = wall(RX, 0, -PI / 2, RZ * 2, { u0: DOOR.z - DOOR.w / 2, u1: DOOR.z + DOOR.w / 2, v0: 0, v1: DOOR.h });
 
-    // the window: painted view, clouds drifting past, frame, sill and curtains
+    // the window: real glass you can see through (the courtyard is out there), frame, sill and curtains
     {
       const wx = WINDOW.x, wy = (WINDOW.y0 + WINDOW.y1) / 2, ww = WINDOW.w, wh = WINDOW.y1 - WINDOW.y0;
-      plane(backWall, ww, wh, basic(windowView()), { x: wx, y: wy, z: -0.22 });
-      const cl = cloudStrip();
-      dynamic(plane(backWall, ww, wh * 0.4, basic(cl, { transparent: true, depthWrite: false }), { x: wx, y: wy + wh * 0.28, z: -0.2 }));
-      anim.push((t) => { cl.offset.x = (t * 0.01) % 1; });
+      plane(backWall, ww, wh, glassMaterial(), { x: wx, y: wy, z: -0.16 });
       // the sides of the hole
       block(backWall, trimC, wx, WINDOW.y0 - 0.04, -0.1, ww + 0.3, 0.12, 0.3, 0.02, { shadow: false });
       block(backWall, trimC, wx, WINDOW.y1 + 0.04, -0.1, ww + 0.3, 0.12, 0.3, 0.02, { shadow: false });
