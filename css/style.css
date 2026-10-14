@@ -1041,3 +1041,62 @@ body {
 
 .hp-wide:hover { border-color: var(--accent); }
 .hp-wide.danger { color: var(--danger); }
+
+/* ---------- places: counts on the buttons, "Go to..." in the Mii menu ---------- */
+.tab-count {
+  display: inline-block;
+  min-width: 1.4em;
+  margin-left: 2px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(47, 164, 231, 0.15);
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-align: center;
+}
+.tab-count:empty { display: none; }
+.roster .where { color: var(--accent); font-weight: 700; }
+
+.mm-places { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.mm-places button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 5px 0;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mm-places button span { font-size: 1.1rem; }
+.mm-places button:hover:not(:disabled) { border-color: var(--accent); }
+.mm-places button:disabled { opacity: 0.45; cursor: default; }
+.mm-fav { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 6px; font-size: 0.72rem; font-weight: 700; color: var(--muted); }
+.mm-fav select { font: inherit; font-size: 0.8rem; padding: 3px 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+
+/* ---------- phone calls ---------- */
+.phone-tag {
+  position: absolute;
+  left: 0;
+  top: -6px;
+  translate: -50% -100%;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: #2f3542;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+.phone-tag.show { opacity: 1; }
+/* what the other Mii says, coming out of the phone */
+.bubble.phone-voice { background: #e3f3ff; font-style: italic; }
+.bubble.phone-voice::after { border-top-color: #e3f3ff; }

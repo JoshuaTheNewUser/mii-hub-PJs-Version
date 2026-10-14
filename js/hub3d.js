@@ -81,21 +81,21 @@
       this.cooldown = rnd(2, 6);
       this.talkIn = rnd(4, 12);
       this.partner = null;
-      this.remote = null;     // "shout" or "phone" when chatting from far away
+      this.remote = null;     // "phone" when talking to a Mii somewhere else
       this.held = false;
       this.appear = 0;
       this.vanish = 0;        // grows to 1 when the Mii leaves (goes home)
-      this.battery = 1;       // social energy: hanging out uses it up, alone time refills it
       this.bubble = null; // { text, time, dur }
       this.emote = null;  // { icon, time, dur }
 
       // the bubble/emote/name tag that float above the Mii's head
       this.ui = document.createElement("div");
       this.ui.className = "mii-ui";
-      this.ui.innerHTML = '<div class="bubble"></div><div class="emote"></div><div class="nametag"></div>';
+      this.ui.innerHTML = '<div class="bubble"></div><div class="emote"></div><div class="nametag"></div><div class="phone-tag"></div>';
       this.uiBubble = this.ui.children[0];
       this.uiEmote = this.ui.children[1];
       this.uiName = this.ui.children[2];
+      this.uiPhone = this.ui.children[3]; // "📱 Mia" while on the phone
       this.uiName.textContent = look.name;
       hub.overlay.appendChild(this.ui);
 
@@ -174,7 +174,7 @@
       text = text.replace(/\{A\}/g, this.look.name).replace(/\{B\}/g, partner);
       this.bubble = { text, time: 0, dur: dur || Math.max(2, text.length * 0.07) };
       this.uiBubble.textContent = text;
-      this.uiBubble.classList.remove("show");
+      this.uiBubble.classList.remove("show", "shout", "phone-voice");
       void this.uiBubble.offsetWidth; // restart the pop-in animation
       this.uiBubble.classList.add("show");
     }
@@ -221,6 +221,11 @@
     // sitting, lying or standing on something (or still getting off it)
     get anchored() { return this.seatBlend > 0.02; }
 
+    // social energy: hanging out uses it up, alone time refills it (kept by the
+    // hub, so it stays the same when the Mii goes somewhere else)
+    get battery() { return this.hub.batteryOf(this.id); }
+    set battery(v) { this.hub.setBattery(this.id, v); }
+
     remove() {
       this.group.remove(this.inst.holder);
       M.disposeObject(this.inst.holder);
@@ -244,6 +249,10 @@
       this.recent = [];     // recent hang-outs, so doing the same thing over and over earns less
       this.timers = [];
       this.residents = [];  // who lives in which apartment (see setResidents)
+      this.batteries = new Map(); // id -> social energy (0..1)
+      this.windowMiis = new Map(); // id -> Mii model shown inside its flat's window
+      this.onTick = null;         // called every frame (town.js moves Miis between places)
+      this.onSceneChange = null;  // you switched places: town.js fills the new one
       this.visiting = null; // { record, walker } while you're inside a Mii's home
       this.onChange = () => {};
       this.onSelect = null;       // right-click a Mii (opens its menu)
@@ -327,41 +336,96 @@
       this.fitCamera();
     }
 
+    // Shows another place. The Miis that were on screen stay where they were
+    // (they live their own lives, see town.js); the ones in the new place appear.
     setScene(id) {
       if (this.visiting) this.leaveHome();
       if (this.world && this.world.id === id) return;
+      for (const w of this.walkers.slice()) if (w.leaving) this.finishLeaving(w);
+      for (const w of this.walkers) { this.endInteraction(w); w.remove(); }
+      this.walkers = [];
+      this.dragging = null; this.hover = null;
+      this.clearWindowMiis();
       if (this.world) {
         this.scene.remove(this.world.group);
         window.World3D.dispose(this.world);
       }
       this.useWorld(window.World3D.build(id, { residents: this.residents.length }));
-
-      for (const w of this.walkers) {
-        if (w.leaving) { this.finishLeaving(w); continue; }
-        this.endInteraction(w);
-        const p = this.randomFloorPoint();
-        w.x = p.x; w.z = p.z;
-        w.state = "idle"; w.timer = rnd(0.3, 1.5); w.spot = null; w.target = null; w.path = null;
-        w.anchor = null; w.lastAnchor = null; w.seatBlend = 0;
-        // clear what they were saying in the old place
-        w.bubble = null; w.uiBubble.classList.remove("show");
-        w.clearEmote();
-        w.lift = this.baseLift(w); w.liftVel = 0;
-        w.appear = 0;
-        w.helmet.visible = this.world.helmet;
-      }
-      if (this.walkers.length) {
-        this.addFeed("Everyone went to the " + this.world.name + "! " + this.world.icon);
-        const first = this.walkers[Math.floor(Math.random() * this.walkers.length)];
-        const lines = {
-          park: ["Let's go to the park!", "Fresh air!"],
-          office: ["Back to work...", "Good morning, office!"],
-          space: ["We're in SPACE!", "Blast off!"],
-          apartments: ["Home sweet home!", "Hi, neighbours!"],
-        }[id];
-        if (lines) first.say(D.pick(lines), 2.5);
-      }
+      if (this.onSceneChange) this.onSceneChange(id);
       this.onChange();
+    }
+
+    // ---------- Miis you can see through their windows (in the Apartments) ----------
+    clearWindowMiis() {
+      for (const m of this.windowMiis.values()) {
+        this.scene.remove(m.inst.holder);
+        M.disposeObject(m.inst.holder);
+      }
+      this.windowMiis.clear();
+    }
+
+    // Puts a model of each Mii who's at home inside its flat, doing whatever it's
+    // doing (the building tells us where: world.windowSpot).
+    syncWindowMiis(dt) {
+      const world = this.world;
+      if (this.visiting || !world.windowSpot) { if (this.windowMiis.size) this.clearWindowMiis(); return; }
+      const want = new Set();
+      for (const r of this.residents) {
+        if (!r.home || !r.template) continue;
+        const spot = world.windowSpot(r.id);
+        if (!spot) continue;
+        want.add(r.id);
+        let m = this.windowMiis.get(r.id);
+        if (m && m.template !== r.template) {
+          this.scene.remove(m.inst.holder); M.disposeObject(m.inst.holder); m = null;
+        }
+        if (!m) {
+          const inst = M.createInstance(r.template, r.look || {});
+          inst.holder.rotation.order = "YXZ";
+          const s = (0.9 + clamp(r.template.info.height, 0, 127) / 127 * 0.2) * 1.3;
+          inst.holder.scale.setScalar(s);
+          this.scene.add(inst.holder);
+          m = { inst, template: r.template, s, t0: Math.random() * 10 };
+          this.windowMiis.set(r.id, m);
+        }
+        const h = m.inst.holder, rig = m.inst.rig, t = this.time + m.t0;
+        const style = r.record ? animStyle(D.traits(r.record)) : null;
+        const lie = spot.pose === "lie", sit = spot.pose === "sit", run = spot.pose === "run";
+        rig.pose({
+          t, dt, style, arms: spot.arms || "down", lookUp: spot.lookUp || 0,
+          sit, lie, run, walk: run ? 1 : 0, phase: t * 8.5,
+          nod: lie ? 0 : 0, talking: false,
+        });
+        if (lie) {
+          // on its back, head on the pillow
+          const len = MII_HEIGHT * m.s * 0.5;
+          h.rotation.set(-Math.PI / 2, (spot.yaw || 0) + Math.PI, 0);
+          h.position.set(spot.x - Math.sin(spot.yaw || 0) * len, spot.y + 0.32 * m.s, spot.z - Math.cos(spot.yaw || 0) * len);
+        } else {
+          h.rotation.set(0, (spot.yaw || 0) + (sit || run ? 0 : Math.sin(t * 0.4) * 0.25), 0);
+          h.position.set(spot.x, spot.y - (sit || lie ? 0 : rig.drop * m.s), spot.z);
+        }
+      }
+      for (const [id, m] of this.windowMiis) {
+        if (want.has(id)) continue;
+        this.scene.remove(m.inst.holder); M.disposeObject(m.inst.holder);
+        this.windowMiis.delete(id);
+      }
+    }
+
+    // Which floor a Mii's flat is on (4 flats per floor, in order of who moved in first).
+    floorOf(id) {
+      const i = this.residents.findIndex((r) => r.id === id);
+      return i < 0 ? 1 : Math.floor(i / 4);
+    }
+
+    batteryOf(id) { return this.batteries.has(id) ? this.batteries.get(id) : 1; }
+    setBattery(id, v) { this.batteries.set(id, Math.max(0, Math.min(1, v))); }
+
+    // Where Miis come in and leave from: the gate, the door, the path...
+    entrance() {
+      const e = this.world.entrance || { x: 0, z: this.world.bounds.maxZ - 0.8 };
+      return this.nav.nearestFree(e.x, e.z);
     }
 
     // Who lives in which apartment: [{ id, name, home }]. Shown in the Apartments place.
@@ -482,31 +546,61 @@
       this.onChange();
     }
 
-    // The Mii says goodbye and walks to its front door (in the Apartments) or
-    // just heads off, then disappears. Nothing is forgotten.
-    // quick = don't walk all the way to the door (you're about to visit them)
-    sendHome(id, done, quick) {
+    // A Mii heads off somewhere else: it says so, walks out (to its own front
+    // door if it's going home and you're looking at the apartments), and fades away.
+    // quick = go straight away (you're about to visit them)
+    leavePlace(id, to, done, quick) {
       const w = this.walkers.find((x) => x.id === id);
       if (!w) { if (done) done(); return; }
       this.endInteraction(w);
       if (this.dragging === w) { this.dragging = null; w.held = false; }
       w.spot = null; w.anchor = null; w.dance = false; w.sleep = false; w.arms = "down";
       w.leaving = true;
+      w.leavingTo = to;
       w.onLeft = done;
-      w.say(D.pick(["Time to go home!", "See you later!", "Home sweet home, here I come!", "Bye for now!"]), 2.2);
-      w.showEmote("🏠", 4);
-      const door = !quick && this.world.doorFor && this.world.doorFor(id);
-      w.leaveAfter = this.time + (door ? 0 : quick ? 1.2 : 1.8);
-      w.leaveBy = this.time + 14;
+      const T = window.MiiTown;
+      const pl = T ? T.placeInfo(to) : { name: to, icon: "" };
+      const lines = to === "home"
+        ? ["Time to go home!", "See you later!", "Home sweet home, here I come!", "Bye for now!"]
+        : ["Off to " + pl.name + "!", "I'm going to " + pl.name + ". Bye!", "See you, everyone!", pl.icon + " Here I go!"];
+      w.say(D.pick(lines), 2.2);
+      w.showEmote(pl.icon || "👋", 4);
+      const door = !quick && to === "home" && this.world.doorFor && this.world.doorFor(id);
+      const out = !quick && !door ? this.entrance() : null;
+      w.leaveAfter = this.time + (door || out ? 0 : quick ? 1.2 : 1.8);
+      w.leaveBy = this.time + 16;
       if (door) w.goTo(door.x, door.z);
+      else if (out && Math.hypot(out.x - w.x, out.z - w.z) > 1) w.goTo(out.x, out.z);
       else { w.state = "idle"; w.timer = 99; w.targetYaw = this.viewYaw(w); w.arms = "wave"; }
+    }
+
+    sendHome(id, done, quick) { this.leavePlace(id, "home", done, quick); }
+
+    // A Mii arrives in the place you're looking at: through its front door if it
+    // just left home (in the Apartments), otherwise at the entrance.
+    arrive(record, template, look, from) {
+      const door = from === "home" && this.world.doorFor && this.world.doorFor(record.id);
+      const T = window.MiiTown;
+      const here = T ? T.placeInfo(this.world.id) : { name: this.world.name, icon: "" };
+      const w = this.addWalker(record, template, look, false, {
+        at: door || this.entrance(),
+        lines: from === "home" ? ["Good morning, neighbours!", "Fresh air!", "What did I miss?"] : ["Made it!", "Hi everyone!", "I love " + here.name + "!", "Hello, " + here.name + "!"],
+        feed: look.name + " came to " + here.name + ". " + here.icon,
+      });
+      w.lift = this.baseLift(w);
+      w.appear = 0;
+      // walk in a few steps
+      const b = this.world.bounds;
+      w.goTo(clamp(w.x + rnd(-3, 3), b.minX + 1, b.maxX - 1), clamp(w.z - rnd(2, 4), b.minZ + 1, b.maxZ - 1));
+      return w;
     }
 
     finishLeaving(w) {
       const done = w.onLeft;
       w.onLeft = null;
       this.removeWalker(w.id, false);
-      this.addFeed(w.look.name + " went home. 🏠");
+      const T = window.MiiTown;
+      if (w.leavingTo) this.addFeed(w.look.name + (w.leavingTo === "home" ? " went home. 🏠" : " went to " + (T ? T.placeInfo(w.leavingTo).name + ". " + T.placeInfo(w.leavingTo).icon : w.leavingTo + ".")));
       if (done) done();
     }
 
@@ -574,9 +668,10 @@
       this.mainNav = this.nav;
       this.mainCamera = { pos: this.camera.position.clone(), target: this.controls.target.clone() };
       this.scene.remove(this.world.group);
+      this.clearWindowMiis();
       this.miiGroup.visible = false;
       for (const w of this.walkers) w.ui.style.display = "none";
-      this.useWorld(window.World3D.build("home", { record }));
+      this.useWorld(window.World3D.build("home", { record, floor: this.floorOf(record.id) }));
       this.homeGroup = new THREE.Group();
       this.scene.add(this.homeGroup);
       const v = new Walker(this, record, template, look, this.homeGroup);
@@ -627,7 +722,7 @@
       const cam = { pos: this.camera.position.clone(), target: this.controls.target.clone() };
       this.scene.remove(this.world.group);
       window.World3D.dispose(this.world);
-      this.useWorld(window.World3D.build("home", { record: this.visiting.record }));
+      this.useWorld(window.World3D.build("home", { record: this.visiting.record, floor: this.floorOf(this.visiting.record.id) }));
       this.camera.position.copy(cam.pos);
       this.controls.target.copy(cam.target);
       this.controls.update();
@@ -709,7 +804,6 @@
       if (type === "dance" || type === "highFive" || type === "spaceBounce") stretch += below(p.energy, 50) * 0.9;
       if (type === "chat" || remote) stretch += below(p.chatty, 50) * 0.6; // a quiet Mii chatting
       if (type === "disagree") stretch += 0.5 + (p.kindness <= 40 ? 0.5 : 0); // making up after an argument
-      if (remote === "shout") stretch += below(p.energy, 55) * 0.5;
       if (remote === "phone") stretch += below(p.social, 45) * 0.3;
       // how often have they done this lately?
       const now = this.time;
@@ -726,6 +820,7 @@
     awardCoins(w, n, why) {
       if (n <= 0) return;
       w.record.coins = (w.record.coins || 0) + n;
+      if (w.ghost) { if (this.onCoins) this.onCoins(w, n, why); return; }
       // a little "+2 🪙" floats up from the Mii
       const pos = new THREE.Vector3(w.x, w.lift + MII_HEIGHT * w.sizeScale * 0.9, w.z).project(this.camera);
       if (pos.z < 1) {
@@ -753,9 +848,7 @@
       const others = free.filter((w) => w !== A);
       others.sort((p, q) => Math.hypot(p.x - A.x, p.z - A.z) - Math.hypot(q.x - A.x, q.z - A.z));
       const B = Math.random() < 0.6 ? others[0] : others[Math.floor(Math.random() * others.length)];
-      // far apart? Sometimes they don't bother walking over: they shout or phone instead
-      if (Math.hypot(A.x - B.x, A.z - B.z) > 12 && Math.random() < 0.3) this.startRemote(A, B);
-      else this.startInteraction(A, B);
+      this.startInteraction(A, B);
     }
 
     isBusy(w) {
@@ -807,36 +900,107 @@
       }
     }
 
+    // A wants to talk to B: A walks over. If B is far away and A is the loud
+    // type, A shouts for B to come over instead, and B walks to A.
     startInteraction(A, B) {
       const plan = D.buildInteraction(A, B, this.world, this.points(A, B));
       A.partner = B; B.partner = A;
       A.plan = plan; A.role = "A"; B.role = "B";
-      A.state = "approach"; A.spot = null; A.anchor = null; A.path = null; A.approachTries = 0; A.approachTime = 0;
-      B.state = "waiting"; B.spot = null; B.anchor = null; B.target = null; B.path = null;
+      for (const m of [A, B]) { m.spot = null; m.anchor = null; m.path = null; m.target = null; m.approachTries = 0; m.approachTime = 0; }
+      const far = Math.hypot(A.x - B.x, A.z - B.z) > 9;
+      const a = A.personality;
+      const loud = (a.energy + a.social) / 2 + rnd(-15, 15);
+      if (far && loud >= 55) {
+        // "HEY MIA! COME HERE!" ... "COMING!"
+        A.state = "waiting"; B.state = "waiting";
+        A.targetYaw = Math.atan2(B.x - A.x, B.z - A.z);
+        A.arms = "shout";
+        const name = B.look.name.toUpperCase();
+        A.say(D.pick(["HEY " + name + "! COME HERE!", name + "! OVER HERE!", "YOO-HOO, " + name + "!", "HEY, " + name + "! GOT A MINUTE?"]), 2.2);
+        A.uiBubble.classList.add("shout");
+        B.showEmote("❗", 1.5);
+        this.later(B, 1.4, () => {
+          if (B.partner !== A) return;
+          B.arms = "shout";
+          B.say(D.pick(["COMING!", "OKAY! BE RIGHT THERE!", "ON MY WAY!", "WHAT? ...OKAY!"]), 1.8);
+          B.uiBubble.classList.add("shout");
+        });
+        this.later(B, 2.8, () => {
+          if (B.partner !== A) return;
+          A.arms = "down"; B.arms = "down";
+          B.state = "approach"; // B walks over to A this time
+        });
+        return;
+      }
+      A.state = "approach";
+      B.state = "waiting";
       B.showEmote("❗", 1.2);
     }
 
-    // Shout or phone? Loud, outgoing pairs shout; quieter ones phone. Both do the same.
-    remoteMode(A, B) {
-      const a = A.personality, b = B.personality;
-      const loud = (a.energy + a.social + b.energy + b.social) / 4 + (a.chatty + b.chatty) / 8 - 12;
-      return loud + rnd(-8, 8) >= 50 ? "shout" : "phone";
+    // A Mii on screen talks on the phone with a Mii who's somewhere else.
+    // role = "caller" (the one on screen phoned) or "callee" (they got a call)
+    startPhone(A, otherRec, role) {
+      const g = this.ghost(otherRec, A);
+      const caller = role === "callee" ? g : A, callee = role === "callee" ? A : g;
+      // (they're in different places, so no talk about "the fountain over there")
+      const plan = D.buildInteraction(caller, callee, { id: "phone" }, this.points(A, g), { remote: "phone" });
+      caller.plan = plan; caller.role = "A"; callee.role = "B";
+      A.partner = g; g.partner = A;
+      for (const m of [A, g]) { m.remote = "phone"; }
+      A.endInteractionLater = false;
+      A.state = "interact"; A.path = null; A.spot = null; A.anchor = null;
+      A.arms = "phone";
+      A.uiPhone.textContent = "📱 " + (role === "callee" ? "Call from " : "Calling ") + g.look.name;
+      A.uiPhone.classList.add("show");
+      caller.step = -1;
+      caller.stepTimer = 0.8;
+      if (role === "callee") { A.showEmote("📳", 1.4); A.hop(2); }
     }
 
-    // Two Miis far apart talk without walking over: by shouting or on the phone.
-    startRemote(A, B, mode) {
-      mode = mode || this.remoteMode(A, B);
-      const plan = D.buildInteraction(A, B, this.world, this.points(A, B), { remote: mode });
-      A.partner = B; B.partner = A;
-      A.plan = plan; A.role = "A"; B.role = "B";
-      for (const m of [A, B]) {
-        m.remote = mode;
-        m.state = "interact"; m.path = null; m.spot = null; m.anchor = null;
-        m.arms = mode === "phone" ? "phone" : "down";
-        if (mode === "phone") m.showEmote("📱", 99);
+    // Stands in for a Mii who isn't on screen (the other end of a phone call):
+    // what it says comes out of the phone of the Mii you can see.
+    ghost(rec, onScreen) {
+      const hub = this;
+      const name = rec.name || "?";
+      return {
+        ghost: true, id: rec.id, record: rec, look: { name },
+        x: onScreen.x, z: onScreen.z, lift: 0, sizeScale: 1, state: "phone", cooldown: 0,
+        arms: "down", dance: false, laugh: false, sleep: false, nod: 0, shake: 0, emote: null,
+        get personality() { return D.traits(rec); },
+        trait(k) { return this.personality[k]; },
+        get battery() { return hub.batteryOf(rec.id); },
+        set battery(v) { hub.setBattery(rec.id, v); },
+        say(text, dur) {
+          if (onScreen.partner !== this) return;
+          onScreen.say("📞 " + name + ": " + text.replace(/\{A\}/g, name), dur);
+          onScreen.uiBubble.classList.add("phone-voice");
+        },
+        showEmote() {}, clearEmote() {}, hop() {},
+      };
+    }
+
+    // Two Miis chat somewhere you're not looking (or on the phone between two
+    // places you're not looking at). They still become friends and earn coins.
+    offscreenHangout(recA, recB, where) {
+      const A = this.ghost(recA, { partner: null }), B = this.ghost(recB, { partner: null });
+      const phone = where === "phone";
+      const points = this.points(A, B);
+      const plan = D.buildInteraction(A, B, { id: phone ? "phone" : where }, points, phone ? { remote: "phone" } : null);
+      const type = plan.type;
+      const key = this.pairKey(A, B);
+      const after = points + (D.FRIENDSHIP_GAIN[type] || 1);
+      this.friendships[key] = after;
+      const T = window.MiiTown;
+      let feed = D.FEED_TEXT[type].replace("{A}", A.look.name).replace("{B}", B.look.name).replace(/\.$/, "");
+      feed += phone ? " on the phone. 📱" : " at " + (T ? T.placeInfo(where).name + ". " + T.placeInfo(where).icon : where + ".");
+      this.addFeed(feed);
+      const oldLevel = D.levelFor(points), newLevel = D.levelFor(after);
+      if (newLevel !== oldLevel) this.addFeed(A.look.name + " and " + B.look.name + " are now " + newLevel.name + "! " + newLevel.emoji);
+      for (const [m, o, role] of [[A, B, "A"], [B, A, "B"]]) {
+        this.awardCoins(m, this.coinValue(m, o, type, role, points, phone ? "phone" : null), type);
+        m.battery = m.battery - (0.22 + (1 - m.trait("social") / 100) * 0.2) * (phone ? 0.6 : 1);
       }
-      A.step = -1;
-      A.stepTimer = mode === "phone" ? 0.8 : 0.2;
+      this.recent.push({ pair: key, type, a: A.id, b: B.id, t: this.time });
     }
 
     endInteraction(w) {
@@ -844,6 +1008,7 @@
       for (const m of [w, p]) {
         if (!m) continue;
         if (m.remote === "phone" && m.emote && m.emote.icon === "📱") m.clearEmote();
+        if (m.uiPhone) m.uiPhone.classList.remove("show");
         m.partner = null; m.plan = null; m.role = null; m.remote = null;
         m.dance = false; m.laugh = false; m.sleep = false; m.nod = 0; m.shake = 0;
         m.arms = "down";
@@ -866,19 +1031,18 @@
       this.friendships[key] = after;
       let feed = D.FEED_TEXT[type].replace("{A}", A.look.name).replace("{B}", B.look.name);
       if (remote === "phone") feed = feed.replace(/\.$/, "") + " on the phone. 📱";
-      if (remote === "shout") feed = feed.replace(/\.$/, "") + " from across the " + (this.world.id === "office" ? "office" : "way") + "! 📣";
       this.addFeed(feed);
       const oldLevel = D.levelFor(before), newLevel = D.levelFor(after);
       if (newLevel !== oldLevel) {
         this.addFeed(A.look.name + " and " + B.look.name + " are now " + newLevel.name + "! " + newLevel.emoji);
         A.showEmote(newLevel.emoji, 2.5);
         B.showEmote(newLevel.emoji, 2.5);
-        this.spawnHearts(A, B);
+        this.spawnHearts(A.ghost ? B : A, B.ghost ? A : B);
       }
       // coins for a meaningful hang-out, then they need a little recharge
       for (const [m, o, role] of [[A, B, "A"], [B, A, "B"]]) {
         const n = this.coinValue(m, o, type, role, before, remote);
-        if (n > 0) this.later(m, role === "A" ? 0.3 : 0.6, () => this.awardCoins(m, n, type));
+        if (n > 0) this.later(m.ghost ? null : m, role === "A" ? 0.3 : 0.6, () => this.awardCoins(m, n, type));
         m.battery = clamp(m.battery - (0.22 + (1 - m.trait("social") / 100) * 0.2) * (remote ? 0.6 : 1), 0, 1);
       }
       this.recent.push({ pair: key, type, a: A.id, b: B.id, t: this.time });
@@ -914,6 +1078,8 @@
       this.time += dt;
       if (!this.world) return;
       this.world.update(this.time, this.camera);
+      if (this.onTick) this.onTick(dt);
+      if (this.world.windowSpot || this.windowMiis.size) this.syncWindowMiis(dt);
       this.runDirector(dt);
       const floaty = this.world.floaty;
       const gravity = floaty ? 3 : 22;
@@ -1126,11 +1292,8 @@
           B.targetYaw = Math.atan2(w.x - B.x, w.z - B.z);
           w.approachTime = (w.approachTime || 0) + dt;
           const dist = Math.hypot(w.x - B.x, w.z - B.z);
-          // can't get there? Talk from here instead (if far), or give up
-          const giveUp = () => {
-            if (dist > 7 && Math.random() < 0.7) this.startRemote(w, B);
-            else this.endInteraction(w);
-          };
+          // can't get there? Give up (they'll find each other another time)
+          const giveUp = () => this.endInteraction(w);
           // plan (or re-plan) a route to a free spot next to the other Mii
           w.replanIn = (w.replanIn || 0) - dt;
           if (!w.path || w.replanIn <= 0) {
@@ -1144,8 +1307,11 @@
             w.path = null;
             w.state = "interact";
             B.state = "interact";
-            w.step = -1;
-            w.stepTimer = 0;
+            // the one who started the chat runs the conversation (that's not always
+            // the one who walked over: B walks over when A called them)
+            const lead = w.role === "A" ? w : B;
+            lead.step = -1;
+            lead.stepTimer = 0;
           } else if (result === "arrived" || result === "lost") {
             // ended up somewhere that isn't next to them: try again a few times
             w.path = null;
@@ -1188,15 +1354,16 @@
             if (w.remote === "phone") {
               // on the phone: pacing about a little, mostly facing you
               w.targetYaw = turnToward(face, this.viewYaw(w), 0.7) + Math.sin(this.time * 0.8 + w.x) * 0.4;
-            } else if (w.remote === "shout") {
-              w.targetYaw = turnToward(face, this.viewYaw(w), 0.15); // shouting across to the other one
             } else {
               // face each other, but turn a bit towards the camera so we can see their faces
               w.targetYaw = turnToward(face, this.viewYaw(w), 0.35);
             }
           }
           if (w.dance) w.targetYaw += Math.sin(this.time * 5) * 0.8;
+          // the one who started runs the conversation (the far end of a phone call
+          // isn't on screen, so then the Mii you can see runs it for both)
           if (w.role === "A") this.runScript(w, dt);
+          else if (p && p.ghost) this.runScript(p, dt);
           if (w.dance && w.style.dance !== "sway" && w.lift <= this.baseLift(w) + 0.01) w.hop(this.world.floaty ? 1.5 : 2.5 + w.style.tempo);
           break;
         }
@@ -1395,11 +1562,9 @@
       // {A} is always the Mii who started the chat and {B} the other one,
       // no matter who is speaking (so B says "Hi Joe! I'm Sam!", not the other way round)
       let line = step.say ? step.say.replace(/\{A\}/g, A.look.name).replace(/\{B\}/g, B.look.name) : null;
-      if (line && remote === "shout") line = line.toUpperCase().replace(/[.?]*$/, (m) => (m.includes("?") ? "?!" : "!"));
       for (const m of actors) {
         if (line) m.say(line, Math.max(step.dur + 0.4, 1.4));
         if (step.emote) m.showEmote(step.emote, Math.max(step.dur, 1.5));
-        if (remote === "shout" && line) m.arms = "shout";
         if (step.arms && remote !== "phone") m.arms = step.arms;
         if (step.hop) m.hop(floaty ? 1.8 : 4.5);
         if (step.dance) m.dance = true;
@@ -1515,7 +1680,7 @@
         if (w.bubble) {
           const bw = w.uiBubble.offsetWidth, bh = w.uiBubble.offsetHeight;
           let bx = clamp(x - bw / 2, 4, this.W - bw - 4);
-          let by = y - bh - 12;
+          let by = y - bh - 12 - (w.remote === "phone" ? 24 : 0); // leave room for the "📱 Mia" tag
           for (let tries = 0; tries < 6; tries++) {
             const hit = placed.find((r) => bx < r.x + r.w && bx + bw > r.x && by < r.y + r.h + 6 && by + bh + 6 > r.y);
             if (!hit) break;
@@ -1526,7 +1691,6 @@
           w.uiBubble.style.left = bx - x + "px";
           w.uiBubble.style.top = by - y + "px";
           w.uiBubble.style.setProperty("--tail", clamp(x - bx, 14, bw - 14) + "px");
-          w.uiBubble.classList.toggle("shout", w.remote === "shout");
         }
         w.ui.style.transform = "translate(" + x + "px," + y + "px)";
       }

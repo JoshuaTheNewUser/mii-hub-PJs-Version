@@ -37,6 +37,11 @@
   // ---------- every Mii you have (out and about, or at home) ----------
   const records = new Map(); // id -> record
   const infos = new Map();   // id -> info from the .glb (name, height...)
+  const loaded = new Map();  // id -> loaded 3D template (for Miis seen through windows)
+  const T = window.MiiTown;
+  // the place you're looking at (not counting a home visit)
+  const viewedPlace = () => (hub.visiting ? hub.mainWorld && hub.mainWorld.id : hub.world.id);
+  const isHome = (rec) => rec.place === "home";
 
   // ---------- templates (one per .glb file) ----------
   const templates = new Map();
@@ -86,11 +91,16 @@
     H.ensureHome(record);
     // colours can only be changed in Mii Creator now, so drop any old changes
     if (record.kind === "glb" && record.look && Object.keys(record.look).length) record.look = {};
+    // where it is right now, and where it likes to be
+    if (!record.place) record.place = record.atHome ? "home" : viewedPlace();
+    delete record.atHome;
+    if (!record.favPlace) record.favPlace = T.guessFavorite(D.traits(record));
     records.set(record.id, record);
     const template = await templateFor(record);
     infos.set(record.id, template.info);
+    loaded.set(record.id, template);
     if (!record.name) record.name = template.info.name;
-    if (record.atHome) { refreshAll(); return null; }
+    if (record.place !== viewedPlace() || town.isTravelling(record) || walkerOf(record.id)) { refreshAll(true); return null; }
     return hub.addWalker(record, template, lookFor(record, template), silent, opts);
   }
 
@@ -99,7 +109,7 @@
   for (const scene of window.World3D.list) {
     const b = document.createElement("button");
     b.className = "scene-tab";
-    b.textContent = scene.icon + " " + scene.name;
+    b.innerHTML = scene.icon + " " + scene.name + ' <span class="tab-count"></span>';
     b.dataset.scene = scene.id;
     b.addEventListener("click", () => goToScene(scene.id));
     tabs.appendChild(b);
@@ -109,9 +119,19 @@
     saveSettings();
     updateTabs();
   }
+  // the place buttons show how many Miis are there right now
   function updateTabs() {
     const current = hub.visiting ? null : hub.world.id;
-    for (const b of document.querySelectorAll("[data-scene]")) b.setAttribute("aria-pressed", String(b.dataset.scene === current));
+    const counts = {};
+    for (const r of records.values()) if (!town.isTravelling(r)) counts[r.place] = (counts[r.place] || 0) + 1;
+    for (const b of document.querySelectorAll("[data-scene]")) {
+      b.setAttribute("aria-pressed", String(b.dataset.scene === current));
+      const n = counts[b.dataset.scene] || 0;
+      const c = b.querySelector(".tab-count");
+      if (c) c.textContent = n ? String(n) : "";
+      const meta = window.World3D.list.find((l) => l.id === b.dataset.scene);
+      if (meta) b.title = meta.name + " (" + n + " Mii" + (n === 1 ? "" : "s") + " here)";
+    }
   }
 
   function saveSettings() {
@@ -292,31 +312,30 @@
     refreshAll(true);
   });
 
-  // ---------- going home, coming out, moving away ----------
+  // ---------- going places, home visits, moving away ----------
+  // Miis decide for themselves where to go (see town.js); you can also send them.
+  const town = T.create({
+    hub, records, D, templateFor, lookFor, nameOf, save,
+    // light = just the numbers and "where is everyone" changed
+    changed: (light) => { if (light) refreshLight(); else refreshAll(true); },
+  });
+  hub.onTick = (dt) => town.tick(dt);
+  hub.onSceneChange = (id) => town.populate(id);
+
   function sendHome(rec, then, quick) {
-    const w = hub.walkers.find((x) => x.id === rec.id);
-    const done = () => {
-      rec.atHome = true;
-      save(rec);
-      refreshAll(true);
-      if (then) then();
-    };
-    if (w) hub.sendHome(rec.id, done, quick);
-    else done();
+    town.sendTo(rec, "home", { then, quick });
   }
 
-  async function inviteOut(rec) {
+  function sendTo(rec, place) {
+    if (hub.visiting && hub.visiting.record.id === rec.id && place !== "home") leaveHome();
+    town.sendTo(rec, place);
+  }
+
+  // Invite a Mii out of its home to the place you're looking at.
+  function inviteOut(rec) {
     if (hub.visiting && hub.visiting.record.id === rec.id) leaveHome();
-    rec.atHome = false;
-    save(rec);
-    const template = await templateFor(rec);
-    const door = hub.world.doorFor && hub.world.doorFor(rec.id);
-    hub.addWalker(rec, template, lookFor(rec, template), false, {
-      at: door || null,
-      lines: ["I'm back!", "Hi everyone, I'm out!", "What did I miss?", "Fresh air!"],
-      feed: nameOf(rec) + " came out to hang out! 🚪",
-    });
-    refreshAll(true);
+    const to = viewedPlace() && viewedPlace() !== "home" ? viewedPlace() : "apartments";
+    town.sendTo(rec, to);
   }
 
   async function visit(rec) {
@@ -327,8 +346,8 @@
       openHomePanel(rec);
       updateTabs();
     };
-    if (rec.atHome) go();
-    else sendHome(rec, go, true);
+    if (isHome(rec) && !town.isTravelling(rec)) go();
+    else town.sendTo(rec, "home", { quick: true, then: go });
   }
 
   function leaveHome() {
@@ -344,6 +363,8 @@
     if (quiet) hub.removeWalker(rec.id, true);
     else hub.moveAway(rec.id, nameOf(rec));
     records.delete(rec.id);
+    town.forget(rec.id);
+    loaded.delete(rec.id);
     templates.delete(rec.id);
     portraits.delete(rec.id);
     S.deleteMii(rec.id);
@@ -401,7 +422,7 @@
     for (const rec of all) {
       const w = hub.walkers.find((x) => x.id === rec.id);
       const li = document.createElement("li");
-      if (rec.atHome) li.className = "at-home";
+      if (isHome(rec)) li.className = "at-home";
       const row = document.createElement("div");
       row.className = "row";
 
@@ -418,7 +439,7 @@
       const meta = document.createElement("div");
       meta.className = "meta";
       meta.innerHTML = '<span class="coins" data-coins="' + rec.id + '">🪙 ' + (rec.coins || 0) + "</span> · " +
-        escapeHtml(D.personalityLabel(rec.personality)) + (rec.atHome ? ' · <span class="home-tag">🏠 At home</span>' : "");
+        escapeHtml(D.personalityLabel(rec.personality)) + '<div class="where" data-where="' + rec.id + '">' + escapeHtml(town.whereText(rec)) + "</div>";
       if (w && !w.inst.rig.canAnimate) {
         // e.g. a "head only" export: it can't walk properly
         const warn = document.createElement("div");
@@ -438,7 +459,7 @@
         b.addEventListener("click", fn);
         actions.appendChild(b);
       };
-      if (rec.atHome) {
+      if (isHome(rec)) {
         btn("🏡", "Visit " + nameOf(rec) + " at home", () => visit(rec));
         btn("🚪", "Invite " + nameOf(rec) + " out", () => inviteOut(rec));
       } else {
@@ -452,7 +473,12 @@
         el.addEventListener("click", (e) => {
           const ww = walkerOf(rec.id);
           if (ww) openMiiMenu(ww, e.clientX, e.clientY);
-          else visit(rec);
+          else if (isHome(rec)) visit(rec);
+          else if (!town.isTravelling(rec)) {
+            // somewhere else: go and look, then open its menu there
+            goToScene(rec.place);
+            setTimeout(() => { const w2 = walkerOf(rec.id); if (w2) openMiiMenu(w2, e.clientX, e.clientY); }, 900);
+          }
         });
       }
       li.appendChild(row);
@@ -514,19 +540,39 @@
 
   // who lives in which apartment (for the Apartments place)
   function updateResidents() {
-    hub.setResidents(sortedRecords().map((r) => ({ id: r.id, name: nameOf(r), home: !!r.atHome })));
+    hub.setResidents(sortedRecords().map((r) => {
+      const home = isHome(r) && !town.isTravelling(r);
+      const template = loaded.get(r.id);
+      return {
+        id: r.id, name: nameOf(r), home, record: r,
+        items: (r.home && r.home.items) || {},
+        activity: home ? town.homeActivity(r) : null,
+        template: home ? template : null,
+        look: home && template ? lookFor(r, template) : null,
+      };
+    }));
   }
 
   let pending = false;
   let rosterKey = "";
   // force = rebuild the roster even if nobody came or went
   function refreshAll(force) {
-    const key = sortedRecords().map((r) => r.id + (r.atHome ? "h" : "") + nameOf(r)).join(",");
+    const key = sortedRecords().map((r) => r.id + r.place + nameOf(r)).join(",");
     if (force || key !== rosterKey) { rosterKey = key; renderRoster(); updateResidents(); }
     renderFriends();
     renderFeed();
     updateTabs();
   }
+  // Every second: who's where (cheap updates, no rebuilding the lists).
+  function refreshLight() {
+    for (const el of document.querySelectorAll("[data-where]")) {
+      const rec = records.get(el.dataset.where);
+      if (rec) el.textContent = town.whereText(rec);
+    }
+    updateResidents();
+    updateTabs();
+  }
+
   hub.onChange = () => {
     if (pending) return;
     pending = true;
@@ -719,6 +765,35 @@
     }
     fr.appendChild(ul);
 
+    // where to go: send the Mii somewhere, and its favourite place
+    const places = document.createElement("div");
+    places.className = "mm-section";
+    places.innerHTML = "<h3>Go to…</h3>";
+    const goRow = document.createElement("div");
+    goRow.className = "mm-places";
+    for (const pl of T.PLACES) {
+      const b = document.createElement("button");
+      b.innerHTML = "<span>" + pl.icon + "</span>" + (pl.id === "apartments" ? "Courtyard" : pl.id === "space" ? "Moon" : pl.name.replace(/^the /, "").replace(/^./, (c) => c.toUpperCase()));
+      b.title = "Send " + nameOf(rec) + " to " + pl.name;
+      b.disabled = rec.place === pl.id && !town.isTravelling(rec);
+      b.addEventListener("click", () => { closeMiiMenu(); sendTo(rec, pl.id); });
+      goRow.appendChild(b);
+    }
+    const favRow = document.createElement("label");
+    favRow.className = "mm-fav";
+    favRow.textContent = "Favourite place ";
+    const fav = document.createElement("select");
+    for (const pl of T.PLACES) {
+      const o = document.createElement("option");
+      o.value = pl.id;
+      o.textContent = pl.icon + " " + pl.name.replace(/^./, (c) => c.toUpperCase());
+      fav.appendChild(o);
+    }
+    fav.value = rec.favPlace || "park";
+    fav.addEventListener("change", () => { rec.favPlace = fav.value; saveSoon(rec); });
+    favRow.appendChild(fav);
+    places.append(goRow, favRow);
+
     // footer
     const foot = document.createElement("div");
     foot.className = "mm-foot";
@@ -744,7 +819,7 @@
     if (!atHomeVisit) foot.append(visitBtn);
     foot.append(away);
 
-    menu.append(head, acts, games, pers, fr, foot);
+    menu.append(head, acts, places, games, pers, fr, foot);
     menu.hidden = false;
 
     // place it next to where you clicked, but keep it inside the hub area
@@ -994,5 +1069,5 @@
   }
 
   window.hub = hub; // handy for poking around in the browser console
-  window.miiApp = { records, visit, sendHome, inviteOut, moveAway, forgetMii, loadFiles, leaveHome }; // for tests
+  window.miiApp = { records, visit, sendHome, sendTo, inviteOut, moveAway, forgetMii, loadFiles, leaveHome, town }; // for tests
 })();

@@ -1,0 +1,275 @@
+/*
+ * town.js
+ * Every Mii lives its own life: it decides where it wants to be (the park, the
+ * office, the moon base, the apartment courtyard or at home), walks off, travels
+ * there, stays a while, and moves on. Each Mii has a favourite place, and its
+ * personality decides how much it likes the others:
+ *   - lazy / shy Miis spend lots of time at home
+ *   - serious, hard-working Miis go to the office
+ *   - energetic, outdoorsy Miis like the park
+ *   - adventurous Miis visit the moon
+ *   - friendly neighbours hang out in the apartment courtyard
+ *
+ * Only the place you're looking at is shown in 3D (by hub3d.js). For the other
+ * places, this file keeps track of who's there, and lets them chat with each other
+ * (and phone friends who are somewhere else) "off screen".
+ */
+(function (root) {
+  "use strict";
+
+  const PLACES = [
+    { id: "park", name: "the park", icon: "🌳" },
+    { id: "office", name: "the office", icon: "🏢" },
+    { id: "space", name: "the moon base", icon: "🚀" },
+    { id: "apartments", name: "the courtyard", icon: "🏘️" },
+    { id: "home", name: "home", icon: "🏠" },
+  ];
+  const placeInfo = (id) => PLACES.find((p) => p.id === id) || PLACES[0];
+
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  // How much a personality likes each place (before the favourite-place bonus).
+  function placeLikes(p) {
+    const e = p.energy / 100, s = p.social / 100, h = p.humor / 100, k = p.kindness / 100;
+    return {
+      park: 0.8 + e * 1.0 + s * 0.4,              // active, outdoorsy
+      office: 0.5 + (1 - h) * 1.3 + e * 0.3,      // serious, hard-working
+      space: 0.4 + e * 0.7 + h * 0.4 + (1 - s) * 0.2, // adventurous, curious
+      apartments: 0.5 + s * 0.8 + k * 0.6,        // friendly neighbours
+      home: 0.3 + (1 - e) * 1.2 + (1 - s) * 0.4,  // lazy homebodies
+    };
+  }
+
+  // A Mii's favourite place, worked out from its personality (with a little luck).
+  function guessFavorite(p) {
+    const likes = placeLikes(p);
+    let best = "park", bestV = -1;
+    for (const [id, v] of Object.entries(likes)) {
+      const score = v * rnd(0.85, 1.15);
+      if (score > bestV) { bestV = score; best = id; }
+    }
+    return best;
+  }
+
+  /*
+   * opts = {
+   *   hub, records (Map id -> record), templateFor(rec) -> Promise<template>,
+   *   lookFor(rec, template), nameOf(rec), save(rec), changed() (refresh the side panel)
+   * }
+   */
+  function create(opts) {
+    const { hub, records, D } = opts;
+    const rt = new Map(); // id -> { stay, travel, homeAct, homeActIn, hold }
+    let socialIn = 6, phoneIn = 12, refreshIn = 1;
+
+    const info = (rec) => {
+      if (!rt.has(rec.id)) rt.set(rec.id, { stay: rnd(40, 140), travel: null, homeAct: null, homeActIn: 0 });
+      return rt.get(rec.id);
+    };
+
+    // the place you're looking at (not counting a home visit)
+    const viewed = () => (hub.visiting ? hub.mainWorld && hub.mainWorld.id : hub.world && hub.world.id);
+    const walkerOf = (id) => hub.walkers.find((w) => w.id === id) || null;
+    const visitingId = () => (hub.visiting ? hub.visiting.record.id : null);
+
+    // How long a Mii stays somewhere (longer at its favourite place).
+    function stayFor(rec, place) {
+      const p = D.traits(rec);
+      let t = rnd(70, 200);
+      if (place === rec.favPlace) t *= 1.7;
+      if (place === "home") t *= 0.8 + (100 - p.energy) / 100;
+      return t;
+    }
+
+    function choosePlace(rec, exclude) {
+      const p = D.traits(rec);
+      const likes = placeLikes(p);
+      const options = [];
+      for (const pl of PLACES) {
+        if (pl.id === exclude) continue;
+        let w = likes[pl.id];
+        if (pl.id === rec.favPlace) w *= 3;
+        options.push([pl.id, w]);
+      }
+      return D.weighted(options);
+    }
+
+    // ---------- moving between places ----------
+    // Starts the trip once the Mii has left where it was.
+    function startTravel(rec, to, quick) {
+      const r = info(rec);
+      const from = rec.place;
+      // home <-> courtyard is just the front door; anywhere else takes a little while
+      const t = quick ? 0.3 : (from === "home" && to === "apartments") || (from === "apartments" && to === "home") ? 1.5 : rnd(5, 12);
+      r.travel = { to, left: t, from };
+      opts.changed();
+    }
+
+    async function arrive(rec, to) {
+      const r = info(rec);
+      const from = r.travel ? r.travel.from : rec.place;
+      r.travel = null;
+      rec.place = to;
+      r.stay = r.sentStay || stayFor(rec, to);
+      r.sentStay = 0;
+      opts.save(rec);
+      if (to === "home") r.homeActIn = 0; // pick something to do at home right away
+      if (to === viewed() && to !== "home" && !walkerOf(rec.id)) {
+        const template = await opts.templateFor(rec);
+        if (rec.place !== to || walkerOf(rec.id) || !records.has(rec.id)) return; // changed its mind meanwhile
+        hub.arrive(rec, template, opts.lookFor(rec, template), from);
+      }
+      opts.changed();
+    }
+
+    // Makes a Mii head off to `to`. If it's in the place you're looking at, it
+    // says bye and walks out (or to its front door) first.
+    function go(rec, to, how) {
+      how = how || {};
+      const r = info(rec);
+      if (r.travel) { r.travel.to = to; if (how.quick) r.travel.left = Math.min(r.travel.left, 0.3); if (how.then) r.then = how.then; return; }
+      if (rec.place === to) { if (how.then) how.then(); return; }
+      if (how.stay) r.sentStay = how.stay;
+      if (how.then) r.then = how.then;
+      const w = walkerOf(rec.id);
+      if (w && !w.leaving) {
+        hub.leavePlace(rec.id, to, () => startTravel(rec, to, how.quick), how.quick);
+        r.travel = null;
+        r.leavingTo = to;
+      } else if (!w) {
+        startTravel(rec, to, how.quick);
+      }
+    }
+
+    // You sent a Mii somewhere from its menu: it goes, and stays a good while.
+    function sendTo(rec, to, how) {
+      how = Object.assign({ stay: rnd(240, 360) }, how || {});
+      go(rec, to, how);
+    }
+
+    // ---------- what Miis do at home (shown through their window) ----------
+    function newHomeActivity(rec) {
+      const r = info(rec);
+      const H = root.MiiHomes;
+      const items = (rec.home && rec.home.items) || {};
+      const options = [];
+      const p = D.traits(rec);
+      for (const id of Object.values(items)) {
+        const it = H && H.item(id);
+        if (!it || !it.use) continue;
+        let w = 1;
+        if (it.use.lie) w = 0.6 + (100 - p.energy) / 60;    // sleepy Miis nap more
+        if (it.use.run || it.use.arms === "punch") w = 0.3 + p.energy / 60;
+        options.push([Object.assign({ itemId: it.id, slot: it.slot }, it.use), w]);
+      }
+      options.push([null, 0.6]); // just looking out of the window
+      r.homeAct = D.weighted(options);
+      r.homeActIn = r.homeAct && r.homeAct.lie ? rnd(40, 90) : rnd(20, 50);
+      opts.changed();
+    }
+
+    // ---------- the clock ----------
+    function tick(dt) {
+      const view = viewed();
+      const visitId = visitingId();
+      for (const rec of records.values()) {
+        const r = info(rec);
+        if (rec.id === visitId) { r.stay = Math.max(r.stay, 30); continue; } // you're visiting: they stay home
+        // social energy comes back with time alone (Miis on screen do this in hub3d.js)
+        if (!walkerOf(rec.id)) hub.setBattery(rec.id, Math.min(1, hub.batteryOf(rec.id) + dt * 0.008 * (0.6 + D.traits(rec).social / 100)));
+        if (rec.place === "home" && !r.travel) {
+          r.homeActIn -= dt;
+          if (r.homeActIn <= 0) newHomeActivity(rec);
+        }
+        if (r.travel) {
+          r.travel.left -= dt;
+          if (r.travel.left <= 0) {
+            const then = r.then; r.then = null;
+            arrive(rec, r.travel.to).then(() => { if (then) then(); });
+          }
+          continue;
+        }
+        const w = walkerOf(rec.id);
+        if (w && w.leaving) continue;
+        r.stay -= dt;
+        if (r.stay > 0) continue;
+        // time to go somewhere else (unless it's busy with something)
+        if (w && (hub.isBusy(w) || w.state === "playing")) { r.stay = 8; continue; }
+        const to = choosePlace(rec, rec.place);
+        go(rec, to);
+      }
+
+      // Miis in places you're not looking at still hang out with each other
+      socialIn -= dt * hub.chattiness;
+      if (socialIn <= 0) {
+        socialIn = rnd(8, 14);
+        for (const pl of PLACES) {
+          if (pl.id === view || pl.id === "home") continue;
+          const here = Array.from(records.values()).filter((r) => r.place === pl.id && !info(r).travel);
+          if (here.length < 2 || Math.random() > 0.1 * Math.min(2, here.length / 3)) continue;
+          const a = pick(here), b = pick(here.filter((x) => x !== a));
+          hub.offscreenHangout(a, b, pl.id);
+        }
+      }
+
+      // ...and phone friends who are somewhere else
+      phoneIn -= dt * hub.chattiness;
+      if (phoneIn <= 0) {
+        phoneIn = rnd(14, 28);
+        tryPhoneCall();
+      }
+
+      refreshIn -= dt;
+      if (refreshIn <= 0) { refreshIn = 1; opts.changed(true); }
+    }
+
+    function tryPhoneCall() {
+      const all = Array.from(records.values()).filter((r) => !info(r).travel && r.id !== visitingId());
+      if (all.length < 2) return;
+      // chatty, outgoing Miis call more
+      const A = D.weighted(all.map((r) => { const p = D.traits(r); return [r, 0.4 + p.chatty / 60 + p.social / 100]; }));
+      // they call someone somewhere else, usually a friend
+      const others = all.filter((r) => r !== A && r.place !== A.place);
+      if (!others.length) return;
+      const B = D.weighted(others.map((r) => [r, 0.4 + Math.min(20, hub.friendships[pairKey(A, r)] || 0) / 4]));
+      const view = viewed();
+      const wa = A.place === view && walkerOf(A.id);
+      const wb = B.place === view && walkerOf(B.id);
+      const ok = (w) => w && !hub.isBusy(w) && !w.leaving && w.appear >= 1 && w.cooldown <= 0;
+      if (ok(wa)) hub.startPhone(wa, B, "caller");
+      else if (ok(wb)) hub.startPhone(wb, A, "callee");
+      else if (!wa && !wb) hub.offscreenHangout(A, B, "phone");
+    }
+
+    const pairKey = (a, b) => (a.id < b.id ? a.id + "|" + b.id : b.id + "|" + a.id);
+
+    // The Miis who should be in a place when you start looking at it.
+    async function populate(placeId) {
+      for (const rec of records.values()) {
+        if (rec.place !== placeId || info(rec).travel || walkerOf(rec.id)) continue;
+        const template = await opts.templateFor(rec);
+        if (rec.place !== placeId || info(rec).travel || walkerOf(rec.id) || viewed() !== placeId) continue;
+        hub.addWalker(rec, template, opts.lookFor(rec, template), true);
+      }
+      opts.changed();
+    }
+
+    // What the side panel says about where a Mii is.
+    function whereText(rec) {
+      const r = info(rec);
+      if (r.travel) return "On the way to " + placeInfo(r.travel.to).name + " " + placeInfo(r.travel.to).icon;
+      const pl = placeInfo(rec.place);
+      if (rec.place === "home") return "At home 🏠";
+      return "At " + pl.name + " " + pl.icon;
+    }
+
+    function isTravelling(rec) { return !!info(rec).travel; }
+    function homeActivity(rec) { return rec.place === "home" && !info(rec).travel ? info(rec).homeAct : null; }
+    function forget(id) { rt.delete(id); }
+
+    return { tick, go, sendTo, populate, choosePlace, whereText, isTravelling, homeActivity, forget, info };
+  }
+
+  root.MiiTown = { create, PLACES, placeInfo, placeLikes, guessFavorite };
+})(typeof self !== "undefined" ? self : this);

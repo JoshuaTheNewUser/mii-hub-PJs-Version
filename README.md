@@ -57,7 +57,7 @@ Your Miis always look exactly like they do in Mii Creator. To change how a Mii l
 
 ## What you can do
 
-- **Switch places:** use the **🌳 Park**, **🏢 Office**, **🚀 Outer Space** and **🏘️ Apartments** buttons at the top.
+- **Look at a place:** use the **🌳 Park**, **🏢 Office**, **🚀 Outer Space** and **🏘️ Apartments** buttons at the top. The number on each button is how many Miis are there right now. Switching places only moves *you*: the Miis stay where they are (see *Miis live their own lives* below).
 - **Full screen:** click **⛶** in the corner of the scene (or press **F**) to make the scene fill your screen. Small place buttons stay in the corner. Press **F** or **Esc**, or click **✕**, to go back. In the desktop app, **F11** makes the whole window full screen.
 - **Move the camera:** drag the background to spin all the way around, and scroll (or pinch) to zoom. Every place has scenery all the way round. In the office and in homes, the wall between you and the room hides itself, like a dollhouse.
 - **Click a Mii** (left button) to make it jump and say hi. **Drag a Mii** to pick it up and carry it. Let go and it drops back down.
@@ -67,6 +67,8 @@ Your Miis always look exactly like they do in Mii Creator. To change how a Mii l
   - **Personality:** five sliders. *Calm ↔ Energetic*, *Shy ↔ Outgoing*, *Quiet ↔ Chatty*, *Serious ↔ Silly* and *Grumpy ↔ Sweet* change how it moves, how often it talks and starts conversations, what it does with friends, and what it says. Each Mii gets a Tomodachi-style label like "Lively Joker" or "Quiet Sweetheart".
   - **Name and catchphrase:** rename it, and give it a catchphrase it says now and then.
   - **Best friends:** see who it gets along with.
+  - **Go to…:** send the Mii to the park, the office, the moon, the apartment courtyard or home. It stays there a good while before deciding for itself again.
+  - **Favourite place:** where it likes to be most (picked from its personality at first; change it any time).
   - **🏠 Send home**, **🏡 Visit home** and **📦 Move away** (see below).
 - In the **Residents** list, click a Mii's picture or name to open its menu. The 🪙 number is how many coins it has.
 - **How chatty?** sets how often Miis talk and hang out.
@@ -77,7 +79,8 @@ Your Miis, their homes, coins, friendships and the place you picked are saved, s
 
 Every Mii has its own apartment in the **🏘️ Apartments**. You can see its name by its door, and its windows light up when it's home. The building starts with 3 floors of 4 apartments. When every apartment is taken, it gets a new floor (up to 10 floors, so 40 homes). A Mii who doesn't have an apartment yet can still be visited from its menu.
 
-- **🏠 Send home:** the Mii says goodbye and walks home (in the Apartments, it walks to its own front door). Nothing is lost: it keeps its friends, coins and everything else. Use **🚪 Invite out** in the *Residents* list to bring it back.
+- **🏠 Send home:** the Mii says goodbye and walks home (in the Apartments, it walks to its own front door). Nothing is lost: it keeps its friends, coins and everything else. Use **🚪 Invite out** in the *Residents* list to bring it out to the place you're looking at.
+- **Through the windows:** in the Apartments, the windows of Miis who are home are open, and you can see them inside doing their thing: napping, watching TV, playing games...
 - **🏡 Visit:** go inside a Mii's home (from its menu, the *Residents* list, or by clicking its apartment in the Apartments). It's just the Mii and its home: watch it nap in bed, watch TV, play games or water its plants, and it'll come over to chat with you. Click **← Leave** to go back outside.
 - **🛋️ Decorate:** while you visit, buy furniture with **the Mii's own coins**: beds, seats, tables, a TV or game console, rugs, lamps, plants, wall art, special things (like a fish tank or drum kit), wallpaper and flooring. Things you've bought stay owned, so you can swap back for free. Each Mii likes different things depending on its personality, and it tells you what it thinks.
 - **🍙 Give food:** every Mii has a favourite food and one it can't stand. Try things and see!
@@ -88,6 +91,17 @@ Every Mii has its own apartment in the **🏘️ Apartments**. You can see its n
 - Doing **the same thing with the same Mii** over and over earns less and less.
 - Hanging out uses up a Mii's **social energy**, which comes back with some alone time. So turning *How chatty?* all the way up doesn't make coins pour in.
 - **Playing a mini-game with you** earns 3 coins.
+
+## Miis live their own lives
+
+Each Mii decides for itself where to be. It stays somewhere for a few minutes, then says bye, walks out (or to its front door) and heads somewhere else. Where it goes depends on its **favourite place** and its **personality**:
+- **Home:** lazy, calm and shy Miis spend lots of time at home.
+- **Office:** serious, hard-working Miis go to work.
+- **Moon base:** energetic, adventurous Miis visit space.
+- **Park:** active, outdoorsy Miis love the park.
+- **Apartment courtyard:** friendly neighbours hang out in front of the building.
+
+The *Residents* list shows where everyone is ("At the office 🏢", "On the way to the park 🌳"...). Miis in places you're not looking at still chat, become friends and earn coins, and you'll see it in *What's happening*. Click a Mii in the list to go and see it (or visit it, if it's home).
 
 ## What the Miis do
 
@@ -100,7 +114,8 @@ Every Mii has its own apartment in the **🏘️ Apartments**. You can see its n
 - **Move like themselves:** energetic Miis take big, bouncy steps and jump about; calm ones stroll; shy ones look down and keep their hands together; grumpy ones stomp and fold their arms; silly ones waddle and bop their heads; outgoing ones stand with their hands on their hips; chatty ones talk with their hands. Dances and waves change too.
 - **Act like themselves:** shy ones stammer when they meet someone new, silly ones tell more jokes, and grumpy ones argue more.
 - **Give honest compliments:** they only mention things that are really true, like someone's height, their hair colour, or their top (only when it's clearly one colour). Nothing about beards or anything else that's hard to tell from the model.
-- **Talk from far away:** sometimes two Miis who are far apart don't bother walking over. Loud, outgoing pairs **SHOUT ACROSS THE PLACE**, quieter pairs **call each other on the phone** 📱 (both always do the same thing).
+- **Call each other over:** usually a Mii walks up to someone to talk. But if they're far apart and it's the loud, outgoing type, it shouts **"HEY MIA! COME HERE!"**, the other one shouts back **"COMING!"** and walks over, and then they talk face to face.
+- **Phone friends who are somewhere else:** a Mii takes out its phone, and a tag shows who it's talking to ("📱 Calling Mia" or "📱 Call from Mia"). You see what the other Mii says coming out of the phone in a blue bubble.
 - **Talk now and then.** Some lines depend on the place they're in.
 - **Meet up in pairs** and:
   - chat
@@ -185,6 +200,7 @@ js/minigames.js       mini-game rules, the Mii opponents, and skill growth
 js/gamesUI.js         the window where you play a mini-game with a Mii
 js/hub3d.js           moves the Miis around, camera, clicking & dragging, home visits, coins
 js/homes.js           furniture, food, and what each Mii likes
+js/town.js            where each Mii is, and where it wants to go next
 js/homes3d.js         the apartment building and the inside of each home
 js/storage.js         saves Miis in the browser
 electron/main.js      runs Mii Hub as a desktop app (Electron)
