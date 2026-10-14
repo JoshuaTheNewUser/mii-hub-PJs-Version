@@ -41,7 +41,7 @@
   const matCache = new Map();
   function toon(color, opts) {
     const make = () => new THREE.MeshToonMaterial(Object.assign({ color, gradientMap: gradient }, opts || {}));
-    const special = opts && (opts.map || opts.transparent || opts.emissive !== undefined || opts.side !== undefined);
+    const special = opts && (opts.map || opts.transparent || opts.emissive !== undefined || opts.side !== undefined || opts.fog !== undefined);
     if (special) return make();
     const key = String(color);
     if (!matCache.has(key)) matCache.set(key, make());
@@ -59,6 +59,8 @@
   const G = {
     sphere: () => cachedGeo("sphere", () => new THREE.SphereGeometry(1, 28, 18)),
     lowSphere: () => cachedGeo("lowSphere", () => new THREE.SphereGeometry(1, 14, 10)),
+    midSphere: () => cachedGeo("midSphere", () => new THREE.SphereGeometry(1, 16, 11)),
+    tinySphere: () => cachedGeo("tinySphere", () => new THREE.SphereGeometry(1, 8, 6)),
     cyl: (seg) => cachedGeo("cyl" + (seg || 24), () => new THREE.CylinderGeometry(1, 1, 1, seg || 24)),
     cone: (seg) => cachedGeo("cone" + (seg || 20), () => new THREE.ConeGeometry(1, 1, seg || 20)),
     box: () => cachedGeo("box", () => new THREE.BoxGeometry(1, 1, 1)),
@@ -168,7 +170,9 @@
       if (!o.isMesh || o.isInstancedMesh || skip.has(o) || Array.isArray(o.material)) return;
       if (o.material.isShaderMaterial) return;
       let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
-      for (const name of Object.keys(g.attributes)) if (!["position", "normal", "uv"].includes(name)) g.deleteAttribute(name);
+      // (painted models keep their colours, see bakeGeo below)
+      const keep = o.material.vertexColors ? ["position", "normal", "uv", "color"] : ["position", "normal", "uv"];
+      for (const name of Object.keys(g.attributes)) if (!keep.includes(name)) g.deleteAttribute(name);
       if (!g.attributes.uv) g.setAttribute("uv", new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
       if (!g.attributes.normal) g.computeVertexNormals();
       g.applyMatrix4(o.matrixWorld);
@@ -207,6 +211,142 @@
     m.receiveShadow = true;
     parent.add(m);
     return m;
+  }
+
+  // Far-away scenery (city blocks, clouds...) spread all around the place.
+  // Copies of one shape are drawn in one go; they don't catch shadows, and they
+  // are always drawn (three.js would otherwise only check the first copy to
+  // decide whether the whole lot is on screen).
+  function farScatter(parent, geo, mat, items) {
+    const m = scatter(parent, geo, mat, items, false);
+    m.receiveShadow = false;
+    m.frustumCulled = false;
+    return m;
+  }
+
+  // "Painted" models: every part keeps its own colour, but the whole model is
+  // ONE shape with ONE material, so the computer draws it in a single go.
+  // Great for things that move (boats, cars, satellites) and for far scenery.
+  const paintedMat = new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: gradient, vertexColors: true });
+
+  // build(g) adds parts to g with the usual helpers (ball, block...);
+  // we get back one geometry with all the parts and their colours baked in.
+  function bakeGeo(build) {
+    const g = new THREE.Group();
+    build(g);
+    g.updateMatrixWorld(true);
+    const geos = [];
+    const col = new THREE.Color();
+    g.traverse((o) => {
+      if (!o.isMesh) return;
+      const src = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+      if (!src.attributes.normal) src.computeVertexNormals();
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", src.attributes.position);
+      geo.setAttribute("normal", src.attributes.normal);
+      geo.applyMatrix4(o.matrixWorld);
+      const m = Array.isArray(o.material) ? o.material[0] : o.material;
+      col.copy(m.color);
+      // glowing parts get a little brighter so they still look lit up
+      if (m.emissive && m.emissiveIntensity && m.emissive.getHex()) col.lerp(new THREE.Color(1, 1, 1), 0.25);
+      const n = geo.attributes.position.count;
+      const colors = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b; }
+      geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+      geo.setAttribute("uv", new THREE.Float32BufferAttribute(new Float32Array(n * 2), 2));
+      geos.push(geo);
+    });
+    return THREE.BufferGeometryUtils.mergeBufferGeometries(geos, false);
+  }
+  // Bakes lists of copies (items like scatter's: { x, y, z, s, sx, sy, sz, rx, ry, rz, color })
+  // into one painted shape. list = [[geometry, items, brightness], ...]
+  // Use it for far-away scenery that never moves: everything in one draw call.
+  function bakeCopies(list) {
+    const c = new THREE.Color();
+    return bakeGeo((g) => list.forEach(([geo, items, bright]) => items.forEach((it) => {
+      c.set(it.color === undefined ? 0xffffff : it.color).multiplyScalar(bright === undefined ? 1 : bright);
+      put(g, geo, toon(c.getHex()), {
+        x: it.x, y: it.y || 0, z: it.z, rx: it.rx || 0, ry: it.ry || 0, rz: it.rz || 0,
+        sx: it.sx || it.s || 1, sy: it.sy || it.s || 1, sz: it.sz || it.s || 1,
+      });
+    })));
+  }
+  function painted(parent, geo, o) {
+    return put(parent, geo, paintedMat, Object.assign({ shadow: false, receive: false }, o));
+  }
+
+  // A two-sided triangle (for sails and flags), as a geometry.
+  function triangleGeo(pts) {
+    const [a, b, c] = [pts.slice(0, 3), pts.slice(3, 6), pts.slice(6, 9)];
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute([...a, ...b, ...c, ...a, ...c, ...b], 3));
+    g.computeVertexNormals();
+    return g;
+  }
+
+  // One puffy cloud shape (copied many times with farScatter).
+  const cloudGeo = () => cachedGeo("cloud", () => bakeGeo((g) => {
+    const puff = (x, y, z, s, o) => put(g, G.midSphere(), toon(0xffffff), Object.assign({ x, y, z, s }, o));
+    puff(0, 0, 0, 2.2); puff(2.2, -0.4, 0.3, 1.6); puff(-2.1, -0.5, 0, 1.5); puff(0.6, 1.1, 0, 1.4); puff(-0.9, 0.7, 0.6, 1.2);
+    puff(0, -0.9, 0, 3.2, { sy: 0.6, sz: 0.5 }); // flat bottom
+  }));
+
+  // A ring of clouds all the way around the place. The whole ring slowly turns,
+  // so the clouds drift past whichever way you look.
+  // o = { count, rMin, rMax, yMin, yMax, sMin, sMax, speed, seed }
+  function cloudRing(parent, anim, mat, o) {
+    const r = seeded(o.seed || 1);
+    const items = [];
+    for (let i = 0; i < o.count; i++) {
+      const a = ((i + r() * 0.7) / o.count) * TAU;
+      const d = o.rMin + r() * (o.rMax - o.rMin);
+      const s = o.sMin + r() * (o.sMax - o.sMin);
+      items.push({ x: Math.cos(a) * d, y: o.yMin + r() * (o.yMax - o.yMin), z: Math.sin(a) * d, s, sy: s * (0.75 + r() * 0.3), ry: -a + Math.PI / 2 });
+    }
+    const ring = dynamic(farScatter(parent, cloudGeo(), mat, items));
+    anim.push((t) => { ring.rotation.y = (o.start || 0) + t * o.speed; });
+    return ring;
+  }
+
+  // A material that paints rows of windows onto any box, using where each bit
+  // of the box is in the world (so tall and short buildings get the same size
+  // windows). Some windows are lit up yellow, the rest reflect the blue sky.
+  // o = { w, h } the size of one window "cell", glass and lit colours.
+  function windowMaterial(o) {
+    o = o || {};
+    const mat = new THREE.MeshToonMaterial({ color: o.color || 0xffffff, gradientMap: gradient });
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.winSize = { value: new THREE.Vector2(o.w || 2.4, o.h || 3.4) };
+      sh.uniforms.winGlass = { value: new THREE.Color(o.glass || 0x8fd0ff) };
+      sh.uniforms.winLit = { value: new THREE.Color(o.lit || 0xfff1a8) };
+      sh.vertexShader = "varying vec3 vWinPos;\nvarying vec3 vWinN;\n" + sh.vertexShader.replace("#include <project_vertex>", [
+        "#include <project_vertex>",
+        "vec4 winP = vec4(transformed, 1.0);",
+        "vec3 winN = objectNormal;",
+        "#ifdef USE_INSTANCING",
+        "  winP = instanceMatrix * winP;",
+        "  winN = mat3(instanceMatrix) * winN;",
+        "#endif",
+        "vWinPos = (modelMatrix * winP).xyz;",
+        "vWinN = normalize(mat3(modelMatrix) * winN);",
+      ].join("\n"));
+      sh.fragmentShader = "uniform vec2 winSize;\nuniform vec3 winGlass;\nuniform vec3 winLit;\nvarying vec3 vWinPos;\nvarying vec3 vWinN;\n" +
+        sh.fragmentShader.replace("#include <color_fragment>", [
+          "#include <color_fragment>",
+          "float winAmt = 0.0;",
+          "vec3 winCol = winGlass;",
+          "if (abs(vWinN.y) < 0.5) {", // only on the walls, not the roof
+          "  float u = abs(vWinN.x) > abs(vWinN.z) ? vWinPos.z : vWinPos.x;",
+          "  vec2 cell = vec2(u, vWinPos.y) / winSize;",
+          "  vec2 f = fract(cell);",
+          "  winAmt = step(0.2, f.x) * step(f.x, 0.8) * step(0.3, f.y) * step(f.y, 0.8);",
+          "  float rnd = fract(sin(dot(floor(cell), vec2(12.9898, 78.233))) * 43758.5453);",
+          "  winCol = rnd > 0.87 ? winLit : mix(winGlass, vec3(1.0), f.y * 0.35);",
+          "  diffuseColor.rgb = mix(diffuseColor.rgb, winCol, winAmt);",
+          "}",
+        ].join("\n")).replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance += winCol * winAmt * 0.3;");
+    };
+    return mat;
   }
 
   // ---------- reusable props ----------
@@ -301,8 +441,8 @@
         const x = r() * w, y = r() * h;
         ctx.beginPath(); ctx.arc(x, y, 9, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
       }
-    }, [24, 24]);
-    const ocean = disc(root, toon(0xffffff, { map: waveTex }), 0, -0.9, 0, 220, { receive: true });
+    }, [27, 27]);
+    const ocean = disc(root, toon(0xffffff, { map: waveTex }), 0, -0.9, 0, 245, { receive: true });
     dynamic(ocean);
     anim.push((t) => { waveTex.offset.set(t * 0.004, t * 0.007); });
 
@@ -603,16 +743,137 @@
       }
     }
 
-    // little islands, a lighthouse and a sailboat out at sea
-    for (const [x, z, s] of [[-45, -40, 5], [52, -30, 4], [30, -60, 6]]) {
-      put(root, G.sphere(), toon(0xf5dfa4), { x, y: -1.4, z, sx: s * 1.4, sy: 1.6, sz: s, shadow: false });
-      put(root, G.sphere(), toon(0x6cc84a), { x, y: -0.6, z, sx: s * 1.1, sy: 1.5, sz: s * 0.8, shadow: false });
-    }
-    palmTree(root, -45, -40, 1.6, 0.5);
-    const lh = group(root, 52, 0, -30);
-    for (let i = 0; i < 4; i++) cylinder(lh, i % 2 ? 0xff5a5a : 0xffffff, 0, 0.9 + i * 1.2, 0, 0.9 - i * 0.1, 1.2);
-    ball(lh, glow(0xfff2a8, 1), 0, 6.0, 0, 0.6);
-    put(lh, G.cone(), toon(0xff5a5a), { y: 6.9, s: 0.85, sy: 0.9 });
+    // ===== little islands out at sea, all the way around =====
+    // Each island is a sandy beach with a grassy hump on top. Things standing
+    // on the island go in its "top" group, which sits on top of the hump.
+    // (Far-away things use the low-detail sphere: you can't tell from here, and
+    // it's much less work for the computer.)
+    const island = (x, z, s, o) => {
+      o = o || {};
+      const g = group(sea, x, 0, z, o.ry || 0);
+      put(g, G.lowSphere(), toon(0xf5dfa4), { y: -1.4, sx: s * 1.4, sy: 1.6, sz: s, shadow: false });
+      const hill = o.hill || 1;
+      if (o.grass !== false) put(g, G.lowSphere(), toon(o.grassColor || 0x6cc84a), { y: -0.6, sx: s * 1.1, sy: 1.5 * hill, sz: s * 0.8, shadow: false });
+      g.userData.top = group(g, 0, o.grass === false ? 0.15 : -0.6 + 1.5 * hill - 0.15, 0);
+      return g;
+    };
+    const farTree = (p, x, z, s, colors) => {
+      const t = group(p, x, 0, z, 0, s);
+      cylinder(t, 0x9a6a3c, 0, 0.5, 0, 0.22, 2.6, { seg: 8, shadow: false }); // (pokes into the ground a bit, for slopes)
+      put(t, G.lowSphere(), toon(colors ? colors[0] : 0x4fbf47), { y: 2.4, s: 1.2, shadow: false });
+      put(t, G.lowSphere(), toon(colors ? colors[1] : 0x7fdc5c), { x: 0.4, y: 2.9, z: 0.3, s: 0.75, shadow: false });
+      return t;
+    };
+    const farPalm = (p, x, z, s, lean) => {
+      const t = group(p, x, 0, z, lean, s);
+      for (let i = 0; i < 5; i++) put(t, G.taper(0.2 - i * 0.015, 0.24 - i * 0.015, 8), toon(i % 2 ? 0xb88a55 : 0xa47a48), { x: i * i * 0.04, y: 0.4 + i * 0.75, sy: 0.8, rz: -0.08 * i, shadow: false });
+      const top = 4.0;
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * TAU;
+        put(t, G.lowSphere(), toon(i % 2 ? 0x46b04a : 0x5cc84a), { x: 0.65 + Math.cos(a) * 0.9, y: top, z: Math.sin(a) * 0.9, sx: 1.1, sy: 0.12, sz: 0.38, ry: -a, rz: -0.35, shadow: false });
+      }
+      ball(t, 0x7a5232, 0.65, top - 0.25, 0, 0.2, { shadow: false });
+      return t;
+    };
+    const cottage = (p, x, z, ry, wallColor, roofColor, s) => {
+      const h = group(p, x, 0, z, ry, s || 1);
+      block(h, wallColor, 0, 0.75, 0, 1.8, 1.5, 1.5, 0.12, { shadow: false });
+      put(h, G.cone(4), toon(roofColor), { y: 2.05, sx: 1.45, sy: 1.1, sz: 1.2, ry: Math.PI / 4, shadow: false });
+      block(h, 0x9a6a3c, 0, 0.45, 0.76, 0.45, 0.8, 0.05, 0.03, { shadow: false });
+      block(h, 0xbfe6ff, 0.55, 0.95, 0.76, 0.35, 0.35, 0.05, 0.03, { shadow: false });
+      return h;
+    };
+    const seaRock = (p, x, z, s, sy, color) => put(p, G.lowSphere(), toon(color || 0xb8b3a8), { x, y: -0.6, z, s, sy: s * (sy || 1), ry: x, shadow: false });
+    // All the islands are "painted" into ONE shape, so the whole lot is drawn in one go.
+    let sea = root;
+    painted(root, bakeGeo((g) => {
+      sea = g;
+      // (positions are [x, z]; the camera starts on the +z side looking towards -z)
+      // 1. palm island (back left)
+      const isl1 = island(-45, -40, 5);
+      palmTree(isl1.userData.top, 0, 0, 1.6, 0.5);
+      farPalm(isl1.userData.top, 2.4, 1, 1.1, 2.4);
+      // 2. the lighthouse island (back right)
+      const isl2 = island(52, -30, 4);
+      const lh = group(isl2.userData.top, 0, -0.3, 0);
+      for (let i = 0; i < 4; i++) cylinder(lh, i % 2 ? 0xff5a5a : 0xffffff, 0, 0.9 + i * 1.2, 0, 0.9 - i * 0.1, 1.2);
+      ball(lh, glow(0xfff2a8, 1), 0, 6.0, 0, 0.6);
+      put(lh, G.cone(), toon(0xff5a5a), { y: 6.9, s: 0.85, sy: 0.9 });
+      cottage(isl2.userData.top, 2.2, 1.2, -0.4, 0xffffff, 0x4a90e2, 0.8);
+      // 3. a tree-covered island
+      const isl3 = island(30, -60, 6, { hill: 1.4 });
+      [[-2, 0, 1.2], [1.5, 0.8, 1.0], [0.3, -1.6, 0.9], [3.2, -0.6, 0.8], [-3.6, 1.0, 0.8]].forEach(([x, z, s], i) =>
+        farTree(isl3.userData.top, x, z, s, i % 2 ? [0x4fbf47, 0x8ae065] : [0x5cc84a, 0x7fdc5c]));
+      // 4. a big green mountain island far behind
+      const isl4 = island(-30, -118, 14, { hill: 1.2 });
+      put(isl4.userData.top, G.cone(14), toon(0x5cb84a), { y: 6, sx: 10, sy: 13, sz: 8, shadow: false });
+      ball(isl4.userData.top, 0x6cc84a, 0, 12.6, 0, 2.6, { sy: 0.7, shadow: false });
+      put(isl4.userData.top, G.cone(12), toon(0x4fae3f), { x: 7, y: 3.6, z: 1, sx: 6, sy: 8, sz: 5, shadow: false });
+      for (let i = 0; i < 9; i++) farTree(isl4.userData.top, -12 + i * 3, 4 + (i % 3) * 1.4, 1.4, i % 2 ? [0x4fbf47, 0x8ae065] : [0x3fa63a, 0x6cc84a]);
+      // 5. a little village (right)
+      const isl5 = island(72, 12, 8, { ry: 0.3 });
+      [[-3, 0.5, 0, 0xffe4b5, 0xff6b5a], [-0.6, -1.4, 0.3, 0xffffff, 0x4a90e2], [1.6, 0.8, -0.2, 0xffd0e0, 0xff9a3a], [3.8, -0.8, 0.5, 0xd6f0ff, 0xff6b5a]]
+        .forEach(([x, z, ry, wc, rc]) => cottage(isl5.userData.top, x, z, ry, wc, rc, 1.1));
+      const bell = group(isl5.userData.top, -5.6, 0, -1.5); // a little bell tower
+      block(bell, 0xfff6e0, 0, 2.0, 0, 1.2, 4.0, 1.2, 0.1, { shadow: false });
+      put(bell, G.cone(4), toon(0x5cb85c), { y: 5.0, sx: 1.0, sy: 2.0, sz: 1.0, ry: Math.PI / 4, shadow: false });
+      ball(bell, 0xffcf3a, 0, 3.3, 0.62, 0.28, { sz: 0.3, shadow: false });
+      farTree(isl5.userData.top, 5.6, 1.2, 1.0); farTree(isl5.userData.top, -2, 2.4, 0.8);
+      // 6. a rock arch (front right)
+      const isl6 = island(48, 58, 5, { grass: false, ry: -0.6 });
+      put(isl6, new THREE.TorusGeometry(3.4, 1.1, 7, 14, Math.PI), toon(0xc9b99a), { y: -0.4, shadow: false });
+      seaRock(isl6, -3.4, 0.5, 1.7, 1.4, 0xc9b99a); seaRock(isl6, 3.6, -0.3, 1.5, 1.2, 0xc9b99a); seaRock(isl6, 5.6, 1.4, 0.9);
+      put(isl6, G.lowSphere(), toon(0x6cc84a), { y: 3.35, sx: 1.4, sy: 0.35, sz: 1.1, shadow: false });
+      // 7. a desert island with a hut (behind the camera)
+      const isl7 = island(-8, 76, 5, { hill: 0.6 });
+      farPalm(isl7.userData.top, -1.5, 0, 1.3, 0.2); farPalm(isl7.userData.top, 1.6, 0.6, 1.0, 3.6);
+      const hut = group(isl7.userData.top, 2.4, 0, -1.6, 0.4);
+      cylinder(hut, 0xd9a86a, 0, 0.6, 0, 0.9, 1.2, { seg: 10, shadow: false });
+      put(hut, G.cone(10), toon(0xe6c36a), { y: 1.7, sx: 1.4, sy: 1.1, sz: 1.4, shadow: false });
+      // 8. a big hilly island (front left)
+      const isl8 = island(-74, 106, 12, { hill: 1.6, ry: 0.5 });
+      ball(isl8.userData.top, 0x5cc84a, -4, 1.5, 0, 6, { sy: 0.55, shadow: false });
+      ball(isl8.userData.top, 0x6cc84a, 4, 1.0, 1, 5, { sy: 0.5, shadow: false });
+      for (let i = 0; i < 8; i++) farTree(isl8.userData.top, -9 + i * 2.5, -2 + (i % 2) * 3, 1.3, i % 2 ? [0xff9ec7, 0xffc3dc] : [0x4fbf47, 0x8ae065]);
+      // 9. sea stacks with an arch (left)
+      const isl9 = island(-72, 18, 6, { grass: false, ry: 1.2 });
+      put(isl9, new THREE.TorusGeometry(2.6, 0.9, 7, 14, Math.PI), toon(0xb8b3a8), { y: -0.4, shadow: false });
+      seaRock(isl9, -4, 1, 1.8, 2.6); seaRock(isl9, 4.5, -0.5, 1.4, 2.0); seaRock(isl9, 1.5, 3, 1.0, 1.6);
+      ball(isl9, 0x6cc84a, -4, 4.1, 1, 1.5, { sy: 0.35, shadow: false });
+      // 10. far-away islands, just shapes on the horizon
+      for (const [x, z, s, h] of [[-128, -54, 13, 1.8], [118, -92, 15, 2.2], [140, 62, 12, 1.6], [26, 140, 16, 1.4], [-138, 74, 10, 2.0], [-92, -132, 11, 1.5]]) {
+        const far = island(x, z, s, { hill: h, grassColor: 0x5cb84a });
+        const fr = seeded(Math.round(Math.abs(x * 13 + z)) + 1);
+        for (let i = 0; i < 5; i++) {
+          farTree(far.userData.top, (fr() - 0.5) * s * 1.2, (fr() - 0.5) * s * 0.6, 1.2 + fr() * 0.8, fr() < 0.3 ? [0xff9ec7, 0xffc3dc] : [0x4fbf47, 0x7fdc5c]);
+        }
+      }
+      // a tiny sandbar with one palm
+      const sandbar = island(-82, -14, 2.6, { grass: false });
+      farPalm(sandbar.userData.top, 0, 0, 0.9, 1);
+    }));
+
+    // more sailboats, further out (each one is a single "painted" shape)
+    const sailboatGeo = (sail, stripe) => bakeGeo((b) => {
+      block(b, 0xffffff, 0, 0.15, -0.2, 1.2, 0.6, 2.6, 0.25);
+      ball(b, 0xffffff, 0, 0.15, 1.05, 0.6, { sx: 1, sy: 0.5, sz: 1.3 });
+      block(b, stripe, 0, 0.32, -0.2, 1.24, 0.1, 2.62, 0.04);
+      block(b, 0xd9a06a, 0, 0.47, -0.3, 1.0, 0.06, 2.2, 0.03);
+      cylinder(b, 0x9a6a3c, 0, 2.2, 0.1, 0.06, 3.4, { seg: 8 });
+      put(b, triangleGeo([0, 0.75, 0.05, 0, 3.75, 0.05, 0, 0.8, -1.35]), toon(sail));
+      put(b, triangleGeo([0, 3.5, 0.2, 0, 0.75, 0.25, 0, 0.75, 1.35]), toon(0xffffff));
+    });
+    const farBoats = [
+      { r: 93, speed: 0.012, start: 0.5, geo: sailboatGeo(0x6fc3ff, 0x4a90e2), s: 1.3 },
+      { r: 99, speed: -0.009, start: 2.6, geo: sailboatGeo(0xff9ec7, 0xff5a64), s: 1.4 },
+      { r: 99, speed: -0.009, start: 5.0, geo: sailboatGeo(0xffd166, 0x5cc84a), s: 1.2 },
+    ].map((b) => Object.assign(b, { mesh: dynamic(painted(root, b.geo, { s: b.s })) }));
+    anim.push((t) => farBoats.forEach((b, i) => {
+      const a = b.start + t * b.speed;
+      b.mesh.position.set(Math.cos(a) * b.r, -0.95 + Math.sin(t * 1.4 + i) * 0.08, Math.sin(a) * b.r);
+      // face along the circle (forwards is +z of the boat)
+      b.mesh.rotation.set(0, Math.atan2(-Math.sin(a), Math.cos(a)) + (b.speed < 0 ? Math.PI : 0), Math.sin(t * 1.2 + i) * 0.05);
+    }));
     // a little sailboat circling the island (its front points along +z)
     const boat = dynamic(group(root, 0, -0.9, 0));
     block(boat, 0xffffff, 0, 0.15, -0.2, 1.2, 0.6, 2.6, 0.25);
@@ -642,21 +903,12 @@
       wake.material.opacity = 0.45 + Math.sin(t * 3) * 0.15;
     });
 
-    // fluffy clouds
-    const clouds = [];
-    for (let i = 0; i < 7; i++) {
-      const c = dynamic(group(root, 0, 0, 0));
-      const cm = toon(0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.25 });
-      ball(c, cm, 0, 0, 0, 2.2, { shadow: false });
-      ball(c, cm, 2.2, -0.4, 0.3, 1.6, { shadow: false });
-      ball(c, cm, -2.1, -0.5, 0, 1.5, { shadow: false });
-      ball(c, cm, 0.6, 1.1, 0, 1.4, { shadow: false });
-      c.position.set(-60 + i * 20, 18 + (i % 3) * 4, -45 - (i % 2) * 15);
-      clouds.push(c);
-    }
-    anim.push((t) => clouds.forEach((c, i) => {
-      c.position.x = ((-70 + i * 20 + t * (0.6 + i * 0.1)) % 140 + 140) % 140 - 70;
-    }));
+    // fluffy clouds in three rings (near, middle, far), drifting all the way
+    // around the sky. Each ring is drawn in one go.
+    const cloudMat = toon(0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.3 });
+    cloudRing(root, anim, cloudMat, { count: 11, rMin: 48, rMax: 70, yMin: 17, yMax: 26, sMin: 0.8, sMax: 1.3, speed: 0.008, seed: 3 });
+    cloudRing(root, anim, cloudMat, { count: 14, rMin: 90, rMax: 130, yMin: 22, yMax: 40, sMin: 1.4, sMax: 2.2, speed: 0.005, seed: 7, start: 1 });
+    cloudRing(root, anim, cloudMat, { count: 12, rMin: 150, rMax: 190, yMin: 26, yMax: 52, sMin: 2.4, sMax: 3.4, speed: 0.003, seed: 11, start: 2 });
 
     // butterflies
     const flies = [];
@@ -697,7 +949,7 @@
     return {
       group: root,
       background: 0xcdeeff,
-      fog: [0xd8f2ff, 60, 170],
+      fog: [0xd8f2ff, 80, 260],
       cameraTilt: 0.44,
       bounds: { minX: -RX, maxX: RX, minZ: -RZ, maxZ: RZ },
       water: [{ x: POND.x, z: POND.z, rx: POND.rx, rz: POND.rz }, { x: 0, z: 0, rx: RX - 0.4, rz: RZ - 0.4, outside: true }],
@@ -822,10 +1074,206 @@
     return d;
   }
 
+  // ---------------------------------------------------------------------
+  // The sunny cartoon city around the office. The office is the top floor of
+  // a tall tower; the streets are far below, and the city goes all the way
+  // round, so there's something to see whichever way you spin the camera.
+  // Lots of buildings, trees and cars are drawn as "copies" (InstancedMesh),
+  // so the whole city only takes a handful of draw calls.
+  // ---------------------------------------------------------------------
+  function buildCity(root, anim) {
+    const GY = -50;   // street level (the office floor is at 0)
+    const R = 232;    // how far out the city goes
+    const rnd = seeded(77);
+    // The office lights are bright, and they light the city too, so the city's
+    // colours are toned down a bit (DIM) to stop them looking washed out.
+    const DIM = 0x9a9a9a;
+
+    // ----- the office tower, going all the way down to the street -----
+    const towerMat = windowMaterial({ color: 0xa9b3c4, glass: 0x3f8fd0, lit: 0xd8c070, w: 2.6, h: 4 });
+    const towerH = -GY - 1.2;
+    const facade = (w, x, z, ry) => put(root, new THREE.PlaneGeometry(w, towerH), towerMat, { x, y: GY + towerH / 2, z, ry, shadow: false, receive: false });
+    facade(37.5, 0, 11.75, 0); facade(37.5, 0, -11.75, Math.PI);
+    facade(23.5, 18.75, 0, Math.PI / 2); facade(23.5, -18.75, 0, -Math.PI / 2);
+    // the edge of our floor, with a coloured stripe under it
+    block(root, 0xffffff, 0, -0.38, 0, 37.7, 0.72, 23.7, 0.06, { shadow: false, receive: false });
+    block(root, 0x7fc4ec, 0, -0.95, 0, 37.6, 0.45, 23.6, 0.04, { shadow: false, receive: false });
+    // a little roof over the tower's entrance, down at street level
+    block(root, 0xff7a59, 0, GY + 4.2, 13.2, 10, 0.4, 3.2, 0.1, { shadow: false, receive: false });
+
+    // ----- ground and streets -----
+    disc(root, toon(0xa39d8c), 0, GY, 0, R + 10, { receive: false });
+    const roadTex = canvasTexture(64, 64, (ctx, w, h) => {
+      ctx.fillStyle = "#d3ccbb"; ctx.fillRect(0, 0, w, h);        // pavement
+      ctx.fillStyle = "#6f7890"; ctx.fillRect(0, 10, w, h - 20);  // road
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 30, w * 0.55, 4); // dashed line in the middle
+    }, [1, 1]);
+    const roadMat = toon(DIM, { map: roadTex });
+    const ROAD_W = 9;
+    // a strip lying flat on the ground from (x1, z1) to (x2, z2)
+    const strip = (mat, x1, z1, x2, z2, width, y, uvLen) => {
+      const len = Math.hypot(x2 - x1, z2 - z1);
+      const geo = new THREE.PlaneGeometry(len, width);
+      const uv = geo.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * len / uvLen);
+      return put(root, geo, mat, { x: (x1 + x2) / 2, y, z: (z1 + z2) / 2, rx: -Math.PI / 2, rz: Math.atan2(z1 - z2, x2 - x1), shadow: false, receive: false });
+    };
+    // roads run north-south at these x's, and east-west at these z's
+    const xs = [-226, -186, -146, -106, -66, -26, 26, 66, 106, 146, 186, 226];
+    const zs = [-218, -178, -138, -98, -58, -18, 18, 58, 98, 138, 178, 218];
+    const lines = [];
+    for (const x of xs) { const h = Math.sqrt(R * R - x * x); lines.push({ along: "z", at: x, half: h }); strip(roadMat, x, -h, x, h, ROAD_W, GY + 0.12, 12); }
+    for (const z of zs) { const h = Math.sqrt(R * R - z * z); lines.push({ along: "x", at: z, half: h }); strip(roadMat, -h, z, h, z, ROAD_W, GY + 0.2, 12); }
+
+    // ----- a river with grassy banks, crossing the city behind the office -----
+    const RIVER = { z: -78, w: 18 };
+    const riverTex = canvasTexture(128, 128, (ctx, w, h) => {
+      ctx.fillStyle = "#4cc0ee"; ctx.fillRect(0, 0, w, h);
+      const r = seeded(12);
+      ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 3; ctx.lineCap = "round";
+      for (let i = 0; i < 6; i++) { const x = r() * w, y = r() * h; ctx.beginPath(); ctx.arc(x, y, 7, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); }
+    }, [1, 1]);
+    const riverHalf = Math.sqrt(R * R - RIVER.z * RIVER.z);
+    strip(toon(0x5f9c48), -riverHalf, RIVER.z, riverHalf, RIVER.z, 31, GY + 0.05, 10); // grassy banks
+    strip(toon(0xb0b0b0, { map: riverTex }), -riverHalf, RIVER.z, riverHalf, RIVER.z, RIVER.w, GY + 0.09, 14);
+    anim.push((t) => { riverTex.offset.x = -t * 0.02; });
+    // bridges: the north-south roads cross the river, so give them railings
+    for (const x of xs) {
+      for (const side of [-1, 1]) block(root, 0xffffff, x + side * (ROAD_W / 2 + 0.2), GY + 0.6, RIVER.z, 0.4, 0.9, RIVER.w + 3, 0.1, { shadow: false, receive: false });
+    }
+
+    // ----- city blocks: buildings, parks and plazas -----
+    const buildings = [], roofBoxes = [], pyramids = [], tanks = [], spires = [], trees = [], greens = [];
+    const pastel = [0xffe2b8, 0xffc4a8, 0xbcdcff, 0xc8eab6, 0xffc8dc, 0xd6c8ff, 0xf6e7c4, 0xa9d8f0, 0xffe08a, 0xf2f2f2];
+    const roofColors = [0xff6b5a, 0x4fb7c9, 0xff9a3a, 0x7a8cff, 0x5cb85c, 0xe86a9a];
+    const addTree = (x, z, s) => trees.push({ x, y: GY + 1.6 * s, z, s: 1.6 * s, sy: 1.5 * s, color: rnd() < 0.2 ? 0xff9ec7 : (rnd() < 0.5 ? 0x5cc84a : 0x4fb043) });
+    const parkPatch = (x0, x1, z0, z1) => {
+      greens.push({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, w: x1 - x0, d: z1 - z0 });
+      const n = Math.floor(((x1 - x0) * (z1 - z0)) / 30);
+      for (let i = 0; i < n; i++) addTree(x0 + 1.5 + rnd() * (x1 - x0 - 3), z0 + 1.5 + rnd() * (z1 - z0 - 3), 0.8 + rnd() * 0.6);
+    };
+    for (let i = 0; i < xs.length - 1; i++) {
+      for (let j = 0; j < zs.length - 1; j++) {
+        const x0 = xs[i] + ROAD_W / 2 + 1, x1 = xs[i + 1] - ROAD_W / 2 - 1;
+        const z0 = zs[j] + ROAD_W / 2 + 1, z1 = zs[j + 1] - ROAD_W / 2 - 1;
+        const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+        const dist = Math.hypot(cx, cz);
+        if (dist > R - 14) continue;
+        if (Math.abs(cx) < 30 && Math.abs(cz) < 30) continue;    // our own tower's block
+        if (zs[j] === -98) { parkPatch(x0, x1, z0, z1); continue; } // the riverside park
+        if (rnd() < 0.1) { parkPatch(x0, x1, z0, z1); continue; }   // a city park
+        // split the block into 2 x 2 lots
+        for (let a = 0; a < 2; a++) {
+          for (let b = 0; b < 2; b++) {
+            const lx0 = x0 + a * (x1 - x0) / 2, lx1 = x0 + (a + 1) * (x1 - x0) / 2;
+            const lz0 = z0 + b * (z1 - z0) / 2, lz1 = z0 + (b + 1) * (z1 - z0) / 2;
+            const lx = (lx0 + lx1) / 2, lz = (lz0 + lz1) / 2;
+            if (rnd() < 0.08) { addTree(lx - 2, lz, 1); addTree(lx + 2.5, lz + 2, 0.9); continue; } // a little square with trees
+            const w = (lx1 - lx0) * (0.62 + rnd() * 0.3), d = (lz1 - lz0) * (0.62 + rnd() * 0.3);
+            let h;
+            if (dist < 75) h = 12 + rnd() * 24;                      // near us: lower, so we can see down to the streets
+            else if (rnd() < 0.2) h = 52 + rnd() * 36;               // a skyscraper (taller than our tower!)
+            else h = 14 + rnd() * 34;
+            buildings.push({ x: lx, y: GY, z: lz, sx: w, sy: h, sz: d, color: pastel[Math.floor(rnd() * pastel.length)] });
+            const top = GY + h;
+            const roll = rnd();
+            if (h > 55) {
+              spires.push({ x: lx, y: top, z: lz, sx: 0.25, sy: 6 + rnd() * 6, sz: 0.25 });
+              roofBoxes.push({ x: lx, y: top, z: lz, sx: w * 0.6, sy: 2.2, sz: d * 0.6, color: 0xeef2f6 });
+            } else if (roll < 0.3) {
+              pyramids.push({ x: lx, y: top + 2.5, z: lz, sx: w * 0.72, sy: 5, sz: d * 0.72, ry: Math.PI / 4, color: roofColors[Math.floor(rnd() * roofColors.length)] });
+            } else if (roll < 0.65) {
+              roofBoxes.push({ x: lx + (rnd() - 0.5) * w * 0.3, y: top, z: lz + (rnd() - 0.5) * d * 0.3, sx: w * 0.35, sy: 1.6, sz: d * 0.35, color: rnd() < 0.5 ? 0xdfe5ec : 0xc9d2dc });
+              if (rnd() < 0.5) tanks.push({ x: lx - w * 0.25, y: top + 1.6, z: lz + d * 0.25, s: 1.1, sy: 3.2, color: 0xb98a5e });
+            } else if (roll < 0.8) {
+              greens.push({ x: lx, z: lz, w: w * 0.8, d: d * 0.8, y: top }); // a roof garden
+              addTree(lx - w * 0.2, lz, 0.5); trees[trees.length - 1].y = top + 0.8;
+            }
+          }
+        }
+      }
+    }
+    // one box shape with its bottom at 0, so "sy" is simply the height
+    const unitBox = cachedGeo("unitBox", () => new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0));
+    farScatter(root, unitBox, windowMaterial({ color: DIM, glass: 0x5aaee6, lit: 0xe6cf72, w: 2.4, h: 3.6 }), buildings);
+    // everything else that stays still (roofs, trees, parks, hills...) is baked
+    // into ONE painted shape (the hills are added to it further down)
+    const cityBits = [
+      [unitBox, roofBoxes, 0.6], [G.cone(4), pyramids, 0.6], [G.cyl(10), tanks, 0.6], [unitBox, spires.map((q) => Object.assign(q, { color: 0x8a8e96 }))],
+      [G.tinySphere(), trees, 0.6], [unitBox, greens.map((q) => ({ x: q.x, y: (q.y || GY) + 0.02, z: q.z, sx: q.w, sy: 0.12, sz: q.d, color: 0x5f9c48 }))],
+    ];
+
+    // ----- little cars driving along the streets -----
+    const carGeo = bakeGeo((c) => {
+      // (simple boxes: from up here you can't see any more detail)
+      put(c, G.box(), toon(0xb0b0b0), { y: 0.55, sx: 1.5, sy: 0.6, sz: 2.8 });       // body (tinted per car)
+      put(c, G.box(), toon(0xb0b0b0), { y: 1.05, z: -0.15, sx: 1.3, sy: 0.5, sz: 1.5 }); // roof
+      put(c, G.box(), toon(0x6a90b0), { y: 1.0, z: -0.15, sx: 1.34, sy: 0.32, sz: 1.3 }); // windows
+      put(c, G.box(), toon(0x222831), { y: 0.25, sx: 1.4, sy: 0.3, sz: 2.2 });       // wheels
+    });
+    const carColors = [0xff5a64, 0x4a90e2, 0xffcf3a, 0x5cc84a, 0xffffff, 0xff9a3a, 0xb58cff, 0x3fc6c6];
+    const cars = [];
+    for (let i = 0; i < 80; i++) {
+      const line = lines[Math.floor(rnd() * lines.length)];
+      const dir = rnd() < 0.5 ? 1 : -1;
+      cars.push({ line, dir, lane: dir * 2.1, s0: rnd() * 2 * line.half, speed: 6 + rnd() * 5, color: carColors[i % carColors.length] });
+    }
+    const carMesh = dynamic(farScatter(root, carGeo, paintedMat, cars.map((c) => ({ x: 0, z: 0, color: c.color }))));
+    const tmp = new THREE.Object3D();
+    anim.push((t) => {
+      cars.forEach((c, i) => {
+        const L = c.line.half * 2;
+        const s = ((c.s0 + c.dir * c.speed * t) % L + L) % L - c.line.half;
+        const y = GY + (c.line.along === "x" ? 0.2 : 0.12);
+        if (c.line.along === "z") { tmp.position.set(c.line.at + c.lane, y, s); tmp.rotation.set(0, c.dir > 0 ? 0 : Math.PI, 0); }
+        else { tmp.position.set(s, y, c.line.at - c.lane); tmp.rotation.set(0, c.dir > 0 ? Math.PI / 2 : -Math.PI / 2, 0); }
+        tmp.scale.setScalar(1.15);
+        tmp.updateMatrix();
+        carMesh.setMatrixAt(i, tmp.matrix);
+      });
+      carMesh.instanceMatrix.needsUpdate = true;
+    });
+
+    // ----- soft green hills all around the edge of the city -----
+    const hills = [];
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * TAU + rnd() * 0.15;
+      const d = 252 + rnd() * 18;
+      const s = 26 + rnd() * 22;
+      hills.push({ x: Math.cos(a) * d, y: GY - 4, z: Math.sin(a) * d, sx: s * 1.6, sy: 34 + rnd() * 34, sz: s, ry: -a + Math.PI / 2, color: rnd() < 0.5 ? 0x6fae62 : 0x82bd70 });
+    }
+    cityBits.push([G.midSphere(), hills, 0.6]);
+    painted(root, bakeCopies(cityBits));
+
+    // ----- clouds and hot-air balloons -----
+    const cloudMat = toon(0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.3 });
+    cloudRing(root, anim, cloudMat, { count: 14, rMin: 85, rMax: 140, yMin: 14, yMax: 40, sMin: 1.3, sMax: 2.2, speed: 0.006, seed: 5 });
+    cloudRing(root, anim, cloudMat, { count: 14, rMin: 170, rMax: 225, yMin: 25, yMax: 65, sMin: 2.4, sMax: 3.6, speed: 0.0035, seed: 9, start: 2 });
+    const balloonGeo = (c1, c2) => bakeGeo((b) => {
+      ball(b, c1, 0, 4.2, 0, 2.6, { sy: 1.15 });
+      for (let i = 0; i < 6; i++) ball(b, i % 2 ? c1 : c2, Math.cos(i / 6 * TAU) * 1.1, 4.2, Math.sin(i / 6 * TAU) * 1.1, 1.7, { sx: 0.6, sy: 1.7, sz: 0.6 });
+      put(b, G.taper(1.4, 0.5, 12), toon(c2), { y: 1.6, sy: 1.4 });
+      block(b, 0xb98a5e, 0, 0.3, 0, 0.9, 0.6, 0.9, 0.12);
+    });
+    const balloons = [
+      { mesh: dynamic(painted(root, balloonGeo(0xff6b5a, 0xffe25a), { s: 1.3 })), r: 70, y: 8, speed: 0.02, start: 2.2 },
+      { mesh: dynamic(painted(root, balloonGeo(0x6fc3ff, 0xffffff), { s: 1.6 })), r: 120, y: 14, speed: -0.012, start: 4.4 },
+    ];
+    anim.push((t) => balloons.forEach((b, i) => {
+      const a = b.start + t * b.speed;
+      b.mesh.position.set(Math.cos(a) * b.r, b.y + Math.sin(t * 0.5 + i) * 1.5, Math.sin(a) * b.r);
+    }));
+
+    return { GY };
+  }
+
   function buildOffice() {
     const root = new THREE.Group();
     const anim = [];
     addLights(root, { sky: 0xffffff, ground: 0xd9c7a8, hemi: 0.55, sun: 0.7, ambient: 0.35, fill: 0.35 });
+    // a bright blue sky and the city all around (see buildCity above)
+    skyDome(root, 0x4fb0f5, 0xd8efff, 0xc4e2f2);
+    buildCity(root, anim);
 
     // carpet tiles, like a real office
     const carpet = canvasTexture(256, 256, (ctx, w, h) => {
@@ -844,8 +1292,9 @@
       }
       ctx.strokeStyle = "rgba(40,50,70,0.25)"; ctx.lineWidth = 2;
       ctx.strokeRect(0, 0, 128, 128); ctx.strokeRect(128, 0, 128, 128); ctx.strokeRect(0, 128, 128, 128); ctx.strokeRect(128, 128, 128, 128);
-    }, [16, 16]);
-    disc(root, toon(0xffffff, { map: carpet }), 0, 0, 0, 40, { receive: true });
+    }, [7.3, 4.5]);
+    // the carpet covers the room exactly (outside is a long way down!)
+    put(root, new THREE.PlaneGeometry(36.5, 22.5), toon(0xffffff, { map: carpet }), { rx: -Math.PI / 2, shadow: false });
     // welcome mat by the door
     const matTex = canvasTexture(256, 112, (ctx, w, h) => {
       ctx.fillStyle = "#4a6aa0"; ctx.fillRect(0, 0, w, h);
@@ -858,57 +1307,104 @@
     // walls: soft blue-grey upper wall, darker panelling below, white trim.
     // Each wall is its own group so it can hide when the camera is behind it
     // (like a dollhouse), letting you spin the camera all the way around.
+    // The walls have REAL windows: each wall is built in pieces around its
+    // openings, with white frames and a see-through glass pane, so you can
+    // look out at the city (and the Miis can too!).
     const W = { back: -11, side: 18, front: 11 };
+    const WALL_H = 10;
     const backWall = group(root), leftWall = group(root), rightWall = group(root), frontWall = group(root);
     const wallC = 0xdce8f2, panelC = 0x5f7da3;
-    block(backWall, wallC, 0, 5, W.back - 0.25, 36.5, 10, 0.5, 0.02);
-    block(backWall, panelC, 0, 1.1, W.back + 0.05, 36, 2.2, 0.12, 0.02);
-    block(backWall, 0xffffff, 0, 2.25, W.back + 0.12, 36, 0.14, 0.1, 0.03);
-    block(backWall, 0xffffff, 0, 0.1, W.back + 0.12, 36, 0.2, 0.1, 0.03);
-    for (const sx of [-1, 1]) {
-      const wall = sx < 0 ? leftWall : rightWall;
-      block(wall, 0xd3e1ee, sx * W.side, 5, 0, 0.5, 10, 22.5, 0.02);
-      block(wall, panelC, sx * (W.side - 0.3), 1.1, 0, 0.12, 2.2, 22, 0.02);
-      block(wall, 0xffffff, sx * (W.side - 0.35), 2.25, 0, 0.1, 0.14, 22, 0.03);
+    // the glass is nearly clear, with a couple of shiny streaks
+    const glassTex = canvasTexture(128, 128, (ctx, w, h) => {
+      ctx.fillStyle = "rgba(200,235,255,0.08)"; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = "rgba(255,255,255,0.22)";
+      ctx.beginPath(); ctx.moveTo(w * 0.1, h); ctx.lineTo(w * 0.3, h); ctx.lineTo(w * 0.75, 0); ctx.lineTo(w * 0.55, 0); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.14)";
+      ctx.beginPath(); ctx.moveTo(w * 0.38, h); ctx.lineTo(w * 0.45, h); ctx.lineTo(w * 0.9, 0); ctx.lineTo(w * 0.83, 0); ctx.fill();
+    });
+    const glassMat = new THREE.MeshBasicMaterial({ map: glassTex, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+
+    // Builds one wall.
+    //   along:   the wall runs along "x" (back and front) or "z" (the sides)
+    //   core:    where the middle of the wall is (it's 0.5 thick)
+    //   inward:  +1 or -1, which side the room is on
+    //   from/to: where the wall starts and ends
+    //   openings: [{ c: middle, w: width, y0: bottom, y1: top, door: true/false }]
+    function buildWall(g, along, core, inward, from, to, openings) {
+      const face = core + inward * 0.25; // the inside surface of the wall
+      // a box along the wall, from u0 to u1 (along it) and y0 to y1 (up),
+      // centred "d" across, "thick" thick
+      const piece = (color, u0, u1, y0, y1, d, thick, r) => {
+        const len = u1 - u0, h = y1 - y0;
+        if (len <= 0.001 || h <= 0.001) return;
+        const u = (u0 + u1) / 2, y = (y0 + y1) / 2;
+        if (along === "x") block(g, color, u, y, d, len, h, thick, r);
+        else block(g, color, d, y, u, thick, h, len, r);
+      };
+      const ops = openings.slice().sort((a, b) => a.c - b.c);
+      const pad = along === "x" ? 0.5 : 0.25; // panelling stops at the corners
+      const panelD = face + inward * 0.05, trimD = face + inward * 0.11;
+      let u = from;
+      const solid = (u0, u1) => {
+        piece(wallC, u0, u1, 0, WALL_H, core, 0.5, 0.02);
+        const p0 = Math.max(u0, from + pad), p1 = Math.min(u1, to - pad);
+        piece(panelC, p0, p1, 0, 2.2, panelD, 0.12, 0.02);
+        piece(0xffffff, p0, p1, 2.18, 2.32, trimD, 0.1, 0.03);
+        piece(0xffffff, p0, p1, 0, 0.2, trimD, 0.1, 0.03);
+      };
+      for (const op of ops) {
+        const a = op.c - op.w / 2, b = op.c + op.w / 2;
+        solid(u, a);
+        piece(wallC, a, b, op.y1, WALL_H, core, 0.5, 0.02); // above the opening
+        if (op.door) {
+          // white door frame
+          piece(0xffffff, a, a + 0.2, 0, op.y1, core, 0.62, 0.03);
+          piece(0xffffff, b - 0.2, b, 0, op.y1, core, 0.62, 0.03);
+        } else {
+          piece(wallC, a, b, 0, op.y0, core, 0.5, 0.02); // below the window
+          if (op.y0 > 2.2) {
+            piece(panelC, a, b, 0, 2.2, panelD, 0.12, 0.02);
+            piece(0xffffff, a, b, 2.18, 2.32, trimD, 0.1, 0.03);
+          } else piece(panelC, a, b, 0, op.y0, panelD, 0.12, 0.02);
+          piece(0xffffff, a, b, 0, 0.2, trimD, 0.1, 0.03);
+          // white frame: a deep sill to lean on, the top, the sides, and the bars across
+          piece(0xffffff, a - 0.15, b + 0.15, op.y0 - 0.1, op.y0 + 0.06, face + inward * 0.12, 0.8, 0.04);
+          piece(0xffffff, a - 0.15, b + 0.15, op.y1 - 0.06, op.y1 + 0.14, core + inward * 0.05, 0.62, 0.03);
+          piece(0xffffff, a - 0.15, a + 0.06, op.y0, op.y1, core + inward * 0.05, 0.62, 0.03);
+          piece(0xffffff, b - 0.06, b + 0.15, op.y0, op.y1, core + inward * 0.05, 0.62, 0.03);
+          if (op.w > 3.5) piece(0xffffff, op.c - 0.06, op.c + 0.06, op.y0, op.y1, core, 0.16, 0.02);
+          if (op.y1 - op.y0 > 4) piece(0xffffff, a, b, op.y1 - 1.46, op.y1 - 1.34, core, 0.16, 0.02);
+          // the see-through glass
+          put(g, new THREE.PlaneGeometry(op.w, op.y1 - op.y0), glassMat, {
+            x: along === "x" ? op.c : core, y: (op.y0 + op.y1) / 2, z: along === "x" ? core : op.c,
+            ry: along === "x" ? 0 : Math.PI / 2, shadow: false, receive: false,
+          });
+        }
+        u = b;
+      }
+      solid(u, to);
     }
-    // front wall with the entrance door
-    block(frontWall, wallC, -10.5, 5, W.front + 0.25, 15, 10, 0.5, 0.02);
-    block(frontWall, wallC, 10.5, 5, W.front + 0.25, 15, 10, 0.5, 0.02);
-    block(frontWall, wallC, 0, 7.8, W.front + 0.25, 6, 4.4, 0.5, 0.02);
-    block(frontWall, panelC, -10.5, 1.1, W.front - 0.05, 15, 2.2, 0.12, 0.02);
-    block(frontWall, panelC, 10.5, 1.1, W.front - 0.05, 15, 2.2, 0.12, 0.02);
+    // big windows at the back (and a high one over the server room),
+    // windows each side of the front door, and windows on both side walls
+    const backWindows = [{ c: -10, w: 6, y0: 1.0, y1: 8.0 }, { c: 0, w: 6, y0: 1.0, y1: 8.0 }, { c: 9.6, w: 4, y0: 4.6, y1: 8.0 }];
+    const leftWindows = [{ c: 5.5, w: 6, y0: 1.0, y1: 8.0 }, { c: -7.2, w: 4.2, y0: 4.6, y1: 8.0 }];
+    const rightWindows = [{ c: -5.4, w: 3.6, y0: 1.0, y1: 8.0 }];
+    buildWall(backWall, "x", W.back - 0.25, 1, -18.25, 18.25, backWindows);
+    buildWall(frontWall, "x", W.front + 0.25, -1, -18.25, 18.25, [{ c: 0, w: 3.0, y0: 0, y1: 5.6, door: true }, { c: -10.5, w: 6, y0: 2.6, y1: 8.0 }, { c: 10.5, w: 6, y0: 2.6, y1: 8.0 }]);
+    buildWall(leftWall, "z", -W.side, 1, -11.25, 11.25, leftWindows);
+    buildWall(rightWall, "z", W.side, -1, -11.25, 11.25, rightWindows);
+    // the front door
     block(frontWall, 0x4a90e2, 0, 2.8, W.front + 0.2, 2.6, 5.6, 0.2, 0.08); // door
     block(frontWall, 0xbfe6ff, 0, 3.8, W.front + 0.08, 1.6, 1.4, 0.04, 0.02); // door window
     ball(frontWall, 0xffcf5a, 0.9, 2.7, W.front + 0.05, 0.12);
     block(frontWall, 0xffffff, 0, 5.75, W.front, 3.0, 0.25, 0.3, 0.05);
-
-    // windows with a city view and half-open blinds
-    const city = canvasTexture(512, 256, (ctx, w, h) => {
-      const g = ctx.createLinearGradient(0, 0, 0, h);
-      g.addColorStop(0, "#6cc2ff"); g.addColorStop(1, "#d6f0ff");
-      ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(90, 60, 22, 0, TAU); ctx.arc(120, 55, 28, 0, TAU); ctx.arc(150, 62, 20, 0, TAU); ctx.fill();
-      const r = seeded(11);
-      for (let b = 0; b < 16; b++) {
-        const bw = w / 16, bh = h * (0.3 + r() * 0.55);
-        ctx.fillStyle = ["#8fa6c9", "#a6b9d6", "#7f97bd", "#b5c6e0"][b % 4];
-        ctx.fillRect(b * bw, h - bh, bw - 3, bh);
-        ctx.fillStyle = "#fff7c7";
-        for (let y = h - bh + 8; y < h - 6; y += 13) for (let x = b * bw + 5; x < (b + 1) * bw - 8; x += 9) if (r() > 0.4) ctx.fillRect(x, y, 4, 6);
-      }
-      // blinds pulled half way down
-      for (let y = 0; y < h * 0.42; y += 12) { ctx.fillStyle = "#f4f6f8"; ctx.fillRect(0, y, w, 9); ctx.fillStyle = "#c9d2dc"; ctx.fillRect(0, y + 9, w, 1); }
-    });
-    for (const x of [-10, 0, 10]) {
-      put(backWall, new THREE.PlaneGeometry(6, 3.6), new THREE.MeshBasicMaterial({ map: city, toneMapped: false }), { x, y: 5.4, z: W.back + 0.02, shadow: false });
-      block(backWall, 0xffffff, x, 7.3, W.back + 0.15, 6.4, 0.22, 0.2, 0.05);
-      block(backWall, 0xffffff, x, 3.5, W.back + 0.25, 6.6, 0.18, 0.45, 0.05); // sill
-      block(backWall, 0xffffff, x, 5.4, W.back + 0.15, 0.14, 3.6, 0.15, 0.03);
-      block(backWall, 0xffffff, x - 3.1, 5.4, W.back + 0.15, 0.2, 3.8, 0.2, 0.05);
-      block(backWall, 0xffffff, x + 3.1, 5.4, W.back + 0.15, 0.2, 3.8, 0.2, 0.05);
-      cylinder(backWall, 0xffffff, x + 2, 3.75, W.back + 0.3, 0.16, 0.3);
-      ball(backWall, 0x5cc84a, x + 2, 4.05, W.back + 0.3, 0.25);
+    // little potted plants on the low window sills
+    for (const op of backWindows.slice(0, 2)) {
+      cylinder(backWall, 0xffffff, op.c + 2, 1.15, W.back + 0.3, 0.16, 0.3);
+      ball(backWall, 0x5cc84a, op.c + 2, 1.45, W.back + 0.3, 0.25);
     }
+    cylinder(leftWall, 0xff9ec7, -W.side + 0.55, 1.15, 7.4, 0.16, 0.3);
+    ball(leftWall, 0x5cc84a, -W.side + 0.55, 1.45, 7.4, 0.25);
 
     // posters with IT humour
     const poster = (wall, x, y, z, ry, lines, color, emoji) => {
@@ -1083,7 +1579,7 @@
       ctx.fillStyle = "#7fe0ff"; ctx.font = "bold 32px 'Nunito', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText("SERVER ROOM", w / 2, h / 2 + 1);
     });
-    put(backWall, new THREE.PlaneGeometry(2.6, 0.65), toon(0xffffff, { map: srSign }), { x: SR.x, y: 8.4, z: W.back + 0.05, shadow: false });
+    put(backWall, new THREE.PlaneGeometry(2.6, 0.65), toon(0xffffff, { map: srSign }), { x: 13.8, y: 8.4, z: W.back + 0.05, shadow: false });
 
     // ===== repair bench (right wall) =====
     const RB = { x: 16.2, z: -0.5 };
@@ -1307,8 +1803,8 @@
 
     return {
       group: root,
-      background: 0xe6edf3,
-      fog: null,
+      background: 0xd8efff,
+      fog: [0xd8efff, 90, 340],
       cameraTilt: 0.5,
       bounds: { minX: -17, maxX: 17, minZ: -10.4, maxZ: 10 },
       water: [],
@@ -1356,6 +1852,13 @@
           lines: ["Paper jam AGAIN?!", "It says OUT OF ORDER...", "Have you tried turning it off and on again?"] },
         { x: 15.4, z: 6.2, yaw: -Math.PI / 2, emoji: "🥤", activity: "at the vending machine",
           lines: ["Snack time!", "It ate my coin!", "Ooh, melon soda!"] },
+        // gazing out of the big windows at the city
+        { x: -10, z: -9.7, yaw: Math.PI, lookUp: 0.1, emoji: "🏙️", activity: "gazing out the window",
+          lines: ["What a view!", "I can see the river from here!", "The cars look like toys!", "Is that a hot-air balloon?"] },
+        { x: 0.6, z: -9.7, yaw: Math.PI, lookUp: 0.1, emoji: "🏙️", activity: "gazing out the window",
+          lines: ["We're SO high up!", "I can see my house from here!", "Look at all the little cars!", "Nice day for a walk in the park."] },
+        { x: -16.5, z: 5.2, yaw: -Math.PI / 2, lookUp: 0.1, emoji: "🏙️", activity: "gazing out the window",
+          lines: ["I could watch the city all day.", "Ooh, a skyscraper!", "Is it lunchtime yet?", "Those clouds look like sheep."] },
       ]),
       lines: [
         "Have you tried turning it off and on again?", "It works on my machine!", "Who unplugged the router?!",
@@ -1391,10 +1894,14 @@
       const r = seeded(31);
       for (let i = 0; i < 14; i++) {
         const x = r() * w, y = h * 0.15 + r() * h * 0.45, rad = 60 + r() * 140;
-        const ng = ctx.createRadialGradient(x, y, 0, x, y, rad);
         const c = ["255,120,200", "120,160,255", "190,120,255", "120,230,255"][i % 4];
-        ng.addColorStop(0, "rgba(" + c + ",0.35)"); ng.addColorStop(1, "rgba(" + c + ",0)");
-        ctx.fillStyle = ng; ctx.fillRect(0, 0, w, h);
+        // drawn three times (shifted left and right) so the clouds wrap round
+        // the sky smoothly, without a hard line where the picture's edges meet
+        for (const dx of [-w, 0, w]) {
+          const ng = ctx.createRadialGradient(x + dx, y, 0, x + dx, y, rad);
+          ng.addColorStop(0, "rgba(" + c + ",0.35)"); ng.addColorStop(1, "rgba(" + c + ",0)");
+          ctx.fillStyle = ng; ctx.fillRect(0, 0, w, h);
+        }
       }
       // (stars are separate round dots, added below)
     });
@@ -1418,7 +1925,7 @@
       g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.4, "rgba(255,255,255,0.8)"); g.addColorStop(1, "rgba(255,255,255,0)");
       ctx.fillStyle = g; ctx.fillRect(0, 0, 32, 32);
     });
-    const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 4.5, map: dot, transparent: true, depthWrite: false }));
+    const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 4.5, map: dot, transparent: true, depthWrite: false, fog: false }));
     dynamic(stars);
     root.add(stars);
     anim.push((t) => { stars.material.opacity = 0.6 + Math.sin(t * 2.5) * 0.35; });
@@ -1431,22 +1938,112 @@
       for (let i = 0; i < 22; i++) { ctx.beginPath(); ctx.ellipse(rr() * w, h * 0.2 + rr() * h * 0.6, 20 + rr() * 45, 14 + rr() * 26, rr() * 3, 0, TAU); ctx.fill(); }
       ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, 16); ctx.fillRect(0, h - 16, w, 16);
     });
-    const earth = dynamic(put(root, new THREE.SphereGeometry(22, 64, 40), toon(0xffffff, { map: earthTex }), { x: 42, y: 36, z: -185, shadow: false, receive: false }));
+    const earth = dynamic(put(root, new THREE.SphereGeometry(22, 64, 40), toon(0xffffff, { map: earthTex, fog: false }), { x: 42, y: 36, z: -185, shadow: false, receive: false }));
     const cloudTex = canvasTexture(512, 256, (ctx, w, h) => {
       const rr = seeded(14);
       ctx.fillStyle = "rgba(255,255,255,0.9)";
       for (let i = 0; i < 40; i++) { ctx.beginPath(); ctx.ellipse(rr() * w, rr() * h, 15 + rr() * 35, 5 + rr() * 8, 0, 0, TAU); ctx.fill(); }
     });
-    const earthClouds = dynamic(put(root, new THREE.SphereGeometry(22.6, 64, 40), new THREE.MeshToonMaterial({ map: cloudTex, transparent: true, gradientMap: gradient }), { x: 42, y: 36, z: -185, shadow: false, receive: false }));
-    const atmo = put(root, new THREE.SphereGeometry(24.2, 64, 40), new THREE.MeshBasicMaterial({ color: 0x8fd3ff, transparent: true, opacity: 0.3, side: THREE.BackSide, toneMapped: false }), { x: 42, y: 36, z: -185, shadow: false });
+    const earthClouds = dynamic(put(root, new THREE.SphereGeometry(22.6, 64, 40), new THREE.MeshToonMaterial({ map: cloudTex, transparent: true, gradientMap: gradient, fog: false }), { x: 42, y: 36, z: -185, shadow: false, receive: false }));
+    const atmo = put(root, new THREE.SphereGeometry(24.2, 64, 40), new THREE.MeshBasicMaterial({ color: 0x8fd3ff, transparent: true, opacity: 0.3, side: THREE.BackSide, toneMapped: false, fog: false }), { x: 42, y: 36, z: -185, shadow: false });
     dynamic(atmo);
     anim.push((t) => { earth.rotation.y = t * 0.04; earthClouds.rotation.y = t * 0.06; });
     const planet = dynamic(group(root, -85, 34, -150));
-    put(planet, G.sphere(), toon(0xffb46b), { s: 11, shadow: false });
-    put(planet, G.sphere(), toon(0xff9a5a), { s: 11.05, sy: 0.25, shadow: false });
-    put(planet, G.torus(18, 2.0), toon(0xffe0b0, { transparent: true, opacity: 0.85 }), { rx: 1.25, ry: 0.3, sz: 0.1, shadow: false });
+    put(planet, G.sphere(), toon(0xffb46b, { fog: false }), { s: 11, shadow: false });
+    put(planet, G.sphere(), toon(0xff9a5a, { fog: false }), { s: 11.05, sy: 0.25, shadow: false });
+    put(planet, G.torus(18, 2.0), toon(0xffe0b0, { transparent: true, opacity: 0.85, fog: false }), { rx: 1.25, ry: 0.3, sz: 0.1, shadow: false });
 
-    // moon ground with soft bumps and speckles
+    // more planets and moons, dotted all around the sky
+    const stripes = (colors, seed) => canvasTexture(256, 128, (ctx, w, h) => {
+      const rr = seeded(seed);
+      let y = 0, i = 0;
+      while (y < h) { const bh = 6 + rr() * 18; ctx.fillStyle = colors[i++ % colors.length]; ctx.fillRect(0, y, w, bh + 1); y += bh; }
+      ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.beginPath(); ctx.ellipse(w * 0.3, h * 0.6, 16, 7, 0, 0, TAU); ctx.fill();
+    });
+    const spotty = (base, dark, seed) => canvasTexture(256, 128, (ctx, w, h) => {
+      ctx.fillStyle = base; ctx.fillRect(0, 0, w, h);
+      const rr = seeded(seed);
+      for (let i = 0; i < 26; i++) {
+        const x = rr() * w, y = 10 + rr() * (h - 20), rad = 3 + rr() * 9;
+        ctx.fillStyle = dark; ctx.beginPath(); ctx.arc(x, y, rad, 0, TAU); ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,0.35)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, rad, Math.PI * 0.9, Math.PI * 1.6); ctx.stroke();
+      }
+    });
+    const spinners = [];
+    const skyPlanet = (x, y, z, r, tex, tilt, spin) => {
+      const m = dynamic(put(root, cachedGeo("planetSphere", () => new THREE.SphereGeometry(1, 40, 24)), toon(0xffffff, { map: tex, fog: false }), { x, y, z, s: r, rz: tilt || 0, shadow: false, receive: false }));
+      spinners.push([m, spin || 0.03]);
+      return m;
+    };
+    // a big striped gas giant behind the camera, with its little yellow moon
+    skyPlanet(-110, 40, 150, 18, stripes(["#7fd8d0", "#5fbfc9", "#a8ece0", "#4aa6b8", "#c9f4ea"], 3), 0.2, 0.02);
+    put(root, G.sphere(), toon(0xffe27a, { fog: false }), { x: -76, y: 62, z: 126, s: 4, shadow: false, receive: false });
+    // a lavender moon covered in craters (right)
+    skyPlanet(178, 30, 42, 9, spotty("#d9c8f5", "rgba(150,120,200,0.55)", 8), 0.3, -0.04);
+    // a small red planet with a thin ring (left)
+    const redP = group(root, -186, 26, -26);
+    put(redP, G.sphere(), toon(0xff7a6b, { fog: false }), { s: 7, shadow: false, receive: false });
+    put(redP, G.torus(11, 0.6), toon(0xffd0c0, { transparent: true, opacity: 0.8, fog: false }), { rx: 1.3, ry: -0.4, sz: 0.1, shadow: false, receive: false });
+    anim.push((t) => spinners.forEach(([m, s]) => { m.rotation.y = t * s; }));
+
+    // a ring-shaped space station, slowly turning (one painted shape)
+    const skyPaint = paintedMat.clone();
+    skyPaint.fog = false;
+    const station = dynamic(put(root, bakeGeo((g) => {
+      put(g, new THREE.TorusGeometry(9, 1.0, 10, 40), toon(0xf2f0fa));
+      put(g, G.cyl(16), toon(0xd5d8e3), { sx: 1.8, sy: 7, sz: 1.8, rx: Math.PI / 2 });
+      ball(g, 0xf2f0fa, 0, 0, 0, 2.6);
+      for (let i = 0; i < 4; i++) put(g, G.cyl(8), toon(0xc9cce0), { sx: 0.35, sy: 18, sz: 0.35, rz: (i / 4) * Math.PI });
+      for (const z of [-5.5, 5.5]) {
+        block(g, 0x2e5fd6, 0, 0, z, 16, 0.2, 3.2, 0.05);
+        block(g, 0x9fc3ff, 0, 0.12, z, 15.6, 0.04, 0.12, 0.01);
+      }
+      for (let i = 0; i < 8; i++) ball(g, i % 2 ? 0xffcf3a : 0x7fe0ff, Math.cos((i / 8) * TAU) * 9, Math.sin((i / 8) * TAU) * 9, 1.0, 0.35);
+    }), skyPaint, { x: 112, y: 42, z: 116, ry: -2.38, rx: 0.35, shadow: false, receive: false })); // (turned to face the moon base)
+    anim.push((t) => { station.rotation.z = t * 0.05; });
+
+    // little satellites zooming round overhead
+    const satGeo = bakeGeo((g) => {
+      block(g, 0xffcf3a, 0, 0, 0, 1.2, 1.2, 1.6, 0.15);
+      for (const x of [-1.9, 1.9]) block(g, 0x2e5fd6, x, 0, 0, 2.4, 0.08, 1.0, 0.03);
+      cylinder(g, 0xbbbbbb, 0, 0, 0, 0.05, 6.2, { rz: Math.PI / 2, seg: 6 });
+      put(g, G.cone(10), toon(0xf2f3f8), { y: 0.95, s: 0.5, sy: 0.4, rx: Math.PI });
+      ball(g, 0xff5a64, 0, -0.75, 0.5, 0.15);
+    });
+    const sats = [
+      { mesh: dynamic(painted(root, satGeo, { s: 1.2 })), r: 52, y: 26, speed: 0.05, start: 0 },
+      { mesh: dynamic(painted(root, satGeo, { s: 1.0 })), r: 70, y: 34, speed: -0.035, start: 2.5 },
+    ];
+    anim.push((t) => sats.forEach((s, i) => {
+      const a = s.start + t * s.speed;
+      s.mesh.position.set(Math.cos(a) * s.r, s.y + Math.sin(a * 2 + i) * 3, Math.sin(a) * s.r);
+      s.mesh.rotation.set(t * 0.3, -a, Math.sin(t * 0.5) * 0.4);
+    }));
+
+    // a comet with a glowing tail, slowly sweeping across the sky
+    const comet = dynamic(group(root, 0, 0, 0));
+    ball(comet, toon(0xf4feff, { emissive: 0xbff3ff, emissiveIntensity: 1, fog: false }), 0, 0, 0, 1.7, { shadow: false, receive: false });
+    // the soft glow and tail are see-through, and "add" their light to the sky
+    const glowy = (opacity, map) => new THREE.MeshBasicMaterial({ color: 0x9fe8ff, map, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide, toneMapped: false });
+    const tailTex = canvasTexture(16, 128, (ctx, w, h) => {
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, "rgba(255,255,255,0)"); g.addColorStop(0.7, "rgba(255,255,255,0.45)"); g.addColorStop(1, "rgba(255,255,255,1)");
+      ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    });
+    put(comet, G.midSphere(), glowy(0.35), { s: 3.4, shadow: false, receive: false });
+    put(comet, new THREE.ConeGeometry(2.0, 30, 16, 1, true), glowy(0.8, tailTex), { z: -15, rx: -Math.PI / 2, shadow: false, receive: false });
+    put(comet, new THREE.ConeGeometry(3.6, 18, 16, 1, true), glowy(0.4, tailTex), { z: -9, rx: -Math.PI / 2, shadow: false, receive: false });
+    const cometNext = new THREE.Vector3();
+    const cometAt = (t, v) => v.set(Math.cos(t * 0.018) * 170, 48 + Math.sin(t * 0.03) * 12, Math.sin(t * 0.018) * 170);
+    anim.push((t) => {
+      cometAt(t, comet.position);
+      comet.lookAt(cometAt(t + 1, cometNext)); // the tail trails behind
+    });
+
+
+    // moon ground with soft bumps and speckles. It's a big round disc that is
+    // flat where the Miis walk, bumpy further out, and rises into a ring of
+    // hills at the edge, so there's a horizon whichever way you look.
     const moonTex = canvasTexture(256, 256, (ctx, w, h) => {
       ctx.fillStyle = "#b9b0d6"; ctx.fillRect(0, 0, w, h);
       const rr = seeded(5);
@@ -1454,17 +2051,46 @@
         ctx.fillStyle = rr() < 0.5 ? "rgba(150,138,190,0.28)" : "rgba(225,220,245,0.3)";
         ctx.beginPath(); ctx.arc(rr() * w, rr() * h, 2 + rr() * 6, 0, TAU); ctx.fill();
       }
-    }, [10, 10]);
-    const groundGeo = new THREE.PlaneGeometry(160, 160, 90, 90);
+    }, [29, 29]);
+    // how high the ground is at (x, z)
+    const moonY = (x, z) => {
+      const d = Math.hypot(x / 1.3, z);
+      if (d < 24) return 0;
+      const bump = Math.sin(x * 0.12) * Math.cos(z * 0.1) * 1.6 + Math.sin(x * 0.05 - z * 0.07) * 2.5;
+      const a = Math.atan2(z, x);
+      const rim = Math.max(0, (Math.hypot(x, z) - 120) / 110); // 0 near us, 1 at the edge
+      return bump * 0.5 * Math.min(1, (d - 24) / 14) + rim * rim * (9 + Math.sin(a * 5) * 4 + Math.sin(a * 13 + 1) * 2);
+    };
+    const groundGeo = new THREE.RingGeometry(0.5, 235, 96, 48);
     const gp = groundGeo.attributes.position;
-    for (let i = 0; i < gp.count; i++) {
-      const x = gp.getX(i), y = gp.getY(i);
-      const d = Math.hypot(x / 1.3, y);
-      const bump = Math.sin(x * 0.12) * Math.cos(y * 0.1) * 1.6 + Math.sin(x * 0.05 + y * 0.07) * 2.5;
-      gp.setZ(i, d < 24 ? 0 : bump * 0.5 * Math.min(1, (d - 24) / 14));
-    }
+    for (let i = 0; i < gp.count; i++) gp.setZ(i, moonY(gp.getX(i), -gp.getY(i))); // (the disc is turned to lie flat below)
     groundGeo.computeVertexNormals();
     put(root, groundGeo, toon(0xffffff, { map: moonTex }), { rx: -Math.PI / 2, shadow: false });
+
+    // big craters and lumpy mountains further out, all the way around
+    const farCraters = [], farRims = [], peaks = [];
+    const fr = seeded(41);
+    for (let i = 0; i < 22; i++) {
+      const a = fr() * TAU, d = 42 + fr() * 100;
+      const x = Math.cos(a) * d, z = Math.sin(a) * d, rad = 3 + fr() * 6;
+      const y = moonY(x, z);
+      farRims.push({ x, y: y - 0.2, z, s: rad, sz: rad * 0.45, rx: -Math.PI / 2, color: fr() < 0.5 ? 0xa79dc8 : 0x9d93c0 });
+      farCraters.push({ x, y: y + 0.05, z, s: rad, rx: -Math.PI / 2, color: 0x8f85b4 });
+    }
+    for (let i = 0; i < 30; i++) {
+      const a = (i / 30) * TAU + fr() * 0.12, d = 175 + fr() * 45;
+      const x = Math.cos(a) * d, z = Math.sin(a) * d, s = 10 + fr() * 14;
+      peaks.push({ x, y: moonY(x, z) - 3, z, sx: s * 1.6, sy: 7 + fr() * 13, sz: s, ry: -a, color: [0x9d93c6, 0x8a80b5, 0xb2a8d8][i % 3] });
+    }
+    painted(root, bakeCopies([[G.torus(1, 0.22), farRims], [G.circle(), farCraters], [G.midSphere(), peaks]]));
+
+    // a tiny far-away outpost on the hills, with a blinking beacon
+    const outpost = group(root, -100, moonY(-100, 70) - 0.5, 70, 0.6);
+    put(outpost, new THREE.SphereGeometry(3, 16, 8, 0, TAU, 0, Math.PI / 2), toon(0xf2f0fa), { shadow: false });
+    cylinder(outpost, 0xd5d8e3, 5, 1.2, 0, 1.2, 2.4, { seg: 12, shadow: false });
+    cylinder(outpost, 0x8f96a3, -2, 5, 1, 0.12, 8, { seg: 6, shadow: false });
+    const beacon = dynamic(ball(outpost, toon(0xff3b3b, { emissive: 0xff3b3b, emissiveIntensity: 1 }), -2, 9.2, 1, 0.45, { shadow: false }));
+    anim.push((t) => { beacon.material.emissiveIntensity = Math.floor(t * 1.5) % 2 ? 1 : 0.1; });
 
     // craters
     const cr = seeded(7);
@@ -1636,7 +2262,7 @@
     return {
       group: root,
       background: 0x120c3a,
-      fog: null,
+      fog: [0x2c2068, 110, 330],
       cameraTilt: 0.2,
       cameraTargetY: 3.2,
       helmet: true,
@@ -1680,10 +2306,21 @@
     { id: "space", name: "Outer Space", icon: "🚀" },
   ];
 
-  function build(id) {
-    const s = builders[id]();
-    const meta = list.find((l) => l.id === id);
+  // Places that aren't buttons at the top (like the inside of a Mii's home).
+  const hiddenPlaces = [];
+
+  // opts: anything the place needs (for a home: whose home and its furniture)
+  function build(id, opts) {
+    const s = builders[id](opts || {});
+    const meta = list.find((l) => l.id === id) || hiddenPlaces.find((l) => l.id === id);
     return Object.assign(s, meta, { helmet: !!s.helmet, floaty: !!s.floaty });
+  }
+
+  // Lets other files (like homes3d.js) add places. meta = { id, name, icon }.
+  // hidden: true = not shown as a button at the top.
+  function addPlace(meta, builder, hidden) {
+    builders[meta.id] = builder;
+    (hidden ? hiddenPlaces : list).push(meta);
   }
 
   // Frees the GPU memory used by a place when we leave it.
@@ -1695,5 +2332,11 @@
     });
   }
 
-  root.World3D = { build, dispose, list, debug };
+  // the building blocks, so other files can make places in the same style
+  const kit = {
+    THREE, TAU, toon, glow, G, put, ball, cylinder, block, disc, group, dynamic, canvasTexture, seeded,
+    skyDome, addLights, mergeStatic, scatter, roundTree, palmTree, bush, parkBench, lampPost, rock,
+  };
+
+  root.World3D = { build, dispose, list, debug, kit, addPlace };
 })(typeof self !== "undefined" ? self : this);

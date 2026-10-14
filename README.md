@@ -145,7 +145,7 @@ The random Miis (and the ones from **Add random Miis**) are built from the one b
   - palm trees and a white picket fence
   - a duck pond with ducklings, lily pads and reeds
   - a three-tier fountain, swings, a picnic blanket, lamp posts and flower beds
-  - butterflies, seagulls, clouds, a lighthouse and a sailboat
+  - butterflies, seagulls, sailboats, and clouds and islands all the way round (a village, a mountain, rock arches, a lighthouse...)
 - **Office (IT help desk department)** on the top floor of a tower, with real windows looking out over a sunny city (Miis like to gaze out of them):
   - a help desk counter with a "Now serving" ticket display, a take-a-number machine and a waiting area
   - tech desks with dual monitors, PC towers, headsets and a debugging rubber duck
@@ -157,6 +157,7 @@ The random Miis (and the ones from **Add random Miis**) are built from the one b
   - a glass dome with a garden inside, a rocket on a launch pad with blinking lights, and a launch tower
   - solar panels, a turning satellite dish, a rover and glowing crystals
   - a waving flag, Earth with moving clouds, and a UFO that zooms past now and then
+  - moon hills and craters all the way round, more planets and moons, a turning space station, satellites and a comet
 
 ## If a Mii doesn't animate
 

@@ -1276,6 +1276,25 @@
         }
       }
       this.stepToward(w, next.x, next.z, dt, last);
+      // Hardly moved for a while (wedged between someone and something)?
+      // Plan a new route that goes around EVERY Mii nearby, even walking ones.
+      w.stallIn = (w.stallIn === undefined ? 0.8 : w.stallIn) - dt;
+      if (w.stallIn <= 0) {
+        const moved = w.stallFrom ? Math.hypot(w.x - w.stallFrom.x, w.z - w.stallFrom.z) : 1;
+        w.stallFrom = { x: w.x, z: w.z };
+        w.stallIn = 0.8;
+        if (moved < 0.15) {
+          const goal = w.path[w.path.length - 1];
+          const everyone = this.active().filter((o) => o !== w && o !== w.partner).map((o) => ({ x: o.x, z: o.z, r: 0.75 }));
+          const path = nav.findPath(w.x, w.z, goal.x, goal.z, everyone);
+          w.stalls = (w.stalls || 0) + 1;
+          if (!path || w.stalls > 4) { w.stalls = 0; return "lost"; }
+          w.path = path;
+          w.bestDist = Infinity;
+          return "walking";
+        }
+        w.stalls = 0;
+      }
       // stuck check: if we haven't got any closer for a while, plan a new route
       if (d < w.bestDist - 0.05) { w.bestDist = d; w.stuckTime = 0; }
       else w.stuckTime = (w.stuckTime || 0) + dt;
