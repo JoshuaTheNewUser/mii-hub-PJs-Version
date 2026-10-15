@@ -630,7 +630,7 @@
       if (F.indoor) {
         // the area behind and beside the room (where the windows are), never
         // inside it (+ its walls), and not in front of it (that's where we look from)
-        F.ex0 = b.minX - 3.5; F.ex1 = b.maxX + 3.5; F.ez0 = b.minZ - 3.5; F.ez1 = b.maxZ + 3.5;
+        F.ex0 = b.minX - 6; F.ex1 = b.maxX + 6; F.ez0 = b.minZ - 6; F.ez1 = b.maxZ + 6;
         F.x0 = cx - hw - 12; F.x1 = cx + hw + 12;
         F.z0 = F.ez0 - 12; F.z1 = F.ez1;
         F.y0 = ty - 14; F.y1 = ty + 16; F.ground = F.y0;
@@ -648,7 +648,7 @@
       for (let tries = 0; tries < 6; tries++) {
         x = rnd(F.x0, F.x1); z = rnd(F.z0, F.z1);
         if (!F.indoor || x < F.ex0 || x > F.ex1 || z < F.ez0 || z > F.ez1) break;
-        if (tries === 5) z = rnd(F.z0, F.ez0); // (behind the room)
+        if (tries === 5) { z = rnd(F.z0, F.ez0); x = rnd(F.x0, F.x1); } // (behind the room)
       }
       P.setPos(i, x, high ? F.y1 + rnd(0, 3) : rnd(F.y0, F.y1), z);
     }
