@@ -7,6 +7,7 @@
  *
  * Settings (environment variables):
  *     PORT        which port to listen on (default 8787)
+ *     HOST        which address to listen on (default: all; 127.0.0.1 = this computer only)
  *     MAX_PLAYERS players per room (default 8)
  *
  * What it does:
@@ -25,6 +26,7 @@ const { WebSocketServer } = require("ws");
 
 const VERSION = 1;
 const PORT = parseInt(process.env.PORT || "8787", 10);
+const HOST = process.env.HOST || undefined; // e.g. 127.0.0.1 = only reachable through Tailscale Funnel
 const MAX_PLAYERS = Math.max(2, Math.min(16, parseInt(process.env.MAX_PLAYERS || "8", 10))); // most a host can pick
 const TO_WIN = 20;               // first to 20 eliminations
 const TIME_LIMIT = 10 * 60e3;    // or whoever's ahead after 10 minutes
@@ -372,7 +374,7 @@ function start(port) {
       const onOk = () => { server.removeListener("error", onErr); resolve(server.address().port); };
       server.once("error", onErr);
       server.once("listening", onOk);
-      server.listen(p);
+      server.listen(p, HOST);
     };
     attempt(port);
   });
