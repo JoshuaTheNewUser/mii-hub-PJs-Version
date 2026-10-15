@@ -3,12 +3,12 @@
  * Online Paintball: talking to the server (server/paintball-server.js) and
  * the "Online" tab of the Paintball lobby.
  *
- *   1. Host a game from your own computer (desktop app: the server runs inside
- *      Mii Hub, see electron/paintball-host.js), or join one by typing the
- *      host's address. Your chosen Mii (its .glb file, or its colours for a
- *      random Mii) is sent so the others can see it.
- *   2. Make a room, or join one (when there's only one room you join it straight away).
- *   3. The room's host presses Start. Everyone plays Respawn mode: first to
+ *   1. Opening the Online tab connects to the Mii Hub Paintball server (one
+ *      server everyone uses, so nobody has to open ports). Your chosen Mii (its
+ *      .glb file, or its colours for a random Mii) is sent so others can see it.
+ *   2. Find Lobby: a list of everyone hosting (🔒 = needs a password), or
+ *      Host Lobby: a name, an optional password and how many players.
+ *   3. The lobby's host presses Start. Everyone plays Respawn mode: first to
  *      20 eliminations (or the most after 10 minutes).
  *
  * The match itself is pb-game.js (Match with a `net`). The server is the
@@ -19,6 +19,8 @@
 
   const VERSION = 1;          // must match the server's VERSION
   const DEFAULT_PORT = 8787;
+  // Where everyone meets to find lobbies (the Mii Hub Paintball server, see server/README.md).
+  const DEFAULT_SERVER = "";
 
   // "desktopjmserver" -> "ws://desktopjmserver:8787", "https://x.example" -> "wss://x.example"
   function normalizeUrl(s) {
@@ -63,9 +65,11 @@
         try { ws = new WebSocket(this.url); } catch (e) { reject(new Error("That address doesn't look right.")); return; }
         this.ws = ws;
         let opened = false;
-        const timer = setTimeout(() => { if (!opened) { ws.close(); reject(new Error("The server didn't answer (is it running, and is the address right?)")); } }, 8000);
-        ws.onopen = () => { opened = true; clearTimeout(timer); resolve(); this.pingTimer = setInterval(() => this.send({ t: "ping", c: performance.now() }), 2000); };
-        ws.onerror = () => { if (!opened) { clearTimeout(timer); reject(new Error("Couldn't reach the server (is it running, and is the address right?)")); } };
+        // (a free cloud server can take a little while to wake up)
+        const timer = setTimeout(() => { if (!opened) { ws.close(); reject(new Error("The Paintball server didn't answer. It may be switched off: try again in a bit.")); } }, 45000);
+        if (this.onSlow) this.slowTimer = setTimeout(() => { if (!opened) this.onSlow(); }, 5000);
+        ws.onopen = () => { opened = true; clearTimeout(timer); clearTimeout(this.slowTimer); resolve(); this.pingTimer = setInterval(() => this.send({ t: "ping", c: performance.now() }), 2000); };
+        ws.onerror = () => { if (!opened) { clearTimeout(timer); clearTimeout(this.slowTimer); reject(new Error("Couldn't reach the Paintball server. It may be switched off: try again in a bit.")); } };
         ws.onclose = () => {
           clearInterval(this.pingTimer);
           const was = !this.closed;
@@ -108,8 +112,8 @@
       net: null, status: "", statusCls: "", connecting: false,
       rooms: [], room: null, roster: new Map(), loading: new Map(), starting: false,
       spawned: new Map(), // who's alive in the match and where they came in (for joining late)
-      hosting: null,      // { port, lan, publicIp, upnp, why } while you host a game
-      autoJoin: false,
+      askPass: null,      // the lobby we're typing a password for
+      failed: false,
     };
     let container = null;
     const rerender = () => { if (container && !ctx.inMatch()) render(container); };
@@ -143,33 +147,36 @@
       return p;
     }
 
-    async function connect(address, hosting) {
+    // the Mii Hub online server everyone uses (can be changed under "Server")
+    const serverAddress = () => (settings.server || DEFAULT_SERVER || "").trim();
+
+    async function connect(address) {
+      address = (address || "").trim();
       const url = normalizeUrl(address);
-      if (!url) return setStatus("Type the host's address first.", "err");
-      if (!hosting) { settings.server = address.trim(); ctx.save(); }
-      disconnect(true, hosting);
-      st.autoJoin = !hosting;
+      if (!url) return setStatus("", "");
+      disconnect(true);
       st.connecting = true;
-      setStatus("Connecting to " + url + "…");
+      st.failed = false;
+      setStatus("Connecting to the Paintball server…");
       const net = new Net(url);
+      net.onSlow = () => setStatus("Waking up the Paintball server… (this can take up to a minute)");
       try {
         await net.connect();
       } catch (err) {
         st.connecting = false;
+        st.failed = true;
         return setStatus(err.message, "err");
       }
       st.net = net;
       st.connecting = false;
       net.handle({
-        welcome: () => setStatus("Connected!", "ok"),
-        rooms: (m) => {
-          st.rooms = m.rooms;
-          // joining a friend's game: there's usually just their room, so go straight in
-          if (st.autoJoin && !st.room && m.rooms.length === 1 && m.rooms[0].players < m.rooms[0].max) { st.autoJoin = false; net.send({ t: "join", room: m.rooms[0].id }); }
-          rerender();
+        welcome: () => setStatus("", ""),
+        rooms: (m) => { st.rooms = m.rooms; rerender(); },
+        room: (m) => { st.room = m.room; st.askPass = null; rerender(); },
+        err: (m) => {
+          if (m.code === "password") { st.askPass = m.room; setStatus(m.msg, "err"); }
+          else setStatus(m.msg, "err");
         },
-        room: (m) => { st.room = m.room; rerender(); },
-        err: (m) => setStatus(m.msg, "err"),
         mii: (m) => {
           loadMii(m).then((entry) => {
             const match = root.__pb;
@@ -182,8 +189,8 @@
         kill: (m) => st.spawned.delete(m.v),
         close: () => {
           st.net = null; st.room = null; st.rooms = []; st.roster.clear(); st.loading.clear();
-          setStatus(st.hosting ? "Your game stopped." : "Disconnected (the host may have stopped the game).", "err");
-          if (st.hosting) stopHosting();
+          st.failed = true;
+          setStatus("Lost the connection to the Paintball server.", "err");
         },
       });
       await sendHello();
@@ -193,38 +200,20 @@
       const you = ctx.you;
       const tpl = await opts.templateFor(you);
       const mii = you.kind === "glb" && you.bytes ? { kind: "glb", b64: toBase64(you.bytes), fileName: you.fileName || "mii.glb" } : { kind: "demo", look: you.look || {} };
-      st.net.send({ t: "hello", v: VERSION, name: you.name || "Mii", color: ctx.paintFor(tpl), mii });
+      if (st.net) st.net.send({ t: "hello", v: VERSION, name: you.name || "Mii", color: ctx.paintFor(tpl), mii });
     }
 
-    function disconnect(quiet, keepHosting) {
+    function disconnect(quiet) {
       if (st.net) st.net.close();
       st.net = null; st.room = null; st.rooms = []; st.roster.clear(); st.loading.clear();
-      if (st.hosting && !keepHosting) stopHosting();
       if (!quiet) setStatus("");
     }
 
-    // ---- hosting a game from this computer (desktop app only) ----
-    const hostApi = () => root.miiHubDesktop && root.miiHubDesktop.paintballHost;
-    async function host() {
-      const H = hostApi();
-      if (!H) return;
-      setStatus("Starting your game…");
-      let r;
-      try { r = await H.start(); } catch (err) { return setStatus("Couldn't start your game: " + (err.message || err), "err"); }
-      st.hosting = r;
-      await connect("localhost:" + r.port, true);
-      if (!st.net) { stopHosting(); return; }
-      const off = st.net.on("welcome", () => { off(); st.net.send({ t: "create", name: (ctx.you.name || "My") + "'s game" }); });
-      // the router check takes a few seconds
-      H.details().then((d) => { if (st.hosting) { st.hosting = d; rerender(); } });
+    function hostLobby(name, password, max) {
+      st.net.send({ t: "create", name: name || (ctx.you.name || "My") + "'s lobby", password: password || "", max });
     }
-    function stopHosting() {
-      const H = hostApi();
-      st.hosting = null;
-      if (H) H.stop();
-    }
-    function copy(text, btn) {
-      try { navigator.clipboard.writeText(text); btn.textContent = "Copied!"; setTimeout(() => { btn.textContent = "Copy"; }, 1500); } catch (e) { /* ignore */ }
+    function joinLobby(id, password) {
+      st.net.send({ t: "join", room: id, password: password || "" });
     }
 
     async function startMatch(m) {
@@ -236,7 +225,7 @@
         // wait for everyone's Mii to be ready (they were sent when they joined)
         const ids = room ? room.players.map((p) => p.id).filter((id) => id !== st.net.id) : [];
         const entries = await Promise.all(ids.map((id) => st.loading.get(id) || Promise.resolve(st.roster.get(id))));
-        // the server gives everyone in the room their own paint colour
+        // the server gives everyone in the lobby their own paint colour
         const colorOf = (id) => { const p = room && room.players.find((x) => x.id === id); return p && p.color; };
         for (const e of entries) if (e && colorOf(e.id)) e.color = colorOf(e.id);
         for (const e of entries) if (e) e.spawn = m.late ? st.spawned.get(e.id) : null;
@@ -250,18 +239,28 @@
     }
 
     // ---- drawing the tab ----
+    const stop = (e) => e.stopPropagation(); // typing in a box shouldn't trigger game keys
+    function input(placeholder, value, type) {
+      const i = el("input"); i.type = type || "text"; i.placeholder = placeholder; i.value = value || "";
+      i.spellcheck = false; i.addEventListener("keydown", stop);
+      return i;
+    }
+
     function render(c) {
       container = c;
       const old = c.querySelector(".pb-online");
       if (old) old.remove();
       const wrap = el("div", "pb-online");
+      const addr = serverAddress();
+      // connect by itself when you open the tab
+      if (!st.net && !st.connecting && !st.failed && addr) setTimeout(() => connect(addr), 0);
 
       // left: who you play as (+ settings)
       const left = el("div");
-      const inRoom = !!st.room;
+      const inLobby = !!st.room;
       left.appendChild(el("h2", "pb-h2", "Play as"));
       left.appendChild(ctx.miiPicker(opts, ctx.recs, ctx.you, null, (r) => {
-        if (inRoom) return setStatus("Leave the room to change your Mii.", "err");
+        if (inLobby) return setStatus("Leave the lobby to change your Mii.", "err");
         ctx.setYou(r);
         if (st.net) sendHello();
         rerender();
@@ -272,148 +271,161 @@
       ctx.settingsControls(setBox, settings, () => ctx.save());
       left.appendChild(setBox);
 
-      // right: server, rooms, the room you're in
-      const right = el("div", "pb-box");
-      if (!st.net) {
-        right.appendChild(el("h3", null, "Host a game"));
-        if (hostApi()) {
-          const hb = el("button", "pb-go", st.connecting && st.hosting ? "STARTING…" : "HOST ▶");
-          hb.disabled = st.connecting;
-          hb.addEventListener("click", host);
-          hb.style.marginBottom = "14px";
-          right.appendChild(hb);
-          right.appendChild(el("div", "pb-help", "Your computer runs the game and your friends join you. Keep Mii Hub open while you play."));
-        } else {
-          right.appendChild(el("div", "pb-help", "Hosting works in the Mii Hub desktop app. You can still join a friend's game below."));
-        }
-        const h3 = el("h3", null, "Join a friend's game");
-        h3.style.marginTop = "18px";
-        right.appendChild(h3);
-        const row = el("div", "pb-row");
-        const inp = el("input"); inp.type = "text"; inp.placeholder = "The host's address, e.g. 192.168.1.20:8787"; inp.value = settings.server || "";
-        inp.spellcheck = false;
-        const go = el("button", "pb-btn primary", st.connecting && !st.hosting ? "Joining…" : "Join");
-        go.disabled = st.connecting;
-        const doIt = () => connect(inp.value);
-        go.addEventListener("click", doIt);
-        inp.addEventListener("keydown", (e) => { if (e.key === "Enter") doIt(); e.stopPropagation(); });
-        row.append(inp, go);
-        right.appendChild(row);
-        if (st.status) right.appendChild(el("div", "pb-status " + st.statusCls, st.status));
-        right.appendChild(el("div", "pb-help", "Ask whoever is hosting for their address (they see it after pressing Host). It also works with a Paintball server (see server/README.md)."));
-      } else if (!st.room) {
-        right.appendChild(el("h3", null, "Rooms"));
-        const st2 = el("div", "pb-status ok", "Connected to " + settings.server + (st.net.ping != null ? " · " + st.net.ping + " ms" : ""));
-        right.appendChild(st2);
-        if (st.status && st.statusCls === "err") right.appendChild(el("div", "pb-status err", st.status));
-        const row = el("div", "pb-row");
-        const name = el("input"); name.type = "text"; name.placeholder = (ctx.you.name || "My") + "'s room"; name.maxLength = 32;
-        name.addEventListener("keydown", (e) => e.stopPropagation());
-        const mk = el("button", "pb-btn primary", "Create room");
-        mk.addEventListener("click", () => st.net.send({ t: "create", name: name.value.trim() }));
-        row.append(name, mk);
-        right.appendChild(row);
-        const list = el("div", "pb-rooms");
-        if (!st.rooms.length) list.appendChild(el("div", "pb-help", "No rooms yet. Make one, and tell your friends to join it!"));
-        for (const r of st.rooms) {
-          const item = el("div", "pb-room");
-          item.append(el("b", null, r.name), el("span", null, r.players + "/" + r.max + " · " + (r.state === "live" ? "playing" : "waiting")));
-          const j = el("button", "pb-btn", "Join");
-          j.disabled = r.players >= r.max;
-          j.addEventListener("click", () => st.net.send({ t: "join", room: r.id }));
-          item.appendChild(j);
-          list.appendChild(item);
-        }
-        right.appendChild(list);
-        const row2 = el("div", "pb-row");
-        const refresh = el("button", "pb-btn", "↻ Refresh");
-        refresh.addEventListener("click", () => st.net.send({ t: "list" }));
-        const dc = el("button", "pb-btn", "Disconnect");
-        dc.addEventListener("click", () => disconnect());
-        row2.append(refresh, dc);
-        right.appendChild(row2);
-      } else {
-        const room = st.room;
-        const meHost = room.host === st.net.id;
-        right.appendChild(el("h3", null, "Room · " + room.name));
-        right.appendChild(el("div", "pb-help", "Respawn · first to " + room.toWin + " eliminations · " + Math.round(room.timeLimit / 60000) + " minutes"));
-        const list = el("div", "pb-players");
-        for (const p of room.players) {
-          const item = el("div", "pb-player");
-          item.style.setProperty("--c", p.color);
-          const img = el("img"); img.alt = "";
-          const entry = p.id === st.net.id ? null : st.roster.get(p.id);
-          ctx.portraitImg(img, opts, p.id === st.net.id ? ctx.you : entry && entry.rec);
-          const nm = el("span", null, p.name + (p.id === st.net.id ? " (you)" : ""));
-          nm.style.color = p.color;
-          item.append(img, nm);
-          if (room.state !== "lobby") item.appendChild(el("span", null, " · " + p.score));
-          if (p.id === room.host) item.appendChild(el("span", "host", "HOST"));
-          list.appendChild(item);
-        }
-        right.appendChild(list);
-        if (st.status && st.statusCls === "err") right.appendChild(el("div", "pb-status err", st.status));
-        const row = el("div", "pb-row");
-        if (meHost) {
-          const go = el("button", "pb-go", room.state === "live" ? "PLAYING…" : room.state === "over" ? "PLAY AGAIN ▶" : "START ▶");
-          go.disabled = room.players.length < 2 || room.state === "live";
-          if (go.disabled) go.style.opacity = 0.45;
-          go.addEventListener("click", () => st.net.send({ t: "start" }));
-          row.appendChild(go);
-        } else {
-          row.appendChild(el("div", "pb-help", room.state === "live" ? "A match is on: you'll jump in…" : "Waiting for the host to start…"));
-        }
-        const leave = el("button", "pb-btn", st.hosting ? "Stop hosting" : "Leave room");
-        leave.addEventListener("click", () => {
-          if (st.hosting) { disconnect(); return; } // (this ends the game for everyone)
-          st.net.send({ t: "leave" }); st.room = null; st.net.send({ t: "list" }); rerender();
-        });
-        row.appendChild(leave);
-        right.appendChild(row);
-        if (room.players.length < 2) right.appendChild(el("div", "pb-help", "Waiting for at least one more player to join."));
-        if (st.hosting) right.appendChild(hostingPanel());
-      }
+      const right = el("div");
+      if (!st.net) right.appendChild(connectBox(addr));
+      else if (!st.room) right.append(findBox(), hostBox());
+      else right.appendChild(lobbyBox());
       wrap.append(left, right);
       c.appendChild(wrap);
     }
 
-    // "tell your friends to join with this address"
-    function hostingPanel() {
-      const h = st.hosting;
-      const box = el("div", "pb-hostbox");
-      box.appendChild(el("b", null, "🏠 You're hosting! Friends join with:"));
-      const line = (label, addr, note) => {
-        const row = el("div", "pb-addr");
-        row.append(el("span", "lbl", label), el("code", null, addr));
-        const c = el("button", "pb-btn", "Copy");
-        c.addEventListener("click", () => copy(addr, c));
-        row.appendChild(c);
-        box.appendChild(row);
-        if (note) box.appendChild(el("div", "pb-help", note));
-      };
-      const lan = (h.lan || [])[0];
-      if (lan) line("Same Wi‑Fi", lan + ":" + h.port);
-      if (h.upnp === "trying") box.appendChild(el("div", "pb-help", "Checking whether friends outside your home can join…"));
-      else if (h.upnp === "open" && h.publicIp) line("Internet", h.publicIp + ":" + h.port, "✅ Your router let them in.");
-      else {
-        if (h.publicIp) line("Internet", h.publicIp + ":" + h.port);
-        box.appendChild(el("div", "pb-help warn", "⚠️ Friends outside your home probably can't join yet. " + (h.why || "") +
-          " To fix it: in your router's settings, forward TCP port " + h.port + " to this computer (" + (lan || "its local address") +
-          "), or have everyone install Tailscale and join with your Tailscale address."));
+    // not connected (yet)
+    function connectBox(addr) {
+      const box = el("div", "pb-box");
+      box.appendChild(el("h3", null, "Online"));
+      if (st.connecting) box.appendChild(el("div", "pb-status", st.status || "Connecting to the Paintball server…"));
+      else if (!addr) box.appendChild(el("div", "pb-help", "Online play isn't set up yet: it needs the Mii Hub Paintball server's address."));
+      if (st.status && !st.connecting) box.appendChild(el("div", "pb-status " + st.statusCls, st.status));
+      if (addr && !st.connecting) {
+        const retry = el("button", "pb-btn primary", "Try again");
+        retry.addEventListener("click", () => connect(addr));
+        box.appendChild(retry);
       }
-      if ((h.lan || []).length > 1) box.appendChild(el("div", "pb-help", "Other addresses for this computer: " + h.lan.slice(1).map((a) => a + ":" + h.port).join(", ")));
+      box.appendChild(serverSetting(!addr));
+      return box;
+    }
+
+    // "Server" (where everyone meets): hidden away unless it's needed
+    function serverSetting(open) {
+      const d = el("details", "pb-server");
+      if (open) d.open = true;
+      d.appendChild(el("summary", null, "Server"));
+      const row = el("div", "pb-row");
+      const inp = input("Server address, e.g. wss://paintball.example.com", settings.server || DEFAULT_SERVER);
+      const go = el("button", "pb-btn", "Connect");
+      const doIt = () => { settings.server = inp.value.trim(); ctx.save(); connect(settings.server); };
+      go.addEventListener("click", doIt);
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") doIt(); });
+      row.append(inp, go);
+      d.appendChild(row);
+      d.appendChild(el("div", "pb-help", "Everyone has to use the same server. Leave it as it is unless you run your own (see server/README.md)."));
+      return d;
+    }
+
+    // the list of lobbies people are hosting
+    function findBox() {
+      const box = el("div", "pb-box");
+      const head = el("div", "pb-boxhead");
+      head.appendChild(el("h3", null, "Find Lobby"));
+      const refresh = el("button", "pb-btn small", "↻");
+      refresh.title = "Refresh";
+      refresh.addEventListener("click", () => st.net.send({ t: "list" }));
+      head.appendChild(refresh);
+      box.appendChild(head);
+      if (st.status && st.statusCls === "err" && !st.askPass) box.appendChild(el("div", "pb-status err", st.status));
+      const list = el("div", "pb-rooms");
+      if (!st.rooms.length) list.appendChild(el("div", "pb-help", "Nobody's hosting right now. Host a lobby below and your friends will see it here!"));
+      for (const r of st.rooms) {
+        const item = el("div", "pb-room");
+        item.appendChild(el("span", "lock", r.locked ? "🔒" : "🌐"));
+        const info = el("div", "info");
+        info.append(el("b", null, r.name), el("span", null, "Host: " + (r.host || "?") + " · " + (r.state === "live" ? "playing" : r.state === "over" ? "just finished" : "waiting")));
+        item.appendChild(info);
+        item.appendChild(el("span", "count", r.players + "/" + r.max));
+        const full = r.players >= r.max;
+        if (st.askPass === r.id) {
+          const pw = input("Password", "", "password");
+          const go = el("button", "pb-btn primary", "Join");
+          const doIt = () => joinLobby(r.id, pw.value);
+          go.addEventListener("click", doIt);
+          pw.addEventListener("keydown", (e) => { if (e.key === "Enter") doIt(); });
+          const row = el("div", "pb-row pass");
+          row.append(pw, go);
+          item.appendChild(row);
+          if (st.status) item.appendChild(el("div", "pb-status err", st.status));
+          setTimeout(() => pw.focus(), 0);
+        } else {
+          const j = el("button", "pb-btn primary", full ? "Full" : "Join");
+          j.disabled = full;
+          j.addEventListener("click", () => { if (r.locked) { st.askPass = r.id; setStatus("", ""); } else joinLobby(r.id); });
+          item.appendChild(j);
+        }
+        list.appendChild(item);
+      }
+      box.appendChild(list);
+      return box;
+    }
+
+    // making your own lobby
+    function hostBox() {
+      const box = el("div", "pb-box");
+      box.style.marginTop = "16px";
+      box.appendChild(el("h3", null, "Host Lobby"));
+      const name = input((ctx.you.name || "My") + "'s lobby", "");
+      name.maxLength = 32;
+      const pw = input("Password (optional: leave empty for anyone to join)", "", "password");
+      pw.maxLength = 32;
+      const max = el("select", "pb-select");
+      for (let n = 2; n <= 8; n++) { const o = el("option", null, n + " players"); o.value = n; if (n === (settings.lobbyMax || 8)) o.selected = true; max.appendChild(o); }
+      const go = el("button", "pb-go", "HOST ▶");
+      go.addEventListener("click", () => { settings.lobbyMax = +max.value; ctx.save(); hostLobby(name.value.trim(), pw.value, +max.value); });
+      const r1 = el("div", "pb-row"); r1.append(el("label", "pb-lbl", "Name"), name);
+      const r2 = el("div", "pb-row"); r2.append(el("label", "pb-lbl", "Password"), pw);
+      const r3 = el("div", "pb-row"); r3.append(el("label", "pb-lbl", "Players"), max, go);
+      box.append(r1, r2, r3);
+      box.appendChild(el("div", "pb-help", "Your lobby shows up in everyone's Find Lobby list. Nothing to set up: no ports, no addresses."));
+      return box;
+    }
+
+    // inside a lobby
+    function lobbyBox() {
+      const box = el("div", "pb-box");
+      const room = st.room;
+      const meHost = room.host === st.net.id;
+      box.appendChild(el("h3", null, (room.locked ? "🔒 " : "") + room.name));
+      box.appendChild(el("div", "pb-help", "Respawn · first to " + room.toWin + " eliminations · " + Math.round(room.timeLimit / 60000) + " minutes · up to " + room.max + " players"));
+      const list = el("div", "pb-players");
+      for (const p of room.players) {
+        const item = el("div", "pb-player");
+        item.style.setProperty("--c", p.color);
+        const img = el("img"); img.alt = "";
+        const entry = p.id === st.net.id ? null : st.roster.get(p.id);
+        ctx.portraitImg(img, opts, p.id === st.net.id ? ctx.you : entry && entry.rec);
+        const nm = el("span", null, p.name + (p.id === st.net.id ? " (you)" : ""));
+        nm.style.color = p.color;
+        item.append(img, nm);
+        if (room.state !== "lobby") item.appendChild(el("span", null, " · " + p.score));
+        if (p.id === room.host) item.appendChild(el("span", "host", "HOST"));
+        list.appendChild(item);
+      }
+      box.appendChild(list);
+      if (st.status && st.statusCls === "err") box.appendChild(el("div", "pb-status err", st.status));
+      const row = el("div", "pb-row");
+      if (meHost) {
+        const go = el("button", "pb-go", room.state === "live" ? "PLAYING…" : room.state === "over" ? "PLAY AGAIN ▶" : "START ▶");
+        go.disabled = room.players.length < 2 || room.state === "live";
+        if (go.disabled) go.style.opacity = 0.45;
+        go.addEventListener("click", () => st.net.send({ t: "start" }));
+        row.appendChild(go);
+      } else {
+        row.appendChild(el("div", "pb-help", room.state === "live" ? "A match is on: you'll jump in…" : "Waiting for the host to start…"));
+      }
+      const leave = el("button", "pb-btn", "Leave lobby");
+      leave.addEventListener("click", () => { st.net.send({ t: "leave" }); st.room = null; st.net.send({ t: "list" }); setStatus("", ""); });
+      row.appendChild(leave);
+      box.appendChild(row);
+      if (room.players.length < 2) box.appendChild(el("div", "pb-help", meHost ? "Waiting for someone to join. Your lobby is in everyone's Find Lobby list." : "Waiting for more players."));
       return box;
     }
 
     return {
       render,
       dispose() { disconnect(true); container = null; },
-      host,
       get net() { return st.net; },
       get state() { return st; },
-      connect,
+      connect, hostLobby, joinLobby,
     };
   }
 
-  root.PBOnline = { create, Net, normalizeUrl, VERSION };
+  root.PBOnline = { create, Net, normalizeUrl, VERSION, DEFAULT_SERVER };
 })(window);

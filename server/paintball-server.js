@@ -20,16 +20,18 @@
 "use strict";
 
 const http = require("http");
+const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
 const VERSION = 1;
 const PORT = parseInt(process.env.PORT || "8787", 10);
-const MAX_PLAYERS = Math.max(2, Math.min(16, parseInt(process.env.MAX_PLAYERS || "8", 10)));
+const MAX_PLAYERS = Math.max(2, Math.min(16, parseInt(process.env.MAX_PLAYERS || "8", 10))); // most a host can pick
 const TO_WIN = 20;               // first to 20 eliminations
 const TIME_LIMIT = 10 * 60e3;    // or whoever's ahead after 10 minutes
 const RESPAWN_MS = parseInt(process.env.RESPAWN_MS || "2000", 10);
 const COUNTDOWN_MS = parseInt(process.env.COUNTDOWN_MS || "3000", 10);
 const MAX_MII_BYTES = 6 * 1024 * 1024;
+const MAX_ROOMS = 200;
 
 // Damage rules (the same numbers as the game: CS:GO's AK and knife)
 const AK_ZONES = { head: 4, chest: 1, arm: 1, stomach: 1.25, leg: 0.75 };
@@ -40,8 +42,8 @@ const KNIFE_DAMAGE = [25, 40, 65, 90, 180];
  * client -> server
  *   hello  { v, name, color, mii }       mii = { kind: "glb", b64, fileName } or { kind: "demo", look }
  *   list   {}                            ask for the room list
- *   create { name }                      make a room (you're the host)
- *   join   { room }                      join a room by id
+ *   create { name, password, max }       host a lobby (password optional; max players 2..MAX_PLAYERS)
+ *   join   { room, password }            join a lobby by id (password if it has one)
  *   leave  {}
  *   start  {}                            host only: start (or restart) the match
  *   st     { s: [x, y, z, vx, vz, yaw, pitch, duck, flags] }   your movement, ~30 times a second
@@ -76,9 +78,11 @@ function broadcast(room, msg, except) {
   for (const id of room.players) if (id !== except) { const p = players.get(id); if (p) send(p, s); }
 }
 
+const hashPass = (salt, pw) => crypto.createHash("sha256").update(salt + "\u0000" + pw).digest("hex");
+
 function roomInfo(room) {
   return {
-    id: room.id, name: room.name, host: room.host, state: room.state, toWin: TO_WIN, timeLimit: TIME_LIMIT,
+    id: room.id, name: room.name, host: room.host, state: room.state, toWin: TO_WIN, timeLimit: TIME_LIMIT, max: room.max, locked: !!room.pass,
     players: room.players.map((id) => {
       const p = players.get(id);
       return { id, name: p.name, color: p.color, score: p.score, deaths: p.deaths, alive: p.alive };
@@ -86,7 +90,10 @@ function roomInfo(room) {
   };
 }
 function roomList() {
-  return Array.from(rooms.values()).map((r) => ({ id: r.id, name: r.name, players: r.players.length, max: MAX_PLAYERS, state: r.state }));
+  return Array.from(rooms.values()).map((r) => {
+    const host = players.get(r.host);
+    return { id: r.id, name: r.name, host: host ? host.name : "", players: r.players.length, max: r.max, state: r.state, locked: !!r.pass };
+  });
 }
 function sendRoomList(p) { send(p, { t: "rooms", rooms: roomList() }); }
 function roomChanged(room) {
@@ -117,7 +124,7 @@ function leaveRoom(p) {
 }
 
 function joinRoom(p, room) {
-  if (room.players.length >= MAX_PLAYERS) return send(p, { t: "err", msg: "That room is full." });
+  if (room.players.length >= room.max) return send(p, { t: "err", msg: "That lobby is full." });
   leaveRoom(p);
   // a colour nobody else in the room has
   const used = new Set(room.players.map((id) => players.get(id).color.toLowerCase()));
@@ -220,8 +227,15 @@ function onMessage(p, msg) {
     case "list": sendRoomList(p); break;
     case "create": {
       if (!p.ready) return;
+      if (rooms.size >= MAX_ROOMS) return send(p, { t: "err", msg: "There are too many lobbies right now. Try joining one!" });
       const id = "r" + (nextId++);
-      const r = { id, name: clean(msg.name, 32) || p.name + "'s room", host: p.id, players: [], state: "lobby", timer: null, startedAt: 0 };
+      const pw = clean(msg.password, 32);
+      const salt = crypto.randomBytes(8).toString("hex");
+      const max = Math.max(2, Math.min(MAX_PLAYERS, Math.round(num(msg.max)) || MAX_PLAYERS));
+      const r = {
+        id, name: clean(msg.name, 32) || p.name + "'s lobby", host: p.id, players: [], state: "lobby", timer: null, startedAt: 0,
+        max, salt, pass: pw ? hashPass(salt, pw) : null,
+      };
       rooms.set(id, r);
       joinRoom(p, r);
       break;
@@ -229,7 +243,16 @@ function onMessage(p, msg) {
     case "join": {
       if (!p.ready) return;
       const r = rooms.get(msg.room);
-      if (!r) return send(p, { t: "err", msg: "That room doesn't exist any more." });
+      if (!r) return send(p, { t: "err", msg: "That lobby doesn't exist any more." });
+      if (r.pass) {
+        // a few tries a minute, so nobody can guess passwords by trying thousands
+        p.tries = (p.tries || []).filter((t) => now - t < 60e3);
+        if (p.tries.length >= 6) return send(p, { t: "err", code: "slow", msg: "Too many wrong passwords. Wait a minute and try again." });
+        if (hashPass(r.salt, clean(msg.password, 32)) !== r.pass) {
+          p.tries.push(now);
+          return send(p, { t: "err", code: "password", room: r.id, msg: msg.password ? "Wrong password." : "This lobby has a password." });
+        }
+      }
       joinRoom(p, r);
       break;
     }

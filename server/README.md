@@ -1,16 +1,19 @@
 # Mii Hub Paintball server
 
-> **You probably don't need this.** The easiest way to play online is **Host a game** in the
-> Mii Hub desktop app (🎯 Paintball → 🌐 Online → HOST): the host's own Mii Hub runs this server for
-> you. This page is for running it on a separate, always-on computer instead (so nobody has to host).
+Everyone's Mii Hub connects to **one** of these servers to find lobbies (**Find Lobby**) and
+host them (**Host Lobby**). Players never open ports or type addresses: the server's address is built
+into Mii Hub. Only the server itself has to be reachable from the internet, and with **Tailscale
+Funnel** (below) even that needs no router changes.
 
-This is the little program that lets people play **Paintball online** with each other.
-Everyone's Mii Hub connects to it. It keeps a list of rooms, passes everyone's
-movement and shots on to the other players, and is the referee: it keeps track of HP
-and scores and decides who wins.
+It's tiny: almost no processor or memory, and about 20–40 KB/s of internet per player in a match.
 
-It only needs to run on **one** computer (for example your `desktopjmserver`). It's
-tiny: it uses almost no processor or memory, and about 20–40 KB/s of internet per player.
+**Two ways to run it** (pick one):
+
+- **A) On your own always-on computer, with Tailscale Funnel** (recommended): free, no port forwarding,
+  never sleeps. Steps 1–5 below.
+- **B) On Render.com's free plan:** nothing runs at home, but the free server falls asleep after
+  15 minutes without players, so the first person to open Online waits up to a minute for it to
+  wake. See *Option B* at the end.
 
 ---
 
@@ -55,38 +58,40 @@ It should say *"Mii Hub Paintball server is running."*
 > tick **Private networks** (and **Public networks** only if you're on a public network)
 > and click **Allow access**. That lets other computers connect.
 
-## 4. Connect from Mii Hub
+## 4. Put it on the internet with Tailscale Funnel (no ports to open)
 
-In Mii Hub: **🎯 Paintball → 🌐 Online**, type the server's address, and click **Connect**.
+[Tailscale](https://tailscale.com) is free. *Funnel* gives this computer a permanent public web
+address and passes visitors through to the server. It only makes outgoing connections, so you don't
+touch your router.
 
-Which address depends on where your friends are:
+1. Install Tailscale on the server computer from <https://tailscale.com/download> and sign in
+   (a Google/Microsoft/GitHub account is fine).
+2. Open a terminal **as administrator** (Windows: press the Windows key, type `cmd`, right-click
+   *Command Prompt* → *Run as administrator*) and run:
 
-### Same house (same Wi‑Fi / network)
+   ```
+   tailscale funnel --bg 8787
+   ```
 
-Use the server computer's name or its local IP address, with the port:
+   The first time, it prints a link to turn on HTTPS and Funnel for your account: open it, click
+   the buttons to allow it, then run the command again.
+3. It prints your public address, something like:
 
-- `desktopjmserver:8787`
-- or its IP, e.g. `192.168.1.50:8787` (find it on the server: run `ipconfig` in `cmd` and look for **IPv4 Address**)
+   ```
+   https://desktopjmserver.tail1234.ts.net
+   ```
 
-### Friends somewhere else (over the internet)
+   Check it: open that address in a browser on **any** device (your phone on mobile data is a good
+   test). It should say *"Mii Hub Paintball server is running."*
 
-Their computers have to be able to reach yours. Pick **one** of these:
+`--bg` keeps Funnel on, even after restarting the computer. (To turn it off: `tailscale funnel --bg off`.)
+Your friends **don't** need Tailscale.
 
-**A) Tailscale (easiest and safest).** Free. Install [Tailscale](https://tailscale.com)
-on the server and on each friend's computer, and sign everyone into the same
-Tailscale network (you invite them). Then everyone connects to
-`desktopjmserver:8787` (or the server's `100.x.y.z` Tailscale address). Nothing
-is opened to the rest of the internet.
+## 5. Tell Mii Hub where it is
 
-**B) Port forwarding on your router.** In your router's settings, forward **TCP port 8787** to
-the server computer's local IP (e.g. 192.168.1.50). Give the server a fixed local IP in
-the router too, so it doesn't change. Friends connect to your **public IP**: search
-"what is my IP" on the server, then use e.g. `203.0.113.7:8787`. Your public IP can change
-now and then; a free "dynamic DNS" name (e.g. from your router or duckdns.org) fixes that.
-
-**C) A tunnel service** like [playit.gg](https://playit.gg) or a Cloudflare Tunnel gives you a public
-address without touching the router. A Cloudflare Tunnel gives an `https://…` address:
-type it as `wss://…` (Mii Hub does this for you if you paste the `https://` one).
+Send the address (the `https://….ts.net` one) to whoever builds Mii Hub, so it can be built in for
+everyone. Until then, anyone can paste it in themselves: **🎯 Paintball → 🌐 Online → Server** →
+paste → **Connect** (Mii Hub turns `https://` into the right `wss://` address for you).
 
 ## Settings
 
@@ -119,3 +124,14 @@ way as before (`git pull`, or download the ZIP again) and restart it.
 - Respawn mode: 2 s after being splattered you come back; first to **20** eliminations wins,
   or whoever has the most after **10 minutes**.
 - The messages are described at the top of `paintball-server.js`. `npm test` runs the server's tests.
+
+## Option B: Render.com (free, nothing at home)
+
+1. Make a free account at <https://render.com> (sign in with GitHub).
+2. **New → Blueprint**, pick the `mii-hub` repository (and the branch with the latest Mii Hub). Render
+   reads `render.yaml` from the repository and sets the server up by itself. Click **Apply**.
+3. When it's live, Render shows its address, like `https://mii-hub-paintball.onrender.com`. That's the
+   address for step 5 above.
+
+The free plan sleeps after 15 minutes with nobody connected; Mii Hub shows *"Waking up the Paintball
+server…"* while it starts again (up to a minute).

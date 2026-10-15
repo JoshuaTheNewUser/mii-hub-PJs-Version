@@ -114,8 +114,39 @@ function client(port) {
   assert(d.last("start") && d.last("start").late, "late start");
   const sp = d.all("spawn").find((m) => m.id === aId);
   assert(sp && sp.x === 3 && sp.z === 4 && sp.yaw === 1.5, "late joiner sees who's alive");
-  d.ws.close();
   await wait(50);
+
+  // passwords and max players
+  const f = await client(port), g = await client(port);
+  f.send({ t: "hello", v: 1, name: "Fin", mii: { kind: "demo" } });
+  g.send({ t: "hello", v: 1, name: "Gus", mii: { kind: "demo" } });
+  await wait(60);
+  f.send({ t: "create", name: "Secret", password: "pickles", max: 2 });
+  await wait(80);
+  const secret = g.last("rooms").rooms.find((r) => r.name === "Secret");
+  assert(secret && secret.locked && secret.max === 2 && secret.host === "Fin", "locked lobby listed with host + max");
+  g.send({ t: "join", room: secret.id });
+  await wait(50);
+  assert.strictEqual(g.last("err").code, "password", "asks for the password");
+  g.send({ t: "join", room: secret.id, password: "nope" });
+  await wait(50);
+  assert.strictEqual(g.last("err").msg, "Wrong password.");
+  g.send({ t: "join", room: secret.id, password: "pickles" });
+  await wait(80);
+  assert(g.last("room") && g.last("room").room.players.length === 2, "right password lets you in");
+  assert(!JSON.stringify(g.last("room")).includes("pickles"), "password is never sent out");
+  d.ws.close();
+  const h = await client(port);
+  h.send({ t: "hello", v: 1, name: "Hal", mii: { kind: "demo" } });
+  await wait(50);
+  h.send({ t: "join", room: secret.id, password: "pickles" });
+  await wait(50);
+  assert.strictEqual(h.last("err").msg, "That lobby is full.", "max players");
+  for (let i = 0; i < 7; i++) h.send({ t: "join", room: secret.id, password: "x" + i });
+  await wait(80);
+  assert.strictEqual(h.last("err").code, "slow", "password guessing is slowed down");
+  f.ws.close(); g.ws.close(); h.ws.close();
+  await wait(60);
 
   // leaving
   b.ws.close();

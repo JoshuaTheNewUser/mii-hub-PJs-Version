@@ -6,7 +6,6 @@
 const { app, BrowserWindow, shell, ipcMain } = require("electron");
 const path = require("path");
 const updater = require("./updater");
-const paintballHost = require("./paintball-host");
 
 // Only one Mii Hub window at a time; opening it again just brings it to the front.
 if (!app.requestSingleInstanceLock()) {
@@ -68,19 +67,6 @@ app.on("second-instance", () => {
 ipcMain.handle("update-get-status", () => updater.getStatus());
 ipcMain.handle("update-check", () => { updater.check(true); return true; });
 ipcMain.handle("update-open-releases", () => shell.openExternal(updater.RELEASES_PAGE));
-
-// Paintball: host an online game from this computer
-ipcMain.handle("pb-host-start", () => paintballHost.start());
-ipcMain.handle("pb-host-details", () => paintballHost.details());
-ipcMain.handle("pb-host-stop", () => paintballHost.stop());
-// (the router port is closed again when the app quits)
-let quitting = false;
-app.on("before-quit", (e) => {
-  if (quitting || !paintballHost.info().hosting) return;
-  e.preventDefault();
-  quitting = true;
-  Promise.race([paintballHost.stop(), new Promise((r) => setTimeout(r, 2000))]).finally(() => app.quit());
-});
 
 app.whenReady().then(() => {
   createWindow();
