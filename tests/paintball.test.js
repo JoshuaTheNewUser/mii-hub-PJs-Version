@@ -33,10 +33,10 @@ let t2 = 0; m.place(0, 10); run(m, 1.5, { side: 1 });
 while (m.speed2d() > 215 * 0.34 * E.U) { m.step(T, { fwd: 0, side: -1, yaw: 0, maxSpeed: E.CFG.speedAK }); t2 += T; }
 assert(t > 0.08 && t < 0.3 && t2 < t, "stopping " + t.toFixed(3) + " counter-strafe " + t2.toFixed(3));
 
-// jump height ~1.45 m
+// jump height ~1.72 m (the map is 1.25x bigger than real Shipment)
 m.place(0, 10);
 let top = 0; m.step(T, { jump: true, yaw: 0, maxSpeed: 5 }); for (let i = 0; i < 128; i++) { m.step(T, { yaw: 0, maxSpeed: 5 }); top = Math.max(top, m.pos.y); }
-assert(Math.abs(top - 1.45) < 0.05 && m.onGround, "jump apex " + top);
+assert(Math.abs(top - 1.72) < 0.05 && m.onGround, "jump apex " + top);
 
 // walls stop you
 m.place(0, -2); run(m, 1, { fwd: 1 });
@@ -58,6 +58,21 @@ for (let a = 0; a < 16; a++) {
     m.step(T, { fwd: 1, yaw: ang, maxSpeed: E.CFG.speedKnife });
     assert(!world.circleHitsBox(world.boxes[3], m.pos.x, m.pos.z, E.CFG.radius - 0.01), "inside turned box at angle " + a);
   }
+}
+// the classic: crouch-jump from a barrel onto a container (both 1.25x size, like the game's map)
+{
+  const K = 1.25;
+  const w2 = new E.World({ boxes: [{ x: 0, z: -3, hw: 2, hd: 1.2, rot: 0, y0: 0, y1: 2.59 * K }], cyls: [{ x: 0, z: -1, r: 0.3 * K, y0: 0, y1: 0.9 * K }], bounds: map.bounds });
+  const c = new E.Mover(w2); c.place(0, -0.8); c.pos.y = 0.9 * K; // on the barrel, a step's run-up
+  for (let i = 0; i < 8; i++) c.step(T, { fwd: 1, yaw: 0, maxSpeed: E.CFG.speedAK });
+  c.step(T, { fwd: 1, yaw: 0, jump: true, duck: true, maxSpeed: E.CFG.speedAK });
+  for (let i = 0; i < 200; i++) c.step(T, { fwd: 1, yaw: 0, duck: true, maxSpeed: E.CFG.speedAK });
+  assert(Math.abs(c.pos.y - 2.59 * K) < 0.01, "barrel to container crouch-jump " + c.pos.y);
+  // ...but not straight from the ground
+  c.place(0, 0.5);
+  c.step(T, { fwd: 1, yaw: 0, jump: true, duck: true, maxSpeed: E.CFG.speedAK });
+  for (let i = 0; i < 200; i++) c.step(T, { fwd: 1, yaw: 0, duck: true, maxSpeed: E.CFG.speedAK });
+  assert(c.pos.y < 2, "can't jump onto a container from the ground");
 }
 // crouching makes you shorter
 m.place(0, 10); run(m, 0.5, { duck: true });

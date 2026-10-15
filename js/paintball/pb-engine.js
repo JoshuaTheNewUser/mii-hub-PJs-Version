@@ -37,7 +37,7 @@
     stopSpeed: 80 * U,         // sv_stopspeed
     airCap: 30 * U,            // the most speed you can add in the air in one go (air strafing)
     gravity: 800 * U,          // sv_gravity
-    jump: 301.993 * U,         // jump impulse (about a 1.45 m jump)
+    jump: Math.sqrt(2 * 800 * U * 1.72), // jump impulse: a 1.72 m jump (higher than CS, because the map is 1.25x bigger: you can still crouch-jump from a barrel onto a container)
     walk: 0.52,                // Shift
     duck: 0.34,                // crouched
     duckRate: 6,               // how fast you crouch / stand up (per second)

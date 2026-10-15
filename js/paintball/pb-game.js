@@ -32,6 +32,7 @@
   const ROUND_TIME = 90;
   const END_DELAY = 3.5;
   const MII_SCALE = 1.25;      // Miis are 1.8 tall in the hub; here they're CS-sized
+  const MAP_SCALE = 1.25;      // Shipment is built 1:1, then made a bit bigger so it doesn't feel cramped
   const SETTINGS_KEY = "mii-hub-paintball";
   const FAV = ["#d21e14", "#ff6e19", "#ffd820", "#78d220", "#007830", "#0a48b4", "#3caade", "#f55a7d", "#7328ad", "#483818", "#e0e0e0", "#181814"];
 
@@ -56,6 +57,25 @@
   function verticalFov(fov) {
     const h = clamp(fov || 90, 60, 150) * DEG;
     return 2 * Math.atan(Math.tan(h / 2) / (4 / 3)) / DEG;
+  }
+
+  // Make the whole map (looks + everything you bump into) bigger
+  function scaleMap(map, k) {
+    map.group.scale.setScalar(k);
+    for (const b of map.boxes) { b.x *= k; b.z *= k; b.hw *= k; b.hd *= k; b.y0 *= k; b.y1 *= k; }
+    for (const c of map.cyls) { c.x *= k; c.z *= k; c.r *= k; c.y0 *= k; c.y1 *= k; }
+    const B = map.bounds; B.minX *= k; B.maxX *= k; B.minZ *= k; B.maxZ *= k;
+    for (const list of [map.spawns.a, map.spawns.b]) for (const sp of list) { sp.x *= k; sp.z *= k; }
+    // shadows have to cover the bigger area too
+    map.group.traverse((n) => {
+      if (n.isDirectionalLight && n.castShadow) {
+        const c = n.shadow.camera;
+        c.left *= k; c.right *= k; c.top *= k; c.bottom *= k; c.far *= k;
+        c.updateProjectionMatrix();
+      }
+    });
+    if (map.fog && map.fog.density) map.fog.density /= k;
+    return map;
   }
 
   // A soft glow around a player's outline (in their paint colour) and a minimum
@@ -576,7 +596,7 @@
       this.renderer = r;
 
       // the map
-      this.map = root.PBMap.build({});
+      this.map = scaleMap(root.PBMap.build({}), MAP_SCALE);
       this.scene = new THREE.Scene();
       this.scene.add(this.map.group);
       this.scene.background = this.map.background || new THREE.Color(0x6d7884);
