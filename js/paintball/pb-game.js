@@ -992,13 +992,13 @@
         if (this.disposed) return;
         const code = e.code;
         if (code === "Tab") { e.preventDefault(); this.renderBoard(); this.hudBoard.classList.add("show"); }
+        // picking a class (the loadout screen is open, or you're waiting to respawn) works even before you click in
+        if (this.loadoutOpen && !e.repeat && (code === "Digit1" || code === "Digit2")) { e.preventDefault(); this.pickLoadout(code === "Digit1" ? "ak" : "awp"); return; }
         if (!this.locked()) return;
         e.preventDefault(); e.stopPropagation();
         if (e.repeat) return;
         this.keys.add(code);
         if (code === "KeyB") { this.showLoadout(!this.loadoutOpen); return; }
-        // picking a class (the loadout screen is open, or you're waiting to respawn)
-        if (this.loadoutOpen && (code === "Digit1" || code === "Digit2")) { this.pickLoadout(code === "Digit1" ? "ak" : "awp"); return; }
         if (code === "Space") this.jumpQueued = true;
         if (code === "KeyR") this.wantReload = true;
         if (code === "Digit1") this.wantSwitch = "primary";
@@ -1065,7 +1065,7 @@
         ev: (m) => {
           const f = fOf(m.id);
           if (!f || !f.alive) return;
-          const sounds = { step: ["step", 0.9], land: ["land", 0.8], magOut: ["magOut", 0.6], magIn: ["magIn", 0.6], deploy: ["deploy", 0.5], knifeDeploy: ["knifeDeploy", 0.5], slash: ["slash", 0.7], stab: ["stab", 0.7] };
+          const sounds = { step: ["step", 0.9], land: ["land", 0.8], magOut: ["magOut", 0.6], magIn: ["magIn", 0.6], awpMagOut: ["awpMagOut", 0.6], awpMagIn: ["awpMagIn", 0.6], awpBolt: ["awpBolt", 0.6], deploy: ["deploy", 0.5], knifeDeploy: ["knifeDeploy", 0.5], slash: ["slash", 0.7], stab: ["stab", 0.7] };
           const s = sounds[m.k];
           if (s) this.playAt(s[0], f.mover.pos, s[1], 0.92 + Math.random() * 0.16);
           if (m.k === "knife" || m.k === "ak") f.arms.weapon = m.k;
@@ -1610,14 +1610,15 @@
         a.reloadEnd = now + W.reload;
         a.ready = Math.max(a.ready, a.reloadEnd);
         const k = W.reload / AK.reload; // sounds spaced out to match the gun's reload
+        const mo = a.primary === "awp" ? "awpMagOut" : "magOut", mi = a.primary === "awp" ? "awpMagIn" : "magIn";
         if (me) {
           this.vm.reload(empty);
-          this.later(0.35 * k, () => { this.audio.play("magOut", { vol: 0.7 }); if (this.online) this.net.send({ t: "ev", k: "magOut" }); });
-          this.later(1.45 * k, () => { this.audio.play("magIn", { vol: 0.7 }); if (this.online) this.net.send({ t: "ev", k: "magIn" }); });
+          this.later(0.35 * k, () => { this.audio.play(mo, { vol: 0.7 }); if (this.online) this.net.send({ t: "ev", k: mo }); });
+          this.later(1.45 * k, () => { this.audio.play(mi, { vol: 0.7 }); if (this.online) this.net.send({ t: "ev", k: mi }); });
           if (empty) this.later(2.05 * k, () => this.audio.play(a.primary === "awp" ? "awpBolt" : "bolt", { vol: 0.7 }));
         } else {
-          this.later(0.35 * k, () => this.playAt("magOut", f.mover.pos, 0.6));
-          this.later(1.45 * k, () => this.playAt("magIn", f.mover.pos, 0.6));
+          this.later(0.35 * k, () => this.playAt(mo, f.mover.pos, 0.6));
+          this.later(1.45 * k, () => this.playAt(mi, f.mover.pos, 0.6));
         }
       };
       if (want.reload) startReload();

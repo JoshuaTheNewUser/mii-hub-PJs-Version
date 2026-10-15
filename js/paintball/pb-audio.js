@@ -130,6 +130,58 @@
       burst(c, lp, { t: 0.01, type: "lowpass", f: 800, Q: 0.5, a: 0.03, d: 0.5, vol: 0.25, color: "pink" });
       echo(c, lp, o, 0.13, 0.35, 0.35, 900);
     } },
+    // AWP: a huge pneumatic "KA-THOOM": sharp crack, heavy low body, compressed-air blast and a long tail
+    awp: { dur: 1.4, level: 0.98, variants: 2, build: function (c, o) {
+      var pre = c.createGain(); var sh = shaper(c, 2.6); pre.connect(sh); sh.connect(o);
+      click(c, pre, 0, 3200, 0.6, 0.004); // sear / valve
+      burst(c, pre, { t: 0.0, type: "highpass", f: 2500, Q: 0.6, a: 0.0005, d: 0.025, vol: 0.55 }); // supersonic-ish crack
+      burst(c, pre, { t: 0.001, type: "bandpass", f: 1900, f2: 700, Q: 0.9, a: 0.001, d: 0.06, vol: 1.2 }); // "KA"
+      burst(c, pre, { t: 0.0, type: "bandpass", f: 520, f2: 140, Q: 1.1, a: 0.004, d: 0.22, vol: 1.4 }); // pneumatic thump
+      tone(c, pre, { t: 0, f: 150, f2: 34, fT: 0.25, a: 0.002, d: 0.38, vol: 1.8 }); // body boom
+      tone(c, pre, { t: 0, f: 70, f2: 28, a: 0.004, d: 0.55, vol: 1.0 });
+      burst(c, pre, { t: 0.005, type: "lowpass", f: 900, f2: 160, Q: 0.6, a: 0.01, d: 0.6, vol: 0.9, color: "brown" }); // boom tail
+      burst(c, pre, { t: 0.015, type: "lowpass", f: 2200, f2: 500, Q: 0.5, a: 0.02, d: 0.5, vol: 0.35, color: "pink" }); // air blast hiss
+      echo(c, pre, o, 0.11, 0.38, 0.32, 1400); // slap back off the walls
+      echo(c, pre, o, 0.23, 0.3, 0.18, 800);
+    } },
+    awpFar: { dur: 2.0, level: 0.7, variants: 2, build: function (c, o) {
+      var lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 900; lp.connect(o);
+      burst(c, lp, { t: 0, type: "bandpass", f: 800, f2: 250, Q: 0.9, a: 0.003, d: 0.12, vol: 1.0 });
+      tone(c, lp, { t: 0, f: 110, f2: 32, a: 0.004, d: 0.4, vol: 1.2 });
+      burst(c, lp, { t: 0.01, type: "lowpass", f: 600, f2: 150, Q: 0.5, a: 0.04, d: 0.9, vol: 0.5, color: "brown" }); // rolling thunder
+      echo(c, lp, o, 0.21, 0.45, 0.45, 700);
+      echo(c, lp, o, 0.37, 0.35, 0.3, 500);
+    } },
+    // bolt cycle, timed to the viewmodel (lift 0.06, pull back 0.11-0.23, push 0.29-0.39, lock 0.47)
+    awpBolt: { dur: 0.62, level: 0.8, build: function (c, o) {
+      click(c, o, 0.03, 2600, 0.6, 0.006); click(c, o, 0.06, 3400, 0.8, 0.006); ring(c, o, 0.06, [2100, 3700], 0.04, 0.2); // lift
+      burst(c, o, { t: 0.11, type: "bandpass", f: 1300, f2: 2600, Q: 2.5, a: 0.02, d: 0.1, vol: 0.55, color: "crackle" }); // slide back
+      burst(c, o, { t: 0.11, type: "bandpass", f: 3000, Q: 1.5, a: 0.03, d: 0.09, vol: 0.18 });
+      click(c, o, 0.23, 1900, 1, 0.01); ring(c, o, 0.23, [1150, 2250, 3500], 0.08, 0.35); // stop clack
+      tone(c, o, { t: 0.23, f: 240, f2: 110, a: 0.001, d: 0.05, vol: 0.5 });
+      burst(c, o, { t: 0.29, type: "bandpass", f: 2400, f2: 1300, Q: 2.5, a: 0.02, d: 0.09, vol: 0.5, color: "crackle" }); // push
+      click(c, o, 0.39, 1700, 1, 0.012); ring(c, o, 0.39, [950, 1800, 2900, 4300], 0.12, 0.45); // chamber
+      tone(c, o, { t: 0.39, f: 200, f2: 85, a: 0.001, d: 0.07, vol: 0.6 });
+      click(c, o, 0.47, 3000, 0.9, 0.007); ring(c, o, 0.47, [2500, 4100], 0.05, 0.25); // handle down / lock
+    } },
+    awpMagOut: { dur: 0.45, level: 0.7, build: function (c, o) {
+      click(c, o, 0, 2600, 0.9, 0.008); ring(c, o, 0, [1500, 2600], 0.06, 0.25); // release
+      burst(c, o, { t: 0.03, type: "bandpass", f: 1300, f2: 600, Q: 2, a: 0.02, d: 0.14, vol: 0.55 }); // slide out
+      burst(c, o, { t: 0.2, type: "lowpass", f: 800, Q: 0.7, a: 0.002, d: 0.07, vol: 0.5 });
+      tone(c, o, { t: 0.2, f: 160, f2: 80, a: 0.002, d: 0.07, vol: 0.45 });
+    } },
+    awpMagIn: { dur: 0.5, level: 0.8, build: function (c, o) {
+      burst(c, o, { t: 0, type: "bandpass", f: 700, f2: 1600, Q: 2, a: 0.04, d: 0.08, vol: 0.4 }); // slide in
+      click(c, o, 0.13, 2200, 1, 0.012); ring(c, o, 0.13, [1250, 2300, 3900], 0.1, 0.35);
+      tone(c, o, { t: 0.13, f: 190, f2: 80, a: 0.001, d: 0.08, vol: 0.65 });
+      click(c, o, 0.24, 3200, 0.7, 0.006); ring(c, o, 0.24, [1900, 3300], 0.06, 0.25); // seat click
+    } },
+    // scope zoom: quick lens whir + detent click
+    zoom: { dur: 0.22, level: 0.5, build: function (c, o) {
+      burst(c, o, { t: 0, type: "bandpass", f: 1800, f2: 4200, Q: 3, a: 0.02, d: 0.07, vol: 0.5 });
+      tone(c, o, { t: 0, f: 900, f2: 1500, a: 0.01, d: 0.07, vol: 0.12, type: "triangle" });
+      click(c, o, 0.075, 4200, 0.9, 0.004); ring(c, o, 0.075, [3300, 5600], 0.03, 0.2);
+    } },
     dry: { dur: 0.15, level: 0.5, build: function (c, o) {
       click(c, o, 0, 4000, 1, 0.004);
       ring(c, o, 0.001, [2300, 3900], 0.03, 0.25);

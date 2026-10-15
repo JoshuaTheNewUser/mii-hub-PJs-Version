@@ -221,7 +221,7 @@
       grey: new THREE.Color(0.22, 0.23, 0.25), steel: new THREE.Color(0.6, 0.62, 0.65),
       white: new THREE.Color(0.9, 0.9, 0.9), black: new THREE.Color(0.01, 0.01, 0.012),
       ball: mix(A, new THREE.Color(1, 0.85, 0.1), 0.0),
-      lens: new THREE.Color(0.04, 0.1, 0.2), glint: new THREE.Color(1, 1, 1)
+      lens: new THREE.Color(0.1, 0.28, 0.5), glint: new THREE.Color(1, 1, 1)
     };
   }
 
@@ -407,7 +407,7 @@
       0.04, 0.005, [hole]), pal.accent);
     for (i = 0; i < 4; i++) poly.add(rbox(0.042, 0.0035, 0.012, 0.0015, 0.0008), pal.accentD, mtx(0, -0.04 - i * 0.017, -0.004 + i * 0.0035, 0.2)); // grip grooves
     poly.add(rbox(0.05, 0.19, 0.02, 0.008, 0.004), pal.dark, mtx(0, -0.044, 0.364)); // butt pad
-    poly.add(rbox(0.048, 0.016, 0.15, 0.007, 0.003), pal.dark, mtx(0, 0.066, 0.215)); // cheek piece
+    poly.add(rbox(0.034, 0.012, 0.13, 0.005, 0.003), pal.dark, mtx(0, 0.062, 0.215)); // cheek piece
     metal.add(cylY(0.004, 0.004, 0.02, 8), pal.steel, mtx(0, 0.052, 0.16));
     metal.add(cylY(0.004, 0.004, 0.02, 8), pal.steel, mtx(0, 0.052, 0.27));
     poly.add(box(0.003, 0.006, 0.2), pal.dark, mtx(-0.0205, 0.036, 0.2)); // side accent lines
@@ -473,12 +473,12 @@
     metal.add(cylZ(0.031, 0.031, 0.01, 24), pal.accent, mtx(0, sy, -0.316));
     for (i = 0; i < 2; i++) metal.add(cylZ(0.0305, 0.0305, 0.003, 24), pal.grey, mtx(0, sy, -0.28 + i * 0.01));
     // lenses (glossy, with painted glints)
-    lens.add(cylZ(0.0265, 0.0265, 0.002, 24), pal.lens, mtx(0, sy, -0.318));
-    lens.add(cylZ(0.0175, 0.0175, 0.002, 20), pal.lens, mtx(0, sy, 0.152));
+    lens.add(cylZ(0.0265, 0.0265, 0.002, 24), pal.lens, mtx(0, sy, -0.3215));
+    lens.add(cylZ(0.0175, 0.0175, 0.002, 20), pal.lens, mtx(0, sy, 0.1545));
     var glint = new THREE.CircleGeometry(1, 14);
-    lens.add(glint, pal.glint, mtx(-0.009, sy + 0.009, -0.3195, 0, PI, 0, 0.0065, 0.0042, 1));
-    lens.add(glint, pal.glint, mtx(0.011, sy - 0.01, -0.3195, 0, PI, 0, 0.0028, 0.0028, 1));
-    lens.add(glint, pal.glint, mtx(-0.006, sy + 0.006, 0.1535, 0, 0, 0, 0.0042, 0.0028, 1));
+    lens.add(glint, pal.glint, mtx(-0.009, sy + 0.009, -0.323, 0, PI, 0, 0.0065, 0.0042, 1));
+    lens.add(glint, pal.glint, mtx(0.011, sy - 0.01, -0.323, 0, PI, 0, 0.0028, 0.0028, 1));
+    lens.add(glint, pal.glint, mtx(-0.006, sy + 0.006, 0.156, 0, 0, 0, 0.0042, 0.0028, 1));
     // ---- slim paintball feed tube along the left side (clear, balls inside) ----
     var tz0 = -0.4, tz1 = -0.06, tx = -0.036, ty = 0.01, tr = 0.0095;
     B.shell.add(cylZ(tr, tr, tz1 - tz0, 16, true), pal.white, mtx(tx, ty, (tz0 + tz1) / 2));
@@ -811,7 +811,8 @@
       skin: stdMat({ rough: 0.7, metal: 0, envI: 0.25 }),
       sleeve: stdMat({ rough: 0.9, metal: 0, envI: 0.15 }),
       kmetal: stdMat({ rough: 0.28, metal: 0.7 }),
-      ksteel: stdMat({ rough: 0.16, metal: 0.95, envI: 1.25 })
+      ksteel: stdMat({ rough: 0.16, metal: 0.95, envI: 1.25 }),
+      lens: stdMat({ rough: 0.04, metal: 0.6, envI: 2.2 })
     };
     for (var mk in M) disposables.push(M[mk]);
 
@@ -858,6 +859,37 @@
     var LH_MAG_LOCAL = { p: new THREE.Vector3(0, -0.075, -0.05), q: new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.2, 0, 0)) };
     var LH_BOLT = { p: new THREE.Vector3(0.05, 0.05, -0.15), q: new THREE.Quaternion().setFromEuler(new THREE.Euler(0.2, 0.6, 1.9)) };
 
+    // ------------------------------------------------------------------ AWP rig
+    var awpRoot = new THREE.Group(); swayRoot.add(awpRoot);
+    var awpGun = new THREE.Group(); awpRoot.add(awpGun);
+    var wPoly = new Builder(), wMetal = new Builder(), wLens = new Builder(), wShell = new Builder();
+    var wMag = withOffset(new Builder(), AWP.magPivot.x, AWP.magPivot.y, AWP.magPivot.z);
+    var wBolt = withOffset(new Builder(), AWP.boltPos.x, AWP.boltPos.y, AWP.boltPos.z);
+    buildAWP({ poly: wPoly, metal: wMetal, mag: wMag, bolt: wBolt, shell: wShell, balls: wPoly, lens: wLens }, pal);
+    awpGun.add(wPoly.mesh(M.poly), wMetal.mesh(M.metal), wLens.mesh(M.lens));
+    var awpTube = wShell.mesh(M.shell); awpTube.renderOrder = 2; awpGun.add(awpTube);
+    var awpMag = wMag.mesh(M.poly); awpMag.position.copy(AWP.magPivot); awpGun.add(awpMag);
+    var awpBolt = wBolt.mesh(M.metal); awpBolt.position.copy(AWP.boltPos); awpGun.add(awpBolt);
+    var awpMuzzleNode = new THREE.Object3D(); awpMuzzleNode.position.copy(AWP.muzzle); awpGun.add(awpMuzzleNode);
+    var awpPuff = new THREE.Sprite(puffMat); awpPuff.position.copy(AWP.muzzle); awpPuff.visible = false; awpPuff.renderOrder = 3;
+    awpGun.add(awpPuff);
+    var rHandAWP = new THREE.Mesh(rHandAK.geometry, M.skin), lHandAWP = new THREE.Mesh(lHandAK.geometry, M.skin);
+    rHandAWP.frustumCulled = lHandAWP.frustumCulled = false;
+    awpGun.add(rHandAWP, lHandAWP);
+    // right hand on the grip (same grip angle as the AK)
+    var RH_GRIP_AWP = { p: new THREE.Vector3(0.0, -0.058, 0.02), q: new THREE.Quaternion() };
+    (function () {
+      var up = new THREE.Vector3(0, 0.11, -0.03).normalize();
+      var X = new THREE.Vector3(1, 0, 0), Z = new THREE.Vector3().crossVectors(X, up);
+      RH_GRIP_AWP.q.setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, up, Z));
+    })();
+    // right hand on the bolt knob: ball beside/behind the knob, arm coming from the lower right
+    var RH_BOLT_OFF = new THREE.Vector3(0.03, -0.014, 0.012);
+    var RH_BOLT_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.5, 0.3, -0.5));
+    var LH_MAG_AWP = { p: new THREE.Vector3(0, -0.095, 0), q: new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.2, 0, 0)) };
+    // scoped pose: the scope axis on the camera axis, eyepiece just ahead of the eye
+    var AWP_SCOPE = { p: new THREE.Vector3(0, -AWP.scopeY, -0.24), r: new THREE.Euler(0, 0, 0) };
+
     // ------------------------------------------------------------------ knife rig
     // knAll holds everything knife-related. Each ball hand has its own frame whose axes are the
     // knife axes when held (blade -Z, pins X, spine +Y) with the ball centre at the origin; the
@@ -885,6 +917,8 @@
     swayRoot.add(sleeveR, sleeveL);
     var wristR_AK = new THREE.Object3D(); wristR_AK.position.copy(WRIST(HR)); rHandAK.add(wristR_AK);
     var wristL_AK = new THREE.Object3D(); wristL_AK.position.copy(WRIST(0.026)).multiply(new THREE.Vector3(-1, 1, 1)); lHandAK.add(wristL_AK);
+    var wristR_AWP = new THREE.Object3D(); wristR_AWP.position.copy(WRIST(HR)); rHandAWP.add(wristR_AWP);
+    var wristL_AWP = new THREE.Object3D(); wristL_AWP.position.copy(WRIST(0.026)).multiply(new THREE.Vector3(-1, 1, 1)); lHandAWP.add(wristL_AWP);
     // knife arms: the sleeve starts at the ball centre (hidden inside the ball), so it stays attached in any pose
     var wristR_K = new THREE.Object3D(); kHand.add(wristR_K);
     var wristL_K = new THREE.Object3D(); kHandL.add(wristL_K);
@@ -907,8 +941,10 @@
     var KN_LEFT = { p: new THREE.Vector3(-0.15, -0.08, -0.42), q: knQ(new THREE.Vector3(0.3, 0.9, -0.3), new THREE.Vector3(0.75, 0, 0.63)) };
     var KN_LOFF = new THREE.Vector3(-0.32, -0.36, 0.1); // left hand offscreen offset (slides in along the arm)
     akRoot.position.copy(AK_BASE.p); akRoot.rotation.copy(AK_BASE.r);
+    var AWP_BASE = { p: new THREE.Vector3(0.19, -0.17, -0.52), r: new THREE.Euler(0.03, -0.065, 0.0) };
 
     // channel lists
+    var AWP_CH = ["px", "py", "pz", "rx", "ry", "rz", "magY", "magZ", "magRX", "lhW", "lhX", "lhY", "lhZ", "rbW", "boltR", "boltZ"];
     var AK_CH = ["px", "py", "pz", "rx", "ry", "rz", "magY", "magZ", "magRX", "lhW", "lbW", "bolt", "lhX", "lhY", "lhZ"];
     var KN_CH = ["px", "py", "pz", "rx", "ry", "rz", "sw", "a", "b", "kx", "ky", "kz", "krx", "kry", "krz",
       "lw", "lpx", "lpy", "lpz", "lrx", "lry", "lrz", "lkrx", "lkry", "hw", "kh", "ksp"];
@@ -967,6 +1003,93 @@
           ry: K([[0, 0], [0.6, 0.85], [1.9, 0.95], [2.6, -0.55], [3.7, -0.62], [D, 0]]),
           rz: K([[0, 0], [0.6, 0.25], [1.9, 0.35], [2.6, 0.2], [3.7, 0.28], [D, 0]]),
           rx: K([[0, 0], [0.6, 0.1], [1.9, 0.05], [2.6, 0.12], [3.7, 0.08], [D, 0]])
+        }
+      };
+    }
+
+    // AWP actions. Extra channels: rbW = right hand grip (0) -> bolt knob (1), boltR = bolt lift
+    // (0..1), boltZ = bolt pulled back (0..1). The bolt timing matches the "awpBolt" sound, which the
+    // game plays 0.45 s after the shot (lift ~0.51, pull ~0.68, push ~0.84, lock ~0.92).
+    function awpBoltKeys(t0) { // t0 = moment the hand reaches the knob
+      return {
+        boltR: [[0, 0], [t0 + 0.02, 0], [t0 + 0.1, 1, "o"], [t0 + 0.42, 1], [t0 + 0.5, 0, "i"]],
+        boltZ: [[0, 0], [t0 + 0.14, 0], [t0 + 0.26, 1, "o"], [t0 + 0.32, 1], [t0 + 0.42, 0, "i"]]
+      };
+    }
+    function awpFireAction() {
+      var D = 1.45, bk = awpBoltKeys(0.42);
+      return {
+        name: "fire", dur: D, ch: {
+          rbW: K([[0, 0], [0.2, 0], [0.42, 1, "o"], [0.94, 1], [1.16, 0]]),
+          boltR: K(bk.boltR), boltZ: K(bk.boltZ),
+          rz: K([[0, 0], [0.2, 0], [0.44, 0.5], [0.94, 0.55], [1.25, 0]]),
+          ry: K([[0, 0], [0.25, 0], [0.5, 0.05], [0.94, 0.06], [1.3, 0]]),
+          px: K([[0, 0], [0.25, 0], [0.5, -0.025], [0.95, -0.03], [1.3, 0]]),
+          py: K([[0, 0], [0.25, 0], [0.48, 0.02], [0.66, 0.024], [0.76, 0.03, "o"], [0.92, 0.016], [1.3, 0]]),
+          pz: K([[0, 0], [0.62, 0], [0.68, 0.014, "o"], [0.8, 0.004], [0.84, -0.008, "o"], [1.0, 0]]),
+          rx: K([[0, 0], [0.5, 0], [0.68, 0.05, "o"], [0.8, 0.02], [0.84, -0.025, "o"], [0.95, 0.012], [1.05, 0], [1.45, 0]])
+        }
+      };
+    }
+    function awpReloadAction(empty) {
+      // mag out ~0.55 s (game sound 0.52), new mag seated ~2.15 s, bolt sound at ~3.04 s when empty
+      var D = 3.6;
+      var ch = {
+        rz: K([[0, 0], [0.35, -0.36], [2.05, -0.33], [2.15, -0.43, "o"], [2.45, -0.2], [3.1, -0.03], [D, 0]]),
+        rx: K([[0, 0], [0.3, 0.1], [0.6, 0.15], [1.2, 0.08], [2.05, 0.13], [2.15, 0.2, "o"], [2.45, 0.08], [3.1, 0.02], [D, 0]]),
+        ry: K([[0, 0], [0.35, 0.1], [2.1, 0.1], [2.9, 0.02], [D, 0]]),
+        py: K([[0, 0], [0.35, 0.025], [2.1, 0.035], [2.16, 0.046, "o"], [2.45, 0.02], [D, 0]]),
+        px: K([[0, 0], [0.35, -0.04], [2.15, -0.045], [3.0, -0.01], [D, 0]]),
+        pz: K([[0, 0], [0.35, 0.03], [2.3, 0.03], [D, 0]]),
+        magRX: K([[0, 0], [0.55, 0], [0.95, 0.3], [1.6, 0.3], [2.0, 0.04], [2.15, 0, "o"]]),
+        magY: K([[0, 0], [0.5, 0], [0.6, -0.03, "i"], [0.95, -0.46, "i"], [1.0, -0.5], [1.55, -0.45], [2.02, -0.04, "o"], [2.1, -0.008], [2.15, 0, "o"]]),
+        magZ: K([[0, 0], [0.6, 0], [0.95, 0.04], [1.55, 0.04], [2.0, 0.004], [2.15, 0]]),
+        lhW: K([[0, 0], [0.4, 1, "o"], [2.22, 1], [2.5, 0]]),
+        lhY: K([[0, 0], [2.08, 0], [2.16, 0.012, "o"], [2.3, 0]]),
+        rbW: K([[0, 0], [1, 0]]), boltR: K([[0, 0], [1, 0]]), boltZ: K([[0, 0], [1, 0]])
+      };
+      if (empty) {
+        var bk = awpBoltKeys(3.0);
+        ch.rbW = K([[0, 0], [2.7, 0], [3.0, 1, "o"], [3.5, 1], [D, 0]]);
+        ch.boltR = K(bk.boltR); ch.boltZ = K(bk.boltZ);
+        ch.rz = K([[0, 0], [0.35, -0.36], [2.05, -0.33], [2.15, -0.43, "o"], [2.45, -0.2], [2.95, 0.24], [3.45, 0.27], [D, 0]]);
+        ch.py = K([[0, 0], [0.35, 0.025], [2.1, 0.035], [2.16, 0.046, "o"], [2.45, 0.02], [2.95, 0.02], [3.26, 0.028, "o"], [D, 0]]);
+        ch.rx = K([[0, 0], [0.3, 0.1], [0.6, 0.15], [1.2, 0.08], [2.05, 0.13], [2.15, 0.2, "o"], [2.45, 0.08], [3.0, 0.02], [3.26, 0.05, "o"], [3.42, -0.02, "o"], [D, 0]]);
+      }
+      return { name: "reload", dur: D, ch: ch };
+    }
+    function awpDrawAction() {
+      // swings up from below, then a quick chamber check on the bolt
+      return {
+        name: "draw", dur: 1.1, ch: {
+          py: K([[0, -0.26], [0.45, 0.008, "o"], [0.58, 0]]),
+          pz: K([[0, 0.06], [0.45, 0, "o"]]),
+          rx: K([[0, -0.85], [0.45, 0.05, "o"], [0.58, 0], [0.8, 0.02], [0.88, -0.02, "o"], [1.1, 0]]),
+          ry: K([[0, 0.3], [0.48, 0, "o"]]),
+          rz: K([[0, 0.55], [0.48, 0, "o"], [0.62, 0.2], [0.95, 0.22], [1.1, 0]]),
+          px: K([[0, 0.04], [0.48, 0, "o"], [0.65, -0.015], [1.1, 0]]),
+          rbW: K([[0, 0], [0.5, 0], [0.64, 1, "o"], [0.92, 1], [1.08, 0]]),
+          boltR: K([[0, 0], [0.66, 0], [0.73, 1, "o"], [0.84, 1], [0.9, 0, "i"]]),
+          boltZ: K([[0, 0], [0.74, 0], [0.78, 0.25, "o"], [0.83, 0, "i"]])
+        }
+      };
+    }
+    function awpInspectAction() {
+      var D = 5.0;
+      return {
+        name: "inspect", dur: D, ch: {
+          // 1) swing the rifle across to show its whole left side (feed tube, scope, brake)
+          // 2) push it out and roll it to show the top / right side and check the bolt
+          px: K([[0, 0], [0.7, -0.09], [2.0, -0.095], [2.8, -0.06], [4.2, -0.065], [D, 0]]),
+          py: K([[0, 0], [0.7, 0.06], [2.0, 0.065], [2.8, 0.07], [4.2, 0.072], [D, 0]]),
+          pz: K([[0, 0], [0.7, 0.04], [2.0, 0.045], [2.8, -0.1], [4.2, -0.105], [D, 0]]),
+          ry: K([[0, 0], [0.7, 0.62], [2.0, 0.7], [2.8, 0.3], [4.2, 0.26], [D, 0]]),
+          rz: K([[0, 0], [0.7, 0.2], [2.0, 0.3], [2.8, 0.55], [4.2, 0.6], [D, 0]]),
+          rx: K([[0, 0], [0.7, 0.14], [2.0, 0.1], [2.8, 0.22], [4.2, 0.18], [D, 0]]),
+          // a bolt check while the right side faces up
+          rbW: K([[0, 0], [3.0, 0], [3.2, 1, "o"], [3.85, 1], [4.05, 0]]),
+          boltR: K([[0, 0], [3.22, 0], [3.3, 1, "o"], [3.72, 1], [3.8, 0, "i"]]),
+          boltZ: K([[0, 0], [3.34, 0], [3.44, 0.45, "o"], [3.56, 0.45], [3.68, 0, "i"]])
         }
       };
     }
@@ -1061,8 +1184,10 @@
     var landS = new Spring(140, 0.45), dryS = new Spring(900, 0.6);
     var sm = { sx: 0, sy: 0, crouch: 0, air: 0, speed: 0, rollLag: 0 };
     var puffT = 1, time = 0, recoilHeat = 0;
+    var awpKZ = new Spring(150, 0.5), awpKR = new Spring(120, 0.42), awpKRoll = new Spring(140, 0.45), awpKX = new Spring(160, 0.5);
+    var scoped = false, scopeW = 0;
 
-    function channels() { return weapon === "ak" ? AK_CH : KN_CH; }
+    function channels() { return weapon === "ak" ? AK_CH : weapon === "awp" ? AWP_CH : KN_CH; }
     function startAction(a) {
       // snapshot current values for a smooth blend into the new action
       snap = {}; var chs = channels();
@@ -1158,6 +1283,60 @@
       }
     }
 
+    var awpLeftBusy = false;
+    var _wp = new THREE.Vector3(), _wq = new THREE.Quaternion(), _wq2 = new THREE.Quaternion(), _we = new THREE.Euler();
+    function updateAWP(dt, c) {
+      awpLeftBusy = c.lhW > 0.01;
+      // scope raise: 0.12 s ease toward the eye
+      scopeW = Math.max(0, Math.min(1, scopeW + (scoped ? 1 : -1) * dt / 0.12));
+      var sw = EASE.s(scopeW);
+      _wp.set(AWP_BASE.p.x + c.px, AWP_BASE.p.y + c.py, AWP_BASE.p.z + c.pz);
+      awpRoot.position.lerpVectors(_wp, AWP_SCOPE.p, sw);
+      _wq.setFromEuler(_we.set(AWP_BASE.r.x + c.rx, AWP_BASE.r.y + c.ry, AWP_BASE.r.z + c.rz));
+      _wq2.setFromEuler(AWP_SCOPE.r);
+      awpRoot.quaternion.slerpQuaternions(_wq, _wq2, sw);
+      // heavy recoil springs: the rifle jumps up and back
+      var kz = awpKZ.step(dt), kr = awpKR.step(dt), kroll = awpKRoll.step(dt), kx = awpKX.step(dt), dz = dryS.step(dt);
+      awpGun.position.set(kx * 0.006, kr * 0.022, kz * 0.07 + dz * 0.004);
+      awpGun.rotation.set(kr * 0.2, kx * 0.03, kroll * 0.06);
+      // mag
+      awpMag.position.set(AWP.magPivot.x, AWP.magPivot.y + c.magY, AWP.magPivot.z + c.magZ);
+      awpMag.rotation.set(c.magRX, 0, 0);
+      awpMag.visible = c.magY > -0.44;
+      // bolt: lift (rotate about the bore), then slide back
+      awpBolt.position.set(AWP.boltPos.x, AWP.boltPos.y, AWP.boltPos.z + c.boltZ * 0.1);
+      awpBolt.rotation.set(0, 0, c.boltR * 1.25);
+      // right hand: grip -> bolt knob
+      var p = tmpP.copy(RH_GRIP_AWP.p), q = tmpQ.copy(RH_GRIP_AWP.q);
+      if (c.rbW > 0.001) {
+        awpBolt.updateMatrix();
+        tmpP2.copy(AWP.knob).applyMatrix4(awpBolt.matrix).add(RH_BOLT_OFF);
+        p.lerp(tmpP2, c.rbW); q.slerp(RH_BOLT_Q, c.rbW);
+      }
+      rHandAWP.position.copy(p); rHandAWP.quaternion.copy(q);
+      // left hand: only for the magazine swap
+      lHandAWP.visible = awpLeftBusy;
+      if (awpLeftBusy) {
+        magQ.copy(awpMag.quaternion);
+        magP.copy(LH_MAG_AWP.p).applyQuaternion(magQ).add(awpMag.position);
+        // slides in from below-left when appearing
+        var w = c.lhW;
+        magP.x += c.lhX - (1 - w) * 0.12; magP.y += c.lhY - (1 - w) * 0.18; magP.z += c.lhZ + (1 - w) * 0.05;
+        lHandAWP.position.copy(magP);
+        lHandAWP.quaternion.copy(magQ).multiply(LH_MAG_AWP.q);
+      }
+      // muzzle puff (bigger and longer than the AK's)
+      if (puffT < 1) {
+        puffT += dt / 0.13;
+        awpPuff.visible = puffT < 1;
+        var u = Math.min(puffT, 1);
+        puffMat.opacity = Math.pow(1 - u, 1.3);
+        var sc = 0.2 + Math.sqrt(u) * 0.3;
+        awpPuff.scale.set(sc, sc, sc);
+        awpPuff.position.z = AWP.muzzle.z - 0.07 - u * 0.12;
+      }
+    }
+
     var _kq = new THREE.Quaternion(), _kq2 = new THREE.Quaternion(), _ke = new THREE.Euler(), _kp = new THREE.Vector3();
     var _kX = new THREE.Vector3(1, 0, 0);
     var knPR = new THREE.Vector3(), knQR = new THREE.Quaternion(), knPL = new THREE.Vector3(), knQL = new THREE.Quaternion();
@@ -1221,14 +1400,19 @@
       );
       var c = evalChannels(dt);
       akRoot.visible = weapon === "ak";
+      awpRoot.visible = weapon === "awp";
       knAll.visible = weapon === "knife";
-      if (weapon === "ak") updateAK(dt, c); else updateKnife(dt, c);
+      if (weapon === "ak") updateAK(dt, c); else if (weapon === "awp") updateAWP(dt, c); else updateKnife(dt, c);
       // sleeves follow the wrists
       swayRoot.updateMatrixWorld(true);
       if (weapon === "ak") {
         placeSleeve(sleeveR, wristR_AK, SHOULDER_R);
         placeSleeve(sleeveL, wristL_AK, SHOULDER_L);
         sleeveL.visible = lHandAK.visible = leftBusy;
+      } else if (weapon === "awp") {
+        placeSleeve(sleeveR, wristR_AWP, SHOULDER_R);
+        sleeveL.visible = awpLeftBusy;
+        if (awpLeftBusy) placeSleeve(sleeveL, wristL_AWP, SHOULDER_L);
       } else {
         placeSleeve(sleeveR, wristR_K, SHOULDER_RK);
         sleeveL.visible = knLRoot.visible;
@@ -1239,15 +1423,25 @@
     var api = {
       group: group,
       setWeapon: function (w) {
-        weapon = w === "knife" ? "knife" : "ak";
+        weapon = w === "knife" ? "knife" : w === "awp" ? "awp" : "ak";
         cur = {}; snap = null; snapT = 1;
         action = null;
-        puffT = 1; puff.visible = false;
-        startAction(weapon === "ak" ? akDrawAction() : knDrawAction());
+        puffT = 1; puff.visible = false; awpPuff.visible = false;
+        scoped = false; scopeW = 0;
+        startAction(weapon === "ak" ? akDrawAction() : weapon === "awp" ? awpDrawAction() : knDrawAction());
         snapT = 1; // no blend on draw
         update(0, {});
       },
       fire: function () {
+        if (weapon === "awp") {
+          startAction(awpFireAction()); // kick + bolt cycle (also cancels an inspect)
+          awpKZ.v += 24 + Math.random() * 3;
+          awpKR.v += 20 + Math.random() * 3;
+          awpKRoll.v += (Math.random() - 0.5) * 10;
+          awpKX.v += (Math.random() - 0.5) * 6;
+          puffT = 0; awpPuff.visible = true; puffMat.rotation = Math.random() * TAU;
+          return;
+        }
         if (weapon !== "ak") return;
         if (action && action.name === "inspect") cancelAction();
         kickZ.v += 9 + Math.random() * 2;
@@ -1259,11 +1453,12 @@
         puffT = 0; puff.visible = true; puffMat.rotation = Math.random() * TAU;
       },
       dryFire: function () {
-        if (weapon !== "ak") return;
+        if (weapon !== "ak" && weapon !== "awp") return;
         if (action && action.name === "inspect") cancelAction();
         dryS.v += 4;
       },
       reload: function (empty) {
+        if (weapon === "awp") { scoped = false; startAction(awpReloadAction(!!empty)); return; }
         if (weapon !== "ak") return;
         startAction(akReloadAction(!!empty));
       },
@@ -1278,18 +1473,20 @@
       inspect: function () {
         if (action && action.name !== "inspect") return; // don't interrupt draw/reload/attacks
         if (action && action.name === "inspect" && actT < action.dur * 0.5) return;
-        startAction(weapon === "ak" ? akInspectAction() : knInspectAction());
+        startAction(weapon === "ak" ? akInspectAction() : weapon === "awp" ? awpInspectAction() : knInspectAction());
       },
+      // AWP scope: quick raise toward the eye (the game hides the group once scoped)
+      setScoped: function (on) { scoped = !!on && weapon === "awp"; },
       update: update,
       muzzle: function (target) {
         target = target || new THREE.Vector3();
         group.updateMatrixWorld(true);
         // muzzle position expressed in the group's parent space (= camera space)
-        tmpM.copy(group.matrixWorld).invert().multiply(muzzleNode.matrixWorld);
+        tmpM.copy(group.matrixWorld).invert().multiply((weapon === "awp" ? awpMuzzleNode : muzzleNode).matrixWorld);
         target.setFromMatrixPosition(tmpM).applyMatrix4(group.matrix);
         return target;
       },
-      _tune: { AK_BASE: AK_BASE, KN_BASE: KN_BASE, KN_SHOW: KN_SHOW, KN_LEFT: KN_LEFT, SHOULDER_LK: SHOULDER_LK, SHOULDER_R: SHOULDER_R, SHOULDER_RK: SHOULDER_RK, SHOULDER_L: SHOULDER_L, LH_GUARD: LH_GUARD, LH_MAG_LOCAL: LH_MAG_LOCAL, LH_BOLT: LH_BOLT, kHand: kHand, bali: bali, rHandAK: rHandAK, lHandAK: lHandAK },
+      _tune: { AK_BASE: AK_BASE, KN_BASE: KN_BASE, KN_SHOW: KN_SHOW, KN_LEFT: KN_LEFT, SHOULDER_LK: SHOULDER_LK, SHOULDER_R: SHOULDER_R, SHOULDER_RK: SHOULDER_RK, SHOULDER_L: SHOULDER_L, LH_GUARD: LH_GUARD, LH_MAG_LOCAL: LH_MAG_LOCAL, LH_BOLT: LH_BOLT, kHand: kHand, bali: bali, rHandAK: rHandAK, lHandAK: lHandAK, AWP_BASE: AWP_BASE, AWP_SCOPE: AWP_SCOPE, RH_GRIP_AWP: RH_GRIP_AWP, RH_BOLT_OFF: RH_BOLT_OFF, RH_BOLT_Q: RH_BOLT_Q, LH_MAG_AWP: LH_MAG_AWP, rHandAWP: rHandAWP, lHandAWP: lHandAWP },
       current: function () { return { weapon: weapon, action: action ? action.name : null, t: actT }; },
       dispose: function () {
         group.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
