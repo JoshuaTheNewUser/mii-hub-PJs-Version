@@ -21,7 +21,7 @@ function client(port) {
 }
 async function player(port, name, mii) {
   const c = await client(port);
-  c.send({ t: "hello", v: 2, name, color: "#ff3fa4", mii: mii || { kind: "demo" } });
+  c.send({ t: "hello", v: S.VERSION, name, color: "#ff3fa4", mii: mii || { kind: "demo" } });
   await wait(60);
   c.id = c.last("welcome").id;
   return c;
@@ -90,6 +90,18 @@ async function player(port, name, mii) {
   assert.strictEqual(a.all("spawn").length, spawnsBefore, "too early: not yet");
   await wait(320);
   assert.strictEqual(a.all("spawn").length, spawnsBefore + 1, "...let in when allowed");
+
+  // the AWP: big damage, but only one shot per bolt
+  const dmgBefore = b.all("dmg").length;
+  a.send({ t: "hit", v: b.id, z: "leg", d: 86, w: "awp" });
+  await wait(30);
+  a.send({ t: "hit", v: b.id, z: "leg", d: 86, w: "awp" });
+  a.send({ t: "hit", v: b.id, z: "leg", d: 30, w: "awp" });
+  await wait(50);
+  assert.strictEqual(b.all("dmg").length, dmgBefore + 1, "AWP bolt + damage checked");
+  a.send({ t: "shot", w: "awp", o: [0, 1, 0], e: [1, 1, 1], n: null, m: "" });
+  await wait(40);
+  assert.strictEqual(b.last("shot").w, "awp", "shot says which gun");
 
   // first to 20, then the intermission vote
   for (let i = 1; i < 20; i++) {

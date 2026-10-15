@@ -51,16 +51,35 @@
   };
 
   const AK = {
+    id: "ak", name: "Paint AK", speed: 215,
     damage: 36, rangeMod: 0.98, cycle: 0.1, mag: 30, reserve: 90, reload: 2.43, deploy: 1.0,
     spread: 0.0006, stand: 0.00641, crouch: 0.00481, move: 0.17506, air: 0.13536, land: 0.03,
     fire: 0.0078, recoverStand: 0.368, recoverCrouch: 0.305,
   };
+  // The AWP (CS:GO numbers): one shot to the head/chest/stomach, a bolt to work
+  // between shots, hopeless without the scope, pin-point with it (standing still).
+  const AWP = {
+    id: "awp", name: "Paint AWP", speed: 200,
+    damage: 115, rangeMod: 0.99, cycle: 1.455, mag: 10, reserve: 30, reload: 3.67, deploy: 1.1,
+    spread: 0.0002, stand: 0.08, crouch: 0.06, move: 0.17, air: 0.4, land: 0.12,
+    fire: 0.05, recoverStand: 0.25, recoverCrouch: 0.2,
+    // scoped: zoom 1 and 2 (CS field of view 40 and 10), slower and far more accurate
+    scoped: { stand: 0.002, crouch: 0.0015, speed: 100 },
+    zoomFov: [90, 40, 10],
+    kick: 3.2, // degrees the shot throws your aim up
+  };
+  const WEAPONS = { ak: AK, awp: AWP };
   const KNIFE = {
     deploy: 1.0,
     slash: { first: 40, next: 25, back: 90, range: 1.35, miss: 0.4, hit: 0.5 },
     stab: { damage: 65, back: 180, range: 1.05, miss: 1.0, hit: 1.1 },
   };
   const ZONE_MULT = { head: 4, chest: 1, arm: 1, stomach: 1.25, leg: 0.75 };
+  // the classes you can pick before spawning
+  const LOADOUTS = {
+    ak: { id: "ak", name: "Rifler", primary: "ak", desc: "Paint AK + Butterfly Knife" },
+    awp: { id: "awp", name: "Sniper", primary: "awp", desc: "Paint AWP + Butterfly Knife" },
+  };
 
   // The AK spray pattern: where bullet N goes, in degrees away from where you
   // aimed (x = right, y = up). Up for the first ~9, then left, right, left...
@@ -484,10 +503,13 @@
   // Weapons: the state of one player's AK and knife
   // ---------------------------------------------------------------------
   class Arms {
-    constructor() { this.reset(); }
-    reset() {
-      this.weapon = "ak"; this.last = "knife";
-      this.ammo = AK.mag; this.reserve = AK.reserve;
+    constructor(primary) { this.reset(primary); }
+    reset(primary) {
+      this.primary = WEAPONS[primary] ? primary : (this.primary || "ak");
+      const W = WEAPONS[this.primary];
+      this.weapon = this.primary; this.last = "knife";
+      this.ammo = W.mag; this.reserve = W.reserve;
+      this.zoom = 0; this.resumeZoom = 0; // AWP scope: 0 = not scoped, 1, 2
       this.ready = 0;            // time when you can attack again
       this.reloadEnd = 0;        // time the reload finishes (0 = not reloading)
       this.firePenalty = 0; this.landPenalty = 0;
@@ -495,25 +517,36 @@
       this.lastSlash = -9; this.slashAlt = 0;
     }
     reloading(now) { return this.reloadEnd > 0 && now < this.reloadEnd; }
+    gun() { return WEAPONS[this.primary]; }
+    // how fast you can run with what's in your hands
+    maxSpeed() {
+      if (this.weapon === "knife") return CFG.speedKnife;
+      const W = this.gun();
+      return (this.zoom > 0 && W.scoped ? W.scoped.speed : W.speed) * U;
+    }
   }
 
   // How far off a shot can go right now (radians), CS:GO style
   function inaccuracy(m, arms) {
-    let v = m.duck > 0.5 ? AK.crouch : AK.stand;
-    if (!m.onGround) v += AK.air;
+    const W = arms.gun();
+    const sc = arms.zoom > 0 && W.scoped ? W.scoped : null;
+    let v = m.duck > 0.5 ? (sc ? sc.crouch : W.crouch) : (sc ? sc.stand : W.stand);
+    if (!m.onGround) v += W.air;
     else {
-      const max = CFG.speedAK, acc = max * 0.34, spd = m.speed2d();
-      if (spd > acc) v += AK.move * Math.pow(clamp((spd - acc) / (max * 0.95 - acc), 0, 1), 1.15);
+      // moving faster than a third of the gun's top speed throws you off
+      const max = W.speed * U, acc = max * 0.34, spd = m.speed2d();
+      if (spd > acc) v += W.move * Math.pow(clamp((spd - acc) / (max * 0.95 - acc), 0, 1), 1.15);
     }
     return v + arms.firePenalty + arms.landPenalty;
   }
 
   // per tick: spread and recoil settle down
   function updateArms(arms, m, dt, now) {
-    const rec = m.duck > 0.5 ? AK.recoverCrouch : AK.recoverStand;
+    const W = arms.gun();
+    const rec = m.duck > 0.5 ? W.recoverCrouch : W.recoverStand;
     arms.firePenalty *= Math.exp(-dt * 2.3026 / rec);
     arms.landPenalty *= Math.exp(-dt * 2.3026 / 0.3);
-    if (now - arms.lastShot < AK.cycle + 0.02) {
+    if (now - arms.lastShot < Math.min(W.cycle, 0.12) + 0.02) {
       const k = 1 - Math.exp(-dt * 45);
       arms.recX += (arms.recTX - arms.recX) * k;
       arms.recY += (arms.recTY - arms.recY) * k;
@@ -528,7 +561,7 @@
       arms.recTX = arms.recX; arms.recTY = arms.recY;
     }
     if (arms.reloadEnd && now >= arms.reloadEnd) {
-      const take = Math.min(AK.mag - arms.ammo, arms.reserve);
+      const take = Math.min(W.mag - arms.ammo, arms.reserve);
       arms.ammo += take; arms.reserve -= take;
       arms.reloadEnd = 0;
       return "reloaded";
@@ -547,25 +580,33 @@
     const sp = Math.sin(pitch), cp = Math.cos(pitch);
     const ux = Math.sin(yaw) * sp, uy = cp, uz = Math.cos(yaw) * sp;
     const r1 = rand() * inacc, a1 = rand() * Math.PI * 2;
-    const r2 = rand() * AK.spread, a2 = rand() * Math.PI * 2;
+    const W = a.gun();
+    const r2 = rand() * W.spread, a2 = rand() * Math.PI * 2;
     const ox = Math.cos(a1) * r1 + Math.cos(a2) * r2, oy = Math.sin(a1) * r1 + Math.sin(a2) * r2;
     const d = { x: fw.x + rx * ox + ux * oy, y: fw.y + uy * oy, z: fw.z + rz * ox + uz * oy };
     const l = Math.hypot(d.x, d.y, d.z);
     d.x /= l; d.y /= l; d.z /= l;
-    // recoil for the next bullet
-    const k = Math.min(PATTERN.length - 1, Math.floor(a.recoilIdx));
-    const jit = 0.12 + k * 0.012;
-    a.recTX = PATTERN[k][0] + (rand() - 0.5) * jit;
-    a.recTY = PATTERN[k][1] + (rand() - 0.5) * jit * 0.5;
+    if (W.kick) {
+      // a big single kick (it settles long before the bolt is back)
+      a.recTX = a.recX + (rand() - 0.5) * 0.8;
+      a.recTY = a.recY + W.kick;
+    } else {
+      // recoil for the next bullet: the spray pattern
+      const k = Math.min(PATTERN.length - 1, Math.floor(a.recoilIdx));
+      const jit = 0.12 + k * 0.012;
+      a.recTX = PATTERN[k][0] + (rand() - 0.5) * jit;
+      a.recTY = PATTERN[k][1] + (rand() - 0.5) * jit * 0.5;
+    }
     a.recoilIdx += 1;
-    a.firePenalty += AK.fire;
+    a.firePenalty += W.fire;
     a.lastShot = now;
     return d;
   }
 
-  function damageFor(zone, dist) {
-    const range = Math.pow(AK.rangeMod, dist / U / 500);
-    return Math.round(AK.damage * (ZONE_MULT[zone] || 1) * range);
+  function damageFor(zone, dist, weapon) {
+    const W = WEAPONS[weapon] || AK;
+    const range = Math.pow(W.rangeMod, dist / U / 500);
+    return Math.round(W.damage * (ZONE_MULT[zone] || 1) * range);
   }
 
   // =====================================================================
@@ -801,7 +842,7 @@
   }
 
   root.PBEngine = {
-    U, DEG, CFG, AK, KNIFE, PATTERN, ZONE_MULT,
+    U, DEG, CFG, AK, AWP, WEAPONS, LOADOUTS, KNIFE, PATTERN, ZONE_MULT,
     World, Mover, Arms, BotBrain,
     forward, anglesTo, wrapAngle, clamp, lerp,
     raySphere, rayCapsule, rayHitboxes, bodyBoxes,

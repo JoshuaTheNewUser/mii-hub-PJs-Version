@@ -24,7 +24,7 @@ const http = require("http");
 const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
-const VERSION = 2; // (2: lobbies with warmup, modes and voting)
+const VERSION = 3; // (2: lobbies with warmup, modes and voting; 3: AWP loadout)
 const PORT = parseInt(process.env.PORT || "8787", 10);
 const HOST = process.env.HOST || undefined; // e.g. 127.0.0.1 = only reachable through Tailscale Funnel
 const MAX_PLAYERS = Math.max(2, Math.min(16, parseInt(process.env.MAX_PLAYERS || "8", 10))); // most a host can pick
@@ -41,7 +41,7 @@ const SERVER_NAME = process.env.SERVER_NAME || "Admin Server"; // what players s
 const MAX_MII_BYTES = 6 * 1024 * 1024;
 const MAX_ROOMS = 200;
 
-// Damage rules (the same numbers as the game: CS:GO's AK and knife)
+// Damage rules (the same numbers as the game: CS:GO's AK, AWP and knife)
 const AK_ZONES = { head: 4, chest: 1, arm: 1, stomach: 1.25, leg: 0.75 };
 const KNIFE_DAMAGE = [25, 40, 65, 90, 180];
 
@@ -55,7 +55,7 @@ const KNIFE_DAMAGE = [25, 40, 65, 90, 180];
  *   leave  {}
  *   vote   { mode, map }                 during the 15 s intermission: what to play next
  *   st     { s: [x, y, z, vx, vz, yaw, pitch, duck, flags] }   your movement, ~30 times a second
- *   shot   { o: [x,y,z], e: [x,y,z], n: [nx,ny,nz] | null, m }  a paintball you fired (for everyone's screens)
+ *   shot   { w, o: [x,y,z], e: [x,y,z], n: [nx,ny,nz] | null, m }  w = "ak" | "awp"  a paintball you fired (for everyone's screens)
  *   ev     { k }                         a sound to play at your position (reload, deploy, land...)
  *   hit    { v, z, d, w, b }             you hit player v in zone z for d damage with weapon w (b = backstab)
  *   spawn  { x, z, yaw }                 you're back in after being splattered
@@ -159,7 +159,7 @@ function startMatch(room, mode) {
   for (const id of room.players) {
     const p = players.get(id);
     p.score = 0; p.deaths = 0; p.hp = 100; p.alive = false; p.diedAt = 0; p.inRound = false;
-    p.lastAk = 0; p.lastKnife = 0;
+    p.lastAk = 0; p.lastAwp = 0; p.lastKnife = 0;
   }
   broadcast(room, { t: "start", in: COUNTDOWN_MS, mode: M.id, map: room.map, toWin: M.toWin, timeLimit: M.timeLimit });
   if (M.id === "respawn") room.timer = setTimeout(() => endMatch(room), COUNTDOWN_MS + TIME_LIMIT);
@@ -309,13 +309,20 @@ function doSpawn(p, sp) {
 // Is this hit believable? (stops someone with a modified game from cheating)
 function validHit(p, v, msg, now) {
   const d = num(msg.d);
-  if (msg.w === "ak") {
+  if (msg.w === "ak" || msg.w === "awp") {
+    const awp = msg.w === "awp";
     const mult = AK_ZONES[msg.z];
     if (!mult) return false;
-    const max = Math.round(36 * mult), min = Math.floor(36 * mult * 0.8);
+    const base = awp ? 115 : 36;
+    const max = Math.round(base * mult), min = Math.floor(base * mult * 0.8);
     if (d < min || d > max) return false;
-    if (now - p.lastAk < 85) return false; // faster than 600 shots a minute
-    p.lastAk = now;
+    if (awp) {
+      if (now - p.lastAwp < 1300) return false; // the bolt takes ~1.5 s
+      p.lastAwp = now;
+    } else {
+      if (now - p.lastAk < 85) return false; // faster than 600 shots a minute
+      p.lastAk = now;
+    }
   } else if (msg.w === "knife") {
     if (!KNIFE_DAMAGE.includes(d)) return false;
     if (now - p.lastKnife < 350) return false;
@@ -400,7 +407,7 @@ function onMessage(p, msg) {
     case "shot": {
       if (!room || (room.state !== "live" && room.state !== "warmup") || !p.alive) return;
       if (!Array.isArray(msg.o) || !Array.isArray(msg.e)) return;
-      broadcast(room, { t: "shot", id: p.id, o: msg.o.slice(0, 3).map(num), e: msg.e.slice(0, 3).map(num), n: Array.isArray(msg.n) ? msg.n.slice(0, 3).map(num) : null, m: clean(msg.m, 10) }, p.id);
+      broadcast(room, { t: "shot", id: p.id, o: msg.o.slice(0, 3).map(num), e: msg.e.slice(0, 3).map(num), n: Array.isArray(msg.n) ? msg.n.slice(0, 3).map(num) : null, m: clean(msg.m, 10), w: msg.w === "awp" ? "awp" : "ak" }, p.id);
       break;
     }
     case "ev": {

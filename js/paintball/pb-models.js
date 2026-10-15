@@ -220,7 +220,8 @@
       dark: new THREE.Color(0.035, 0.037, 0.042), dark2: new THREE.Color(0.075, 0.078, 0.085),
       grey: new THREE.Color(0.22, 0.23, 0.25), steel: new THREE.Color(0.6, 0.62, 0.65),
       white: new THREE.Color(0.9, 0.9, 0.9), black: new THREE.Color(0.01, 0.01, 0.012),
-      ball: mix(A, new THREE.Color(1, 0.85, 0.1), 0.0)
+      ball: mix(A, new THREE.Color(1, 0.85, 0.1), 0.0),
+      lens: new THREE.Color(0.04, 0.1, 0.2), glint: new THREE.Color(1, 1, 1)
     };
   }
 
@@ -361,6 +362,151 @@
       ballsB.add(ballGeo, bc, mtx(hx + px, cy + pyb, hz + pz, rnd() * 3, rnd() * 3, 0));
     }
     ballsB.add(ballGeo, pal.ball, mtx(hx, hy + 0.028, hz));
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // AWP paintball "sniper" marker geometry. Same gun space as the AK: origin = top of the pistol
+  // grip, barrel -Z, bore axis at y = AWP.boreY. Accuracy-International style thumbhole chassis in
+  // the accent colour, round dark action, long fluted barrel with a big ported brake, a fat scope,
+  // a bolt handle on the right, a box mag, and a slim clear paintball feed tube along the left side.
+  // ---------------------------------------------------------------------------------------------
+  var AWP = {
+    boreY: 0.032, scopeY: 0.108,
+    magPivot: new THREE.Vector3(0, -0.03, -0.1),
+    boltPos: new THREE.Vector3(0, 0.032, 0.032), // bolt rotation axis (z) / pivot
+    knob: new THREE.Vector3(0.05, -0.026, 0.006), // bolt knob centre relative to boltPos (closed)
+    muzzle: new THREE.Vector3(0, 0.032, -0.805)
+  };
+
+  // fluted cylinder along z (grooves cut every 60 degrees)
+  function flutedZ(r, len, flutes, depth) {
+    var g = new THREE.CylinderGeometry(r, r, len, flutes * 6, 1, false);
+    var p = g.attributes.position;
+    for (var i = 0; i < p.count; i++) {
+      var x = p.getX(i), z = p.getZ(i), rr = Math.sqrt(x * x + z * z);
+      if (rr < r * 0.5) continue;
+      var a = Math.atan2(z, x), c = Math.cos(a * flutes);
+      var k = c > 0.35 ? 1 - depth : 1;
+      p.setX(i, x * k); p.setZ(i, z * k);
+    }
+    g.computeVertexNormals();
+    g.rotateX(PI / 2);
+    return g;
+  }
+
+  // B = { poly, metal, mag, bolt, shell, balls, lens }
+  function buildAWP(B, pal) {
+    var poly = B.poly, metal = B.metal, lens = B.lens, i, k;
+    var by = AWP.boreY, sy = AWP.scopeY;
+    // ---- thumbhole stock + pistol grip (accent) ----
+    var hole = new THREE.Path();
+    var hp = [[0.066, 0.004], [0.24, 0.014], [0.262, 0.002], [0.262, -0.088], [0.245, -0.1], [0.095, -0.084], [0.07, -0.066], [0.062, -0.03]];
+    hole.moveTo(hp[0][0], hp[0][1]); for (i = 1; i < hp.length; i++) hole.lineTo(hp[i][0], hp[i][1]);
+    poly.add(sideShape([[-0.026, 0.024], [0.06, 0.024], [0.1, 0.044], [0.13, 0.058], [0.3, 0.058], [0.335, 0.052], [0.352, 0.044], [0.356, -0.13],
+      [0.34, -0.142], [0.29, -0.134], [0.13, -0.104], [0.07, -0.112], [0.048, -0.122], [0.02, -0.12], [0.008, -0.106], [0.002, -0.07], [-0.008, -0.034], [-0.022, -0.012]],
+      0.04, 0.005, [hole]), pal.accent);
+    for (i = 0; i < 4; i++) poly.add(rbox(0.042, 0.0035, 0.012, 0.0015, 0.0008), pal.accentD, mtx(0, -0.04 - i * 0.017, -0.004 + i * 0.0035, 0.2)); // grip grooves
+    poly.add(rbox(0.05, 0.19, 0.02, 0.008, 0.004), pal.dark, mtx(0, -0.044, 0.364)); // butt pad
+    poly.add(rbox(0.048, 0.016, 0.15, 0.007, 0.003), pal.dark, mtx(0, 0.066, 0.215)); // cheek piece
+    metal.add(cylY(0.004, 0.004, 0.02, 8), pal.steel, mtx(0, 0.052, 0.16));
+    metal.add(cylY(0.004, 0.004, 0.02, 8), pal.steel, mtx(0, 0.052, 0.27));
+    poly.add(box(0.003, 0.006, 0.2), pal.dark, mtx(-0.0205, 0.036, 0.2)); // side accent lines
+    poly.add(box(0.003, 0.006, 0.2), pal.dark, mtx(0.0205, 0.036, 0.2));
+    metal.add(cylX(0.006, 0.044, 10), pal.steel, mtx(0, -0.118, 0.29)); // sling stud
+    // ---- chassis / forend (accent) under the action and barrel ----
+    poly.add(sideShape([[0.06, 0.024], [0.06, -0.006], [0.0, -0.03], [-0.17, -0.03], [-0.19, -0.022], [-0.44, -0.018], [-0.462, -0.008], [-0.466, 0.014], [-0.456, 0.026], [-0.2, 0.026], [-0.17, 0.024]], 0.054, 0.006), pal.accent);
+    for (i = 0; i < 5; i++) { // vent slots
+      poly.add(rbox(0.004, 0.012, 0.036, 0.005, 0.001), pal.dark, mtx(-0.0272, 0.004, -0.23 - i * 0.045));
+      poly.add(rbox(0.004, 0.012, 0.036, 0.005, 0.001), pal.dark, mtx(0.0272, 0.004, -0.23 - i * 0.045));
+    }
+    poly.add(rbox(0.056, 0.005, 0.006, 0.002, 0.001), pal.dark, mtx(0, -0.012, -0.19));
+    poly.add(rbox(0.04, 0.008, 0.08, 0.003, 0.001), pal.dark, mtx(0, -0.022, -0.37)); // under rail
+    // magwell + trigger guard + trigger
+    metal.add(rbox(0.04, 0.016, 0.092, 0.004, 0.002), pal.dark2, mtx(0, -0.034, -0.1));
+    poly.add(sideShape([[-0.054, -0.03], [-0.054, -0.05], [-0.044, -0.062], [0.004, -0.062], [0.01, -0.052], [0.004, -0.03], [-0.002, -0.032], [-0.003, -0.054], [-0.04, -0.054], [-0.046, -0.046], [-0.046, -0.03]], 0.012, 0.0012), pal.dark);
+    metal.add(sideShape([[-0.022, -0.026], [-0.028, -0.036], [-0.031, -0.05], [-0.025, -0.053], [-0.022, -0.04], [-0.016, -0.026]], 0.006, 0.001), pal.accentL);
+    // ---- action: round receiver, rail, ejection port ----
+    metal.add(cylZ(0.021, 0.021, 0.23, 22), pal.dark2, mtx(0, by, -0.055));
+    metal.add(cylZ(0.0225, 0.0225, 0.012, 22), pal.dark, mtx(0, by, 0.052));
+    metal.add(cylZ(0.0225, 0.0225, 0.012, 22), pal.dark, mtx(0, by, -0.165));
+    metal.add(rbox(0.024, 0.008, 0.25, 0.002, 0.001), pal.dark, mtx(0, by + 0.024, -0.06)); // picatinny rail
+    for (i = 0; i < 12; i++) metal.add(box(0.026, 0.004, 0.009), pal.grey, mtx(0, by + 0.029, 0.055 - i * 0.02));
+    poly.add(rbox(0.006, 0.014, 0.07, 0.003, 0.001), pal.black, mtx(0.019, by + 0.008, -0.045)); // ejection port
+    metal.add(rbox(0.008, 0.012, 0.03, 0.003, 0.001), pal.accent, mtx(-0.02, by - 0.006, 0.03)); // safety / bolt release
+    // ---- barrel: shank, long fluted section, crown + big ported brake ----
+    metal.add(cylZ(0.016, 0.016, 0.07, 22), pal.grey, mtx(0, by, -0.2));
+    metal.add(flutedZ(0.0138, 0.44, 6, 0.17), pal.grey, mtx(0, by, -0.455));
+    metal.add(cylZ(0.0145, 0.0145, 0.008, 18), pal.dark, mtx(0, by, -0.24));
+    metal.add(cylZ(0.0125, 0.0125, 0.05, 18), pal.grey, mtx(0, by, -0.69));
+    metal.add(cylZ(0.0155, 0.0155, 0.01, 18), pal.dark, mtx(0, by, -0.715)); // lock nut
+    var brake = rbox(0.038, 0.034, 0.08, 0.012, 0.004);
+    metal.add(brake, pal.accent, mtx(0, by, -0.762));
+    for (i = 0; i < 3; i++) {
+      poly.add(rbox(0.04, 0.02, 0.012, 0.003, 0.001), pal.black, mtx(0, by, -0.738 - i * 0.022));
+    }
+    metal.add(cylZ(0.009, 0.009, 0.002, 16), pal.black, mtx(0, by, -0.8025)); // bore
+    poly.add(cylZ(0.0075, 0.0075, 0.003, 12), pal.ball, mtx(0, by, -0.8)); // paintball in the bore
+    // ---- scope: mounts, tube, turrets, bells, lenses ----
+    for (k = 0; k < 2; k++) {
+      var mz = k ? -0.15 : 0.018;
+      metal.add(rbox(0.028, sy - by - 0.03, 0.02, 0.004, 0.002), pal.dark2, mtx(0, (sy + by + 0.03) / 2 - 0.004, mz));
+      metal.add(cylZ(0.0175, 0.0175, 0.018, 20), pal.dark2, mtx(0, sy, mz));
+      metal.add(cylZ(0.018, 0.018, 0.006, 20), pal.accent, mtx(0, sy, mz));
+      metal.add(cylX(0.004, 0.04, 8), pal.steel, mtx(0, by + 0.036, mz));
+    }
+    metal.add(cylZ(0.0135, 0.0135, 0.27, 20), pal.dark, mtx(0, sy, -0.065)); // main tube
+    metal.add(rbox(0.032, 0.032, 0.06, 0.008, 0.003), pal.dark2, mtx(0, sy, -0.07)); // turret saddle
+    metal.add(cylY(0.012, 0.012, 0.03, 16), pal.dark, mtx(0, sy + 0.026, -0.07)); // elevation turret
+    metal.add(cylY(0.0125, 0.0125, 0.008, 16), pal.accent, mtx(0, sy + 0.044, -0.07));
+    metal.add(cylX(0.011, 0.028, 16), pal.dark, mtx(0.027, sy, -0.07)); // windage
+    metal.add(cylX(0.0115, 0.007, 16), pal.accent, mtx(0.043, sy, -0.07));
+    metal.add(cylX(0.009, 0.024, 14), pal.dark, mtx(-0.024, sy, -0.07)); // parallax
+    for (i = 0; i < 4; i++) metal.add(cylY(0.0125, 0.0125, 0.0015, 16), pal.grey, mtx(0, sy + 0.016 + i * 0.006, -0.07));
+    // rear bell / eyepiece
+    metal.add(cylZ(0.0135, 0.021, 0.032, 22), pal.dark, mtx(0, sy, 0.084));
+    metal.add(cylZ(0.021, 0.021, 0.04, 22), pal.dark2, mtx(0, sy, 0.12));
+    metal.add(cylZ(0.0215, 0.0215, 0.008, 22), pal.accent, mtx(0, sy, 0.106));
+    metal.add(cylZ(0.022, 0.0225, 0.016, 22), pal.dark, mtx(0, sy, 0.146)); // rubber eyecup
+    // front bell / objective
+    metal.add(cylZ(0.03, 0.0135, 0.07, 24), pal.dark, mtx(0, sy, -0.235));
+    metal.add(cylZ(0.03, 0.03, 0.05, 24), pal.dark2, mtx(0, sy, -0.295));
+    metal.add(cylZ(0.031, 0.031, 0.01, 24), pal.accent, mtx(0, sy, -0.316));
+    for (i = 0; i < 2; i++) metal.add(cylZ(0.0305, 0.0305, 0.003, 24), pal.grey, mtx(0, sy, -0.28 + i * 0.01));
+    // lenses (glossy, with painted glints)
+    lens.add(cylZ(0.0265, 0.0265, 0.002, 24), pal.lens, mtx(0, sy, -0.318));
+    lens.add(cylZ(0.0175, 0.0175, 0.002, 20), pal.lens, mtx(0, sy, 0.152));
+    var glint = new THREE.CircleGeometry(1, 14);
+    lens.add(glint, pal.glint, mtx(-0.009, sy + 0.009, -0.3195, 0, PI, 0, 0.0065, 0.0042, 1));
+    lens.add(glint, pal.glint, mtx(0.011, sy - 0.01, -0.3195, 0, PI, 0, 0.0028, 0.0028, 1));
+    lens.add(glint, pal.glint, mtx(-0.006, sy + 0.006, 0.1535, 0, 0, 0, 0.0042, 0.0028, 1));
+    // ---- slim paintball feed tube along the left side (clear, balls inside) ----
+    var tz0 = -0.4, tz1 = -0.06, tx = -0.036, ty = 0.01, tr = 0.0095;
+    B.shell.add(cylZ(tr, tr, tz1 - tz0, 16, true), pal.white, mtx(tx, ty, (tz0 + tz1) / 2));
+    poly.add(cylZ(tr + 0.0015, tr + 0.0015, 0.016, 16), pal.accent, mtx(tx, ty, tz0 - 0.004)); // front cap
+    poly.add(sph(tr + 0.0015, 14, 8), pal.accent, mtx(tx, ty, tz0 - 0.012, 0, 0, 0, 1, 1, 0.6));
+    for (i = 0; i < 3; i++) poly.add(cylZ(tr + 0.0012, tr + 0.0012, 0.006, 16), pal.dark, mtx(tx, ty, -0.12 - i * 0.12)); // clamps
+    var elbow = new THREE.TorusGeometry(0.014, tr, 10, 14, PI / 2);
+    B.shell.add(elbow, pal.white, mtx(tx + 0.014, ty, tz1, PI / 2, 0, PI / 2));
+    poly.add(cylX(tr + 0.002, 0.01, 14), pal.dark, mtx(-0.028, ty, tz1 + 0.014)); // feed port collar
+    var rb = 0.0078, bg = sph(rb, 10, 8);
+    for (var z = tz0 + 0.012; z < tz1 - 0.004; z += rb * 2.02) B.balls.add(bg, pal.ball, mtx(tx, ty, z));
+    // ---- magazine (box mag, paintballs visible through the side slot) – relative to the mag pivot ----
+    var mag = B.mag, mp = AWP.magPivot;
+    mag.add(rbox(0.03, 0.07, 0.074, 0.006, 0.003), pal.dark2, mtx(0, mp.y - 0.032, mp.z));
+    mag.add(rbox(0.036, 0.012, 0.082, 0.004, 0.002), pal.accent, mtx(0, mp.y - 0.07, mp.z)); // floor plate
+    mag.add(rbox(0.032, 0.004, 0.06, 0.002, 0.001), pal.accent, mtx(0, mp.y - 0.02, mp.z));
+    for (i = 0; i < 3; i++) for (k = -1; k <= 1; k += 2) mag.add(sph(0.0085, 10, 8), pal.ball, mtx(k * 0.009, mp.y - 0.034, mp.z + 0.02 - i * 0.02));
+    mag.add(rbox(0.031, 0.012, 0.056, 0.004, 0.001), pal.black, mtx(0, mp.y - 0.034, mp.z)); // window slot behind the balls
+    // ---- bolt: shroud + body + handle + knob, relative to the bolt pivot (closed = handle down/right) ----
+    var bp = AWP.boltPos, bolt = B.bolt;
+    bolt.add(cylZ(0.0115, 0.0115, 0.12, 14), pal.steel, mtx(0, bp.y, bp.z - 0.065)); // bolt body (seen when open)
+    bolt.add(cylZ(0.016, 0.014, 0.032, 18), pal.dark, mtx(0, bp.y, bp.z + 0.04)); // shroud
+    bolt.add(cylZ(0.006, 0.006, 0.012, 10), pal.accent, mtx(0, bp.y, bp.z + 0.06)); // cocking indicator
+    var kn = AWP.knob;
+    var arm = cylY(0.0042, 0.0048, 1, 10); // stalk from the bolt to the knob
+    var dx = kn.x, dy = kn.y, L = Math.sqrt(dx * dx + dy * dy);
+    bolt.add(arm, pal.steel, mtx(bp.x + dx / 2, bp.y + dy / 2, bp.z + kn.z, 0, 0, Math.atan2(dy, dx) - PI / 2, 1, L, 1));
+    bolt.add(sph(0.0115, 14, 10), pal.accent, mtx(bp.x + kn.x, bp.y + kn.y, bp.z + kn.z));
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -589,7 +735,8 @@
   // ---------------------------------------------------------------------------------------------
   // World (third-person) models
   // ---------------------------------------------------------------------------------------------
-  function createWorldGun(accent) {
+  function createWorldGun(accent, kind) {
+    if (kind === "awp") return createWorldAWP(accent);
     var pal = akPalette(accent || "#ff3fa4");
     var poly = new Builder(), metal = new Builder(), shell = new Builder();
     buildAK({ poly: poly, metal: metal, mag: poly, bolt: metal, hopper: poly, shell: shell, balls: poly }, pal);
@@ -601,6 +748,25 @@
     inner.add(shell.mesh(sm));
     g.name = "PBWorldGun";
     g.userData.muzzle = new THREE.Vector3(-AK.muzzle.x, AK.muzzle.y, -AK.muzzle.z).multiplyScalar(0.9); // local muzzle point (tracer start)
+    return g;
+  }
+
+  // third-person AWP: origin at the top of the pistol grip, barrel +Z, ~1.15 m long, 4 draw calls
+  function createWorldAWP(accent) {
+    var pal = akPalette(accent || "#ff3fa4");
+    var poly = new Builder(), metal = new Builder(), shell = new Builder(), lens = new Builder();
+    buildAWP({ poly: poly, metal: metal, mag: poly, bolt: metal, shell: shell, balls: poly, lens: lens }, pal);
+    var S = 0.98;
+    var g = new THREE.Group();
+    var inner = new THREE.Group(); inner.rotation.y = PI; inner.scale.setScalar(S); g.add(inner);
+    inner.add(poly.mesh(stdMat({ rough: 0.55, metal: 0.05, envI: 0.6 })));
+    inner.add(metal.mesh(stdMat({ rough: 0.32, metal: 0.65 })));
+    inner.add(lens.mesh(stdMat({ rough: 0.05, metal: 0.6, envI: 2.0 })));
+    var sm = stdMat({ rough: 0.08, metal: 0, transparent: true, opacity: 0.38, envI: 1.4 });
+    var sh = shell.mesh(sm); sh.renderOrder = 2; inner.add(sh);
+    g.name = "PBWorldAWP";
+    g.userData.kind = "awp";
+    g.userData.muzzle = new THREE.Vector3(-AWP.muzzle.x, AWP.muzzle.y, -AWP.muzzle.z).multiplyScalar(S);
     return g;
   }
 

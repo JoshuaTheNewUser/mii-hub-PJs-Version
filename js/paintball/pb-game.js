@@ -285,6 +285,20 @@
 .pb-vote-card .pb-votes{font-size:12px;color:#ffb21e;font-weight:800;min-height:15px}
 .pb-vote-result{margin-top:8px;font-weight:900;color:#6cff8a}
 .pb-srv{font-size:12px;font-weight:800;opacity:.8;margin-left:auto;margin-right:10px}
+.pb-scope{position:absolute;inset:0;display:none;background:radial-gradient(circle at 50% 50%,transparent 0,transparent 44vmin,#000 calc(44vmin + 2px))}
+.pb-scope.show{display:block}
+.pb-scope i{position:absolute;background:#000}
+.pb-scope .h{left:0;right:0;top:50%;height:1px}
+.pb-scope .v{top:0;bottom:0;left:50%;width:1px}
+.pb-loadout{position:absolute;left:50%;top:58%;transform:translateX(-50%);background:#0b0e12e0;border-radius:14px;padding:12px 16px;display:none;text-align:center;font-weight:800}
+.pb-loadout.show{display:block}
+.pb-loadout .t{font-size:12px;letter-spacing:3px;opacity:.7;margin-bottom:8px}
+.pb-loadout .cards{display:flex;gap:10px}
+.pb-loadout .card{border:2px solid #ffffff2a;border-radius:10px;padding:8px 14px;min-width:170px}
+.pb-loadout .card b{display:block;font-size:17px}
+.pb-loadout .card span{font-size:12px;opacity:.75}
+.pb-loadout .card.on{border-color:#ffb21e;background:#ffb21e22}
+.pb-loadout .n{font-size:12px;opacity:.7;margin-top:8px}
 .pb-boxhead{display:flex;align-items:center;justify-content:space-between}
 .pb-btn.small{padding:3px 10px}
 .pb-room .lock{font-size:18px}
@@ -568,6 +582,7 @@
       this.botLearned = 0;
       this.fighters = [];
       this.byNet = new Map();
+      this.loadout = E.LOADOUTS[this.settings.loadout] ? this.settings.loadout : "ak";
       this.sendT = 0;
       this.build();
       this.bindInput();
@@ -698,9 +713,10 @@
         l1l: bone("Leg_1_L"), l2l: bone("Leg_2_L"), al: find("Ankle_L"), l1r: bone("Leg_1_R"), l2r: bone("Leg_2_R"), ar: find("Ankle_R"),
       };
       f.useBones = ["head", "s1", "s2", "l1l", "l2l", "l1r", "l2r"].every((k) => f.bones[k]);
-      f.gun = root.PBModels.createWorldGun(f.color);
-      f.gun.traverse((n) => { if (n.isMesh) n.castShadow = true; });
-      this.scene.add(f.gun);
+      f.gunAK = root.PBModels.createWorldGun(f.color, "ak");
+      f.gunAWP = root.PBModels.createWorldGun(f.color, "awp");
+      for (const g of [f.gunAK, f.gunAWP]) { g.traverse((n) => { if (n.isMesh) n.castShadow = true; }); this.scene.add(g); g.visible = false; }
+      f.gun = f.gunAK;
       f.inst.holder.visible = f.gun.visible = f.alive;
     }
 
@@ -725,7 +741,7 @@
       this.byNet.delete(id);
       this.fighters = this.fighters.filter((x) => x !== f);
       if (f.inst) { f.inst.holder.removeFromParent(); if (root.MiiModel.disposeObject) root.MiiModel.disposeObject(f.inst.holder); }
-      if (f.gun) f.gun.removeFromParent();
+      if (f.gun) { f.gunAK.removeFromParent(); f.gunAWP.removeFromParent(); }
       this.notice(f.name + " left");
       this.updateScore();
     }
@@ -794,7 +810,11 @@
       this.hudDeath = el("div", "pb-death");
       this.hudHint = el("div", "pb-hint", "");
       this.hudNet = el("div", "pb-net", "");
-      hud.append(this.hudSplats, this.hudHurt, this.hudDir, top, this.hudFeed, this.hudXH, this.hudBanner, hp, ammo, this.hudSlots, this.hudDeath, this.hudHint, this.hudNet, this.hudBoard);
+      // the AWP's scope: black all round, with thin cross lines
+      this.hudScope = el("div", "pb-scope");
+      this.hudScope.append(el("i", "h"), el("i", "v"));
+      this.hudLoadout = el("div", "pb-loadout");
+      hud.append(this.hudScope, this.hudLoadout, this.hudSplats, this.hudHurt, this.hudDir, top, this.hudFeed, this.hudXH, this.hudBanner, hp, ammo, this.hudSlots, this.hudDeath, this.hudHint, this.hudNet, this.hudBoard);
       this.rootEl.appendChild(hud);
       this.hud = hud;
 
@@ -886,7 +906,7 @@
       const k = el("div", "pb-kill" + (killer === this.you || victim === this.you ? " mine" : ""));
       const a = el("span", null, killer.name); a.style.color = killer.color;
       const v = el("span", null, victim.name); v.style.color = victim.color;
-      k.append(a, el("span", "wpn", weapon === "knife" ? "🔪" : "🔫" + (head ? " 🎯" : "")), v);
+      k.append(a, el("span", "wpn", (weapon === "knife" ? "🔪" : weapon === "awp" ? "🔭 AWP" : "🔫") + (head && weapon !== "knife" ? " 🎯" : "")), v);
       this.hudFeed.appendChild(k);
       setTimeout(() => k.remove(), 6000);
       while (this.hudFeed.children.length > 6) this.hudFeed.firstChild.remove();
@@ -952,7 +972,7 @@
       };
       const onMove = (e) => {
         if (!this.locked() || this.paused) return;
-        const k = this.settings.sens * 0.022 * DEG;
+        const k = this.settings.sens * 0.022 * DEG * this.zoomSens();
         const f = this.you;
         if (!f.alive) return;
         f.yaw -= e.movementX * k;
@@ -962,7 +982,7 @@
       const onDown = (e) => {
         if (!this.locked()) return;
         if (e.button === 0) this.mouse.left = true;
-        if (e.button === 2) this.mouse.right = true;
+        if (e.button === 2) { this.mouse.right = true; this.zoomQueued = true; }
       };
       const onUp = (e) => {
         if (e.button === 0) this.mouse.left = false;
@@ -976,11 +996,14 @@
         e.preventDefault(); e.stopPropagation();
         if (e.repeat) return;
         this.keys.add(code);
+        if (code === "KeyB") { this.showLoadout(!this.loadoutOpen); return; }
+        // picking a class (the loadout screen is open, or you're waiting to respawn)
+        if (this.loadoutOpen && (code === "Digit1" || code === "Digit2")) { this.pickLoadout(code === "Digit1" ? "ak" : "awp"); return; }
         if (code === "Space") this.jumpQueued = true;
         if (code === "KeyR") this.wantReload = true;
-        if (code === "Digit1") this.wantSwitch = "ak";
+        if (code === "Digit1") this.wantSwitch = "primary";
         if (code === "Digit3" || code === "Digit2") this.wantSwitch = "knife";
-        if (code === "KeyQ") this.wantSwitch = this.you.arms.weapon === "ak" ? "knife" : "ak";
+        if (code === "KeyQ") this.wantSwitch = this.you.arms.weapon === "knife" ? "primary" : "knife";
         if (code === "KeyF") this.wantInspect = true;
       };
       const onKeyUp = (e) => {
@@ -990,7 +1013,7 @@
       const onWheel = (e) => {
         if (!this.locked()) return;
         e.preventDefault();
-        this.wantSwitch = this.you.arms.weapon === "ak" ? "knife" : "ak";
+        this.wantSwitch = this.you.arms.weapon === "knife" ? "primary" : "knife";
       };
       const noMenu = (e) => e.preventDefault();
       document.addEventListener("pointerlockchange", onLock);
@@ -1028,7 +1051,8 @@
           if (!f) return;
           const o = { x: m.o[0], y: m.o[1], z: m.o[2] }, e = { x: m.e[0], y: m.e[1], z: m.e[2] };
           const d = Math.hypot(o.x - this.camera.position.x, o.z - this.camera.position.z);
-          this.playAt(d > 18 ? "akFar" : "ak", o, 0.9, 0.95 + Math.random() * 0.1);
+          const gw = m.w === "awp" ? "awp" : "ak";
+          this.playAt(gw + (d > 18 ? "Far" : ""), o, 0.9, 0.95 + Math.random() * 0.1);
           this.launchBall(new THREE.Vector3(o.x, o.y, o.z), e, f.color);
           if (m.n) {
             const dist = Math.hypot(e.x - o.x, e.y - o.y, e.z - o.z);
@@ -1131,6 +1155,7 @@
       this.respawn(this.you, this.online ? this.pickSpawn(this.you, true) : pick(flip ? this.map.spawns.a : this.map.spawns.b), true);
       if (this.bot) this.respawn(this.bot, pick(flip ? this.map.spawns.b : this.map.spawns.a), true);
       this.banner(this.online ? "GET READY" : "RESPAWN", "First to " + this.toWin + " eliminations", "", Math.max(1.5, freeze));
+      this.showLoadout(true);
       if (this.online && freeze <= 0) this.goLive();
     }
 
@@ -1157,6 +1182,7 @@
       this.resetStats();
       if (!this.you.alive || !this.warmed) { this.respawn(this.you, this.pickSpawn(this.you, true), true); this.sendSpawn(); }
       this.warmed = true;
+      if (!this.warmShown) { this.warmShown = true; this.showLoadout(true); }
       this.banner("WARMUP", "Run around! The match starts when another player joins", "", 4);
       this.updateScore();
     }
@@ -1176,12 +1202,14 @@
       if (this.mode === "respawn") {
         this.respawn(this.you, this.pickSpawn(this.you, true), true);
         this.banner(name, sub, "", Math.max(1.5, freeze));
+        this.showLoadout(true);
         if (freeze <= 0) this.goLive();
       } else {
         // rounds: everyone comes in when the round starts (if you're late, you watch until the next one)
         this.you.alive = false;
         this.vm.group.visible = false;
         this.banner(name, m.late ? "You'll join at the start of the next round" : sub, "", 3);
+        this.showLoadout(true);
       }
       this.updateScore();
     }
@@ -1196,6 +1224,7 @@
       this.respawn(this.you, this.pickSpawn(this.you, true), true);
       this.sendSpawn();
       this.banner("ROUND " + m.n, "First to " + this.toWin, "", Math.max(1.2, freeze));
+      if (m.n === 1 || !this.loadoutOpen) this.showLoadout(true);
       this.updateScore();
     }
     netRoundEnd(m) {
@@ -1261,6 +1290,7 @@
 
     goLive() {
       this.phase = "live";
+      if (this.loadoutOpen && this.you.alive) this.showLoadout(false);
       this.banner("GO!", "", "", 0.8);
       this.audio.play("roundStart");
       if (this.online) this.sendSpawn();
@@ -1277,6 +1307,7 @@
       this.respawn(this.you, swap ? sb : sa, true);
       this.respawn(this.bot, swap ? sa : sb, true);
       this.banner("ROUND " + this.round, this.you.score + " – " + this.bot.score + (this.round > 1 ? "" : " · first to " + this.toWin), "", FREEZE);
+      this.showLoadout(true);
       this.updateScore();
     }
 
@@ -1304,12 +1335,13 @@
       f.mover.place(sp.x, sp.z);
       f.yaw = sp.yaw; f.pitch = 0;
       f.hp = 100; f.alive = true; f.respawnAt = 0;
-      f.arms.reset();
+      f.arms.reset(f === this.you ? this.loadout : "ak");
       f.taken = { dmg: 0, hits: 0 }; f.given = { dmg: 0, hits: 0 };
       f.killer = null;
       if (f === this.you) {
-        this.vm.setWeapon("ak");
-        this.vm.group.visible = true;
+        this.vm.setWeapon(f.arms.weapon);
+        this.applyZoom();
+        if (this.loadoutOpen && this.phase === "live") this.showLoadout(false);
         this.hudDeath.classList.remove("show");
         this.deathCam = null;
         if (this.online && (this.phase === "live" || this.phase === "warmup") && this.mode === "respawn") this.sendSpawn();
@@ -1424,17 +1456,17 @@
           walk: K.has("ShiftLeft") || K.has("ShiftRight"),
           duck: K.has("ControlLeft") || K.has("ControlRight") || K.has("KeyC"),
           jump: this.jumpQueued,
-          maxSpeed: y.arms.weapon === "knife" ? CFG.speedKnife : CFG.speedAK,
+          maxSpeed: y.arms.maxSpeed(),
           frozen: frozen || this.over,
         };
         this.jumpQueued = false;
         y.mover.step(dt, inp);
         this.moverEvents(y);
         this.useWeapons(y, {
-          fire: this.mouse.left && live, alt: this.mouse.right && live,
+          fire: this.mouse.left && live, alt: this.mouse.right && live, zoom: this.zoomQueued && live,
           reload: this.wantReload, switchTo: this.wantSwitch, inspect: this.wantInspect,
         }, dt);
-        this.wantReload = false; this.wantSwitch = null; this.wantInspect = false;
+        this.wantReload = false; this.wantSwitch = null; this.wantInspect = false; this.zoomQueued = false;
       }
       this.updateTargetInfo(y);
 
@@ -1445,7 +1477,7 @@
           const out = frozen || !y.alive ? { yaw: b.yaw } : b.brain.tick(dt, now, y);
           b.mover.step(dt, {
             fwd: out.fwd || 0, side: out.side || 0, yaw: b.yaw, walk: !!out.walk, duck: !!out.duck, jump: !!out.jump,
-            maxSpeed: b.arms.weapon === "knife" ? CFG.speedKnife : CFG.speedAK, frozen,
+            maxSpeed: b.arms.maxSpeed(), frozen,
           });
           this.moverEvents(b);
           this.useWeapons(b, { fire: !!out.fire && !frozen && y.alive, reload: !!out.reload, switchTo: out.switchTo }, dt);
@@ -1463,7 +1495,7 @@
           this.sendT = 1 / 30;
           const m = y.mover, a = y.arms;
           const r3 = (v) => Math.round(v * 1000) / 1000;
-          const flags = (m.onGround ? 1 : 0) | (a.weapon === "knife" ? 2 : 0) | (a.reloading(now) ? 4 : 0) | (y.alive ? 8 : 0);
+          const flags = (m.onGround ? 1 : 0) | (a.weapon === "knife" ? 2 : 0) | (a.reloading(now) ? 4 : 0) | (y.alive ? 8 : 0) | (a.primary === "awp" ? 16 : 0);
           this.net.send({ t: "st", s: [r3(m.pos.x), r3(m.pos.y), r3(m.pos.z), r3(m.vel.x), r3(m.vel.z), r3(y.yaw), r3(y.pitch), r3(m.duck), flags] });
         }
       }
@@ -1492,7 +1524,8 @@
       m.vel.x = s[3]; m.vel.z = s[4];
       f.yaw = s[5]; f.pitch = s[6]; m.duck = s[7];
       m.onGround = !!(s[8] & 1);
-      f.arms.weapon = s[8] & 2 ? "knife" : "ak";
+      f.arms.primary = s[8] & 16 ? "awp" : "ak";
+      f.arms.weapon = s[8] & 2 ? "knife" : f.arms.primary;
       if (!f.inst || !f.useBones) this.updateTargetInfo(f);
     }
 
@@ -1511,7 +1544,7 @@
           } else if (ev.loud) this.playAt("step", m.pos, 0.9, 0.9 + Math.random() * 0.2);
         } else if (ev.type === "land") {
           f.landed = true;
-          f.arms.landPenalty = AK.land * clamp(ev.speed / CFG.jump, 0.3, 1.5);
+          f.arms.landPenalty = f.arms.gun().land * clamp(ev.speed / CFG.jump, 0.3, 1.5);
           if (me) {
             this.audio.play("land", { vol: 0.45 });
             this.botHears(m.pos, 20);
@@ -1547,46 +1580,61 @@
     // ------------------------------------------------------------------
     useWeapons(f, want, dt) {
       const a = f.arms, now = this.now, me = f === this.you;
+      const W = a.gun();
       E.updateArms(a, f.mover, dt, now);
-      // switching
-      if (want.switchTo && want.switchTo !== a.weapon) {
+      // switching: "primary" (the AK or the AWP) or "knife"
+      let to = want.switchTo;
+      if (to === "primary" || to === "ak" || to === "awp") to = a.primary;
+      if (to && to !== a.weapon) {
         a.last = a.weapon;
-        a.weapon = want.switchTo;
+        a.weapon = to;
         a.reloadEnd = 0;
-        a.ready = now + (a.weapon === "ak" ? AK.deploy : KNIFE.deploy);
+        this.setZoom(f, 0); a.resumeZoom = 0;
+        a.ready = now + (to === "knife" ? KNIFE.deploy : W.deploy);
         if (me) {
-          this.vm.setWeapon(a.weapon);
-          this.audio.play(a.weapon === "ak" ? "deploy" : "knifeDeploy", { vol: 0.6 });
-          if (this.online) this.net.send({ t: "ev", k: a.weapon === "ak" ? "deploy" : "knifeDeploy" });
+          this.vm.setWeapon(to);
+          this.audio.play(to === "knife" ? "knifeDeploy" : "deploy", { vol: 0.6 });
+          if (this.online) this.net.send({ t: "ev", k: to === "knife" ? "knifeDeploy" : "deploy" });
         }
       }
-      if (want.inspect && me && !a.reloading(now) && now >= a.ready) this.vm.inspect();
+      if (want.inspect && me && !a.reloading(now) && now >= a.ready && !a.zoom) this.vm.inspect();
+      // the AWP's scope (right click): off -> zoom 1 -> zoom 2 -> off
+      if (want.zoom && a.weapon === "awp" && !a.reloading(now)) { this.setZoom(f, (a.zoom + 1) % 3); a.resumeZoom = 0; }
+      // after working the bolt, the scope comes back by itself (like CS)
+      if (a.resumeZoom && now >= a.ready && a.weapon === "awp" && !a.reloading(now)) { this.setZoom(f, a.resumeZoom); a.resumeZoom = 0; }
       // reloading
       const startReload = () => {
-        if (a.weapon !== "ak" || a.reloading(now) || a.ammo >= AK.mag || a.reserve <= 0) return;
+        if (a.weapon === "knife" || a.reloading(now) || a.ammo >= W.mag || a.reserve <= 0) return;
         const empty = a.ammo === 0;
-        a.reloadEnd = now + AK.reload;
+        this.setZoom(f, 0); a.resumeZoom = 0;
+        a.reloadEnd = now + W.reload;
         a.ready = Math.max(a.ready, a.reloadEnd);
+        const k = W.reload / AK.reload; // sounds spaced out to match the gun's reload
         if (me) {
           this.vm.reload(empty);
-          this.later(0.35, () => { this.audio.play("magOut", { vol: 0.7 }); if (this.online) this.net.send({ t: "ev", k: "magOut" }); });
-          this.later(1.45, () => { this.audio.play("magIn", { vol: 0.7 }); if (this.online) this.net.send({ t: "ev", k: "magIn" }); });
-          if (empty) this.later(2.05, () => this.audio.play("bolt", { vol: 0.7 }));
+          this.later(0.35 * k, () => { this.audio.play("magOut", { vol: 0.7 }); if (this.online) this.net.send({ t: "ev", k: "magOut" }); });
+          this.later(1.45 * k, () => { this.audio.play("magIn", { vol: 0.7 }); if (this.online) this.net.send({ t: "ev", k: "magIn" }); });
+          if (empty) this.later(2.05 * k, () => this.audio.play(a.primary === "awp" ? "awpBolt" : "bolt", { vol: 0.7 }));
         } else {
-          this.later(0.35, () => this.playAt("magOut", f.mover.pos, 0.6));
-          this.later(1.45, () => this.playAt("magIn", f.mover.pos, 0.6));
+          this.later(0.35 * k, () => this.playAt("magOut", f.mover.pos, 0.6));
+          this.later(1.45 * k, () => this.playAt("magIn", f.mover.pos, 0.6));
         }
       };
       if (want.reload) startReload();
-      if (a.weapon === "ak") {
+      if (a.weapon !== "knife") {
         if (want.fire && now >= a.ready && !a.reloading(now)) {
           if (a.ammo > 0) {
             a.ammo--;
-            // keep an exact 600 shots a minute while the trigger is held
-            a.ready = (now - a.ready < TICK * 1.5 ? a.ready : now) + AK.cycle;
+            // keep an exact fire rate while the trigger is held (600 a minute for the AK)
+            a.ready = (now - a.ready < TICK * 1.5 ? a.ready : now) + W.cycle;
             const dir = E.shotDirection(f, now);
             this.shoot(f, dir);
             if (f.brain) f.brain.onShot();
+            if (a.weapon === "awp") {
+              // the scope drops while you work the bolt, then comes back
+              if (a.zoom) { a.resumeZoom = a.zoom; this.setZoom(f, 0); }
+              if (me) this.later(0.45, () => this.audio.play("awpBolt", { vol: 0.6 }));
+            }
           } else {
             a.ready = now + 0.2;
             if (me) { this.vm.dryFire(); this.audio.play("dry", { vol: 0.6 }); }
@@ -1596,6 +1644,66 @@
       } else if ((want.fire || want.alt) && now >= a.ready) {
         this.knife(f, !!want.alt && !want.fire);
       }
+    }
+
+    // ---- the AWP's scope ----
+    setZoom(f, z) {
+      const a = f.arms;
+      if (a.zoom === z) return;
+      a.zoom = z;
+      if (f !== this.you) return;
+      this.audio.play("zoom", { vol: 0.5 });
+      if (this.vm.setScoped) this.vm.setScoped(z > 0);
+      this.applyZoom();
+    }
+    applyZoom() {
+      const a = this.you.arms;
+      const z = this.you.alive ? a.zoom : 0;
+      const fov = z ? a.gun().zoomFov[z] : this.settings.fov;
+      this.camera.fov = verticalFov(fov);
+      this.camera.updateProjectionMatrix();
+      this.hudScope.classList.toggle("show", z > 0);
+      this.vm.group.visible = this.you.alive && z === 0;
+    }
+    // mouse sensitivity while scoped (slower, so the same hand movement covers the same part of the view)
+    zoomSens() {
+      const a = this.you.arms;
+      if (!a.zoom) return 1;
+      const h = (deg) => Math.tan((deg * DEG) / 2);
+      return h(a.gun().zoomFov[a.zoom]) / h(this.settings.fov || 90);
+    }
+
+    // ---- loadouts (pick your class before you spawn) ----
+    showLoadout(show, note) {
+      const p = this.hudLoadout;
+      if (!show) { p.classList.remove("show"); this.loadoutOpen = false; return; }
+      p.innerHTML = "";
+      p.appendChild(el("div", "t", "LOADOUT"));
+      const row = el("div", "cards");
+      Object.values(E.LOADOUTS).forEach((L, i) => {
+        const c = el("div", "card" + (this.loadout === L.id ? " on" : ""));
+        c.append(el("b", null, (i + 1) + " · " + L.name), el("span", null, L.desc));
+        row.appendChild(c);
+      });
+      p.appendChild(row);
+      p.appendChild(el("div", "n", note || (!this.you.alive ? "Press 1 or 2 · you'll spawn with it" : this.phase === "freeze" || this.phase === "warmup" ? "Press 1 or 2 to pick · B to close" : "Press 1 or 2 · B to close · you'll spawn with it next time")));
+      p.classList.add("show");
+      this.loadoutOpen = true;
+    }
+    pickLoadout(id) {
+      if (!E.LOADOUTS[id]) return;
+      this.loadout = id;
+      this.settings.loadout = id; saveSettings(this.settings);
+      // before the action starts you switch straight away; otherwise it's for your next spawn
+      const now = !this.you.alive ? false : this.phase === "freeze" || this.phase === "warmup";
+      if (now && this.you.arms.primary !== id) {
+        this.you.arms.reset(id);
+        this.setZoom(this.you, 0);
+        this.vm.setWeapon(this.you.arms.weapon);
+        this.audio.play("deploy", { vol: 0.6 });
+      }
+      this.showLoadout(true, this.you.alive && !now ? "You'll spawn as " + E.LOADOUTS[id].name + " · B to close" : null);
+      if (this.you.alive) setTimeout(() => { if (this.loadoutOpen) this.showLoadout(false); }, 1200);
     }
 
     later(secs, fn) { this.timers.push({ t: this.now + secs, fn }); }
@@ -1630,20 +1738,20 @@
         this.camera.updateMatrixWorld();
         from = v.applyMatrix4(this.camera.matrixWorld);
         this.vm.fire();
-        this.audio.play("ak", { vol: 0.8, rate: 0.96 + Math.random() * 0.08 });
+        this.audio.play(f.arms.primary, { vol: 0.8, rate: 0.96 + Math.random() * 0.08 });
       } else {
         from = this.muzzleOf(f);
         const d = Math.hypot(eye.x - this.camera.position.x, eye.z - this.camera.position.z);
-        this.playAt(d > 18 ? "akFar" : "ak", eye, 0.9, 0.95 + Math.random() * 0.1);
+        this.playAt(f.arms.primary + (d > 18 ? "Far" : ""), eye, 0.9, 0.95 + Math.random() * 0.1);
       }
       this.launchBall(from, end, f.color);
       if (me) this.botHears(eye, 999, true);
       if (me && this.online) {
         const r2 = (v) => Math.round(v * 100) / 100;
-        this.net.send({ t: "shot", o: [r2(from.x), r2(from.y), r2(from.z)], e: [r2(end.x), r2(end.y), r2(end.z)], n: !hb && wh ? [r2(wh.nx), r2(wh.ny), r2(wh.nz)] : null, m: wh && !hb ? wh.mat : "" });
+        this.net.send({ t: "shot", w: f.arms.primary, o: [r2(from.x), r2(from.y), r2(from.z)], e: [r2(end.x), r2(end.y), r2(end.z)], n: !hb && wh ? [r2(wh.nx), r2(wh.ny), r2(wh.nz)] : null, m: wh && !hb ? wh.mat : "" });
       }
       if (hb) {
-        this.hit(f, hb.target, hb.zone, E.damageFor(hb.zone, hb.t), end, dir, "ak", hb.box);
+        this.hit(f, hb.target, hb.zone, E.damageFor(hb.zone, hb.t, f.arms.primary), end, dir, f.arms.primary, hb.box);
       } else if (wh) {
         this.later(endT / 140, () => {
           this.splat(end, { x: wh.nx, y: wh.ny, z: wh.nz }, f.color, 0.22 + Math.random() * 0.14);
@@ -1765,6 +1873,8 @@
         d.append(who, dm);
         if (this.mode === "respawn" || this.phase === "warmup") { this.hudRespawn = el("div", "again", "Respawning…"); d.appendChild(this.hudRespawn); }
         else if (this.online) d.appendChild(el("div", "again", "Watching until the next round…"));
+        this.applyZoom();
+        this.showLoadout(true);
         d.classList.add("show");
       }
       if (this.mode === "rounds" && !this.online) {
@@ -1910,7 +2020,8 @@
       const g = f.gun;
       if (!g) return new THREE.Vector3(f.mover.pos.x, f.mover.pos.y + 1.3, f.mover.pos.z);
       g.updateMatrixWorld();
-      return new THREE.Vector3(0, 0.08, 0.8).applyMatrix4(g.matrixWorld);
+      const mz = g.userData.muzzle || new THREE.Vector3(0, 0.08, 0.8);
+      return new THREE.Vector3(mz.x, mz.y, mz.z).applyMatrix4(g.matrixWorld);
     }
     botMuzzle() { return this.muzzleOf(this.bot); }
 
@@ -2006,6 +2117,8 @@
       h.updateMatrixWorld(true);
       if (f.alive) this.boneHitboxes(f);
       // the gun sits in the right hand, pointing where the Mii aims
+      const want = f.arms.primary === "awp" ? f.gunAWP : f.gunAK;
+      if (f.gun !== want) { f.gun.visible = false; f.gun = want; }
       f.gun.visible = f.alive && !knife;
       if (f.gun.visible) {
         const wr = f.bones.wr || f.bones.a2r;
@@ -2078,19 +2191,21 @@
         this.hudHP.classList.toggle("low", y.hp <= 30);
         this.hudHPBar.style.width = y.hp + "%";
       }
-      const ak = a.weapon === "ak";
+      const ak = a.weapon !== "knife";
+      const slot1 = "1 · " + a.gun().name.toUpperCase();
+      if (this.hudSlotAK.textContent !== slot1) this.hudSlotAK.textContent = slot1;
       const mag = ak ? String(a.ammo) : "–";
-      if (this.hudMag.textContent !== mag) { this.hudMag.textContent = mag; this.hudMag.classList.toggle("low", ak && a.ammo <= 5); }
+      if (this.hudMag.textContent !== mag) { this.hudMag.textContent = mag; this.hudMag.classList.toggle("low", ak && a.ammo <= Math.ceil(a.gun().mag / 6)); }
       const res = ak ? "/ " + a.reserve : "";
       if (this.hudRes.textContent !== res) this.hudRes.textContent = res;
-      const wn = ak ? "Paint AK" : "Butterfly Knife";
+      const wn = ak ? a.gun().name : "Butterfly Knife";
       if (this.hudWpn.textContent !== wn) this.hudWpn.textContent = wn;
       const rl = a.reloading(now) ? "RELOADING" : ak && a.ammo === 0 && a.reserve === 0 ? "NO PAINT" : "";
       if (this.hudReload.textContent !== rl) this.hudReload.textContent = rl;
       this.hudSlotAK.classList.toggle("on", ak);
       this.hudSlotKnife.classList.toggle("on", !ak);
       if (this.settings.xhStyle === "dynamic") this.drawCrosshair(ak ? E.inaccuracy(y.mover, a) : 0);
-      this.hudXH.style.display = y.alive && !this.hudBoard.classList.contains("show") ? "" : "none";
+      this.hudXH.style.display = y.alive && !a.zoom && !this.hudBoard.classList.contains("show") ? "" : "none";
       if (this.hudBoard.classList.contains("show") && (!this.boardT || Math.abs(now - this.boardT) > 0.5)) { this.boardT = now; this.renderBoard(); }
       if (this.online) {
         const pg = this.net.ping != null ? this.net.ping + " ms" : "";

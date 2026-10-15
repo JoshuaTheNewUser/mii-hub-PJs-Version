@@ -91,6 +91,24 @@ assert(E.damageFor("head", 10) >= 100);
 assert(E.damageFor("chest", 10) * 2 < 100 && E.damageFor("chest", 10) * 3 >= 100);
 assert(E.damageFor("leg", 10) * 3 < 100 && E.damageFor("leg", 10) * 4 >= 100);
 
+// the AWP: one shot to the head, chest or stomach; not the legs
+assert(E.damageFor("head", 20, "awp") >= 100 && E.damageFor("chest", 20, "awp") >= 100 && E.damageFor("stomach", 20, "awp") >= 100);
+assert(E.damageFor("leg", 20, "awp") < 100, "AWP leg shot doesn't kill");
+{
+  const aw = new E.Arms("awp");
+  const mv = new E.Mover(world); mv.place(0, 10);
+  assert(aw.weapon === "awp" && aw.ammo === 10 && aw.reserve === 30, "AWP mag");
+  const noScope = E.inaccuracy(mv, aw);
+  aw.zoom = 1;
+  const scoped = E.inaccuracy(mv, aw);
+  assert(noScope > 0.05 && scoped < 0.003, "AWP: no-scope " + noScope + " vs scoped " + scoped);
+  assert(Math.abs(aw.maxSpeed() - 100 * E.U) < 1e-9, "scoped speed");
+  aw.zoom = 0;
+  assert(Math.abs(aw.maxSpeed() - 200 * E.U) < 1e-9, "AWP speed");
+  aw.weapon = "knife";
+  assert(aw.maxSpeed() === E.CFG.speedKnife);
+}
+
 // hit boxes
 const boxes = E.bodyBoxes({ x: 0, y: 0, z: -10 }, E.CFG.eyeStand, 0);
 let hb = E.rayHitboxes({ x: 0, y: 1.6, z: 0 }, { x: 0, y: 0, z: -1 }, boxes, 50);
