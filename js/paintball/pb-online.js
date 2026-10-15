@@ -17,7 +17,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = 3;          // must match the server's VERSION
+  const VERSION = 4;          // must match the server's VERSION
   const DEFAULT_PORT = 8787;
   // Where everyone meets to find lobbies (the Mii Hub Paintball server, see server/README.md).
   // It's built into the app from a secret when it's built (pb-config.js), so it's not in the code.
@@ -130,7 +130,7 @@
         look: mii.look || {},
       };
       const p = opts.templateFor(rec).then((tpl) => {
-        const entry = { id: m.id, name: m.name, color: m.color, rec, tpl, look: opts.lookFor(rec, tpl) || {} };
+        const entry = { id: m.id, name: m.name, color: m.color, skins: m.skins || null, rec, tpl, look: opts.lookFor(rec, tpl) || {} };
         st.roster.set(m.id, entry);
         rerender();
         return entry;
@@ -139,7 +139,7 @@
         // fall back to the sample Mii so they can still play
         const r2 = Object.assign({}, rec, { kind: "demo", bytes: null });
         return opts.templateFor(r2).then((tpl) => {
-          const entry = { id: m.id, name: m.name, color: m.color, rec: r2, tpl, look: {} };
+          const entry = { id: m.id, name: m.name, color: m.color, skins: m.skins || null, rec: r2, tpl, look: {} };
           st.roster.set(m.id, entry);
           return entry;
         });
@@ -189,6 +189,7 @@
           });
         },
         bye: (m) => { st.roster.delete(m.id); st.loading.delete(m.id); rerender(); },
+        skins: (m) => { const e = st.roster.get(m.id); if (e) e.skins = m.s; },
         // (remembered so a match that's still loading can catch up)
         warmup: (m) => { st.phase = stamp(m); st.over = st.inter = st.votes = null; },
         start: (m) => { st.phase = stamp(m); st.over = st.inter = st.votes = null; if (!m.late) st.spawned.clear(); },
@@ -211,7 +212,7 @@
       const you = ctx.you;
       const tpl = await opts.templateFor(you);
       const mii = you.kind === "glb" && you.bytes ? { kind: "glb", b64: toBase64(you.bytes), fileName: you.fileName || "mii.glb" } : { kind: "demo", look: you.look || {} };
-      if (st.net) st.net.send({ t: "hello", v: VERSION, name: you.name || "Mii", color: ctx.paintFor(tpl), mii });
+      if (st.net) st.net.send({ t: "hello", v: VERSION, name: you.name || "Mii", color: ctx.paintFor(tpl), mii, skins: root.PBCrates && PBCrates.equipped ? PBCrates.equipped() : null });
     }
 
     function disconnect(quiet) {

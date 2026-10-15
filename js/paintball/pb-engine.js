@@ -527,17 +527,22 @@
   }
 
   // How far off a shot can go right now (radians), CS:GO style
-  function inaccuracy(m, arms) {
+  function inaccuracy(m, arms) { const p = inaccuracyParts(m, arms); return p.base + p.move; }
+  // base: standing/crouching + shooting + landing (shots bunch up near the middle, like CS)
+  // move: running and being in the air (spread evenly over the whole circle, so moving shots really miss)
+  function inaccuracyParts(m, arms) {
     const W = arms.gun();
     const sc = arms.zoom > 0 && W.scoped ? W.scoped : null;
     let v = m.duck > 0.5 ? (sc ? sc.crouch : W.crouch) : (sc ? sc.stand : W.stand);
-    if (!m.onGround) v += W.air;
-    else {
-      // moving faster than a third of the gun's top speed throws you off
-      const max = W.speed * U, acc = max * 0.34, spd = m.speed2d();
-      if (spd > acc) v += W.move * Math.pow(clamp((spd - acc) / (max * 0.95 - acc), 0, 1), 1.15);
-    }
-    return v + arms.firePenalty + arms.landPenalty;
+    // moving faster than a third of your current top speed throws you off (like CS, the top speed
+    // is the one you have right now: scoped in with the AWP that's only 100, so walking scoped is
+    // already as bad as running)
+    let mv = 0;
+    const max = arms.maxSpeed(), acc = max * 0.34, spd = m.speed2d();
+    if (spd > acc) mv += W.move * Math.pow(clamp((spd - acc) / (max * 0.95 - acc), 0, 1), 0.6);
+    // in the air: very inaccurate, on top of any running
+    if (!m.onGround) mv += W.air;
+    return { base: v + arms.firePenalty + arms.landPenalty, move: mv };
   }
 
   // per tick: spread and recoil settle down
@@ -573,16 +578,17 @@
   function shotDirection(f, now, rand) {
     rand = rand || Math.random;
     const a = f.arms;
-    const inacc = inaccuracy(f.mover, a);
+    const parts = inaccuracyParts(f.mover, a);
     const yaw = f.yaw - a.recX * DEG, pitch = f.pitch + a.recY * DEG;
     const fw = forward(yaw, pitch);
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
     const sp = Math.sin(pitch), cp = Math.cos(pitch);
     const ux = Math.sin(yaw) * sp, uy = cp, uz = Math.cos(yaw) * sp;
-    const r1 = rand() * inacc, a1 = rand() * Math.PI * 2;
+    const r1 = rand() * parts.base, a1 = rand() * Math.PI * 2;
     const W = a.gun();
     const r2 = rand() * W.spread, a2 = rand() * Math.PI * 2;
-    const ox = Math.cos(a1) * r1 + Math.cos(a2) * r2, oy = Math.sin(a1) * r1 + Math.sin(a2) * r2;
+    const r3 = Math.sqrt(rand()) * parts.move, a3 = rand() * Math.PI * 2;
+    const ox = Math.cos(a1) * r1 + Math.cos(a2) * r2 + Math.cos(a3) * r3, oy = Math.sin(a1) * r1 + Math.sin(a2) * r2 + Math.sin(a3) * r3;
     const d = { x: fw.x + rx * ox + ux * oy, y: fw.y + uy * oy, z: fw.z + rz * ox + uz * oy };
     const l = Math.hypot(d.x, d.y, d.z);
     d.x /= l; d.y /= l; d.z /= l;
@@ -846,6 +852,6 @@
     World, Mover, Arms, BotBrain,
     forward, anglesTo, wrapAngle, clamp, lerp,
     raySphere, rayCapsule, rayHitboxes, bodyBoxes,
-    inaccuracy, updateArms, shotDirection, damageFor,
+    inaccuracy, inaccuracyParts, updateArms, shotDirection, damageFor,
   };
 })(typeof window !== "undefined" ? window : globalThis);

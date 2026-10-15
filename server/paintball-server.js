@@ -24,7 +24,7 @@ const http = require("http");
 const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
-const VERSION = 3; // (2: lobbies with warmup, modes and voting; 3: AWP loadout)
+const VERSION = 4; // (2: lobbies with warmup, modes and voting; 3: AWP loadout; 4: weapon skins)
 const PORT = parseInt(process.env.PORT || "8787", 10);
 const HOST = process.env.HOST || undefined; // e.g. 127.0.0.1 = only reachable through Tailscale Funnel
 const MAX_PLAYERS = Math.max(2, Math.min(16, parseInt(process.env.MAX_PLAYERS || "8", 10))); // most a host can pick
@@ -48,7 +48,8 @@ const KNIFE_DAMAGE = [25, 40, 65, 90, 180];
 /*
  * PROTOCOL
  * client -> server
- *   hello  { v, name, color, mii }       mii = { kind: "glb", b64, fileName } or { kind: "demo", look }
+ *   hello  { v, name, color, mii, skins }  mii = { kind: "glb", b64, fileName } or { kind: "demo", look }
+ *   skins  { s: { ak, awp, knife } }     the weapon skins you have equipped (skin ids or null)
  *   list   {}                            ask for the room list
  *   create { name, password, max }       host a lobby (password optional; max players 2..MAX_PLAYERS)
  *   join   { room, password }            join a lobby by id (password if it has one)
@@ -61,7 +62,7 @@ const KNIFE_DAMAGE = [25, 40, 65, 90, 180];
  *   spawn  { x, z, yaw }                 you're back in after being splattered
  *   ping   { c }
  * server -> client
- *   welcome { id, v, maxPlayers, name, online }   rooms { rooms }   room { room }   mii { id, name, color, mii }   bye { id }
+ *   welcome { id, v, maxPlayers, name, online }   rooms { rooms }   room { room }   mii { id, name, color, mii, skins }   skins { id, s }   bye { id }
  *   warmup {}                        nobody to play with yet: run around freely
  *   start { in, mode, map, toWin, timeLimit, late?, round? }   a match begins after `in` ms
  *   round { n, in, scores }  roundEnd { winner, scores }   (rounds mode)
@@ -269,12 +270,12 @@ function joinRoom(p, room) {
   p.alive = false; p.diedAt = 0; p.inRound = false; // joins as "waiting to spawn"
   room.players.push(p.id);
   // tell everyone what the new player's Mii looks like, and the new player about everyone else
-  const meMii = JSON.stringify({ t: "mii", id: p.id, name: p.name, color: p.color, mii: p.mii });
+  const meMii = JSON.stringify({ t: "mii", id: p.id, name: p.name, color: p.color, mii: p.mii, skins: p.skins });
   for (const id of room.players) {
     if (id === p.id) continue;
     const o = players.get(id);
     send(o, meMii);
-    send(p, { t: "mii", id: o.id, name: o.name, color: o.color, mii: o.mii });
+    send(p, { t: "mii", id: o.id, name: o.name, color: o.color, mii: o.mii, skins: o.skins });
   }
   roomChanged(room);
   // what's going on in here right now
@@ -304,6 +305,13 @@ function doSpawn(p, sp) {
   p.pos = [sp.x, 0, sp.z];
   p.yaw = sp.yaw;
   broadcast(room, { t: "spawn", id: p.id, x: sp.x, z: sp.z, yaw: sp.yaw });
+}
+
+// Equipped weapon skins: just short ids (or none)
+function cleanSkins(s) {
+  const out = { ak: null, awp: null, knife: null };
+  if (s && typeof s === "object") for (const k of Object.keys(out)) if (typeof s[k] === "string" && /^[a-z0-9_]{1,32}$/.test(s[k])) out[k] = s[k];
+  return out;
 }
 
 // Is this hit believable? (stops someone with a modified game from cheating)
@@ -341,6 +349,7 @@ function onMessage(p, msg) {
       if (msg.v !== VERSION) return send(p, { t: "err", msg: "Your Mii Hub and this server are different versions. Update Mii Hub and try again." });
       p.name = clean(msg.name, 20) || "Mii";
       p.color = isColor(msg.color) ? msg.color.toLowerCase() : "#ff3fa4";
+      p.skins = cleanSkins(msg.skins);
       const mii = msg.mii || {};
       if (mii.kind === "glb" && typeof mii.b64 === "string" && mii.b64.length * 0.75 <= MAX_MII_BYTES) {
         p.mii = { kind: "glb", b64: mii.b64, fileName: clean(mii.fileName, 80) || "mii.glb" };
@@ -410,6 +419,11 @@ function onMessage(p, msg) {
       broadcast(room, { t: "shot", id: p.id, o: msg.o.slice(0, 3).map(num), e: msg.e.slice(0, 3).map(num), n: Array.isArray(msg.n) ? msg.n.slice(0, 3).map(num) : null, m: clean(msg.m, 10), w: msg.w === "awp" ? "awp" : "ak" }, p.id);
       break;
     }
+    case "skins": {
+      p.skins = cleanSkins(msg.s);
+      if (room) broadcast(room, { t: "skins", id: p.id, s: p.skins }, p.id);
+      break;
+    }
     case "ev": {
       if (!room) return;
       broadcast(room, { t: "ev", id: p.id, k: clean(msg.k, 16) }, p.id);
@@ -466,7 +480,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server, maxPayload: MAX_MII_BYTES * 1.4 + 4096 });
 
 wss.on("connection", (ws, req) => {
-  const p = { id: "p" + (nextId++), ws, name: "Mii", color: "#ff3fa4", mii: null, room: null, ready: false, alive: false, hp: 100, score: 0, deaths: 0, lastSt: 0, lastAk: 0, lastKnife: 0, pos: null, isAlive: true };
+  const p = { id: "p" + (nextId++), ws, name: "Mii", color: "#ff3fa4", mii: null, skins: { ak: null, awp: null, knife: null }, room: null, ready: false, alive: false, hp: 100, score: 0, deaths: 0, lastSt: 0, lastAk: 0, lastKnife: 0, pos: null, isAlive: true };
   players.set(p.id, p);
   log("+ " + p.id + " connected from " + (req.socket.remoteAddress || "?") + " (" + players.size + " online)");
   ws.on("pong", () => { p.isAlive = true; });

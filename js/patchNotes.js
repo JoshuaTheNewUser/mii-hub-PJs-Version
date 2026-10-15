@@ -11,7 +11,18 @@
 
   const NOTES = [
     {
-      v: null, date: "2026-10-15", title: "Patch notes in the app",
+      v: null, date: "2026-10-15", title: "Paintball: crates, skins and CS-style accuracy",
+      notes: [
+        "Crates! Earn 🎨 credits by playing (kills, headshots, round wins, finishing and winning matches) and open Splat Cases in the new Crates & Locker screen, with a CS-style spinning reel and sounds.",
+        "50 skins inspired by CS: Mil-Spec (blue), Restricted (purple), Classified (pink), Covert (red) and Rare Special (gold) with CS's odds. Gold is always a Butterfly Knife (Fade, Doppler, Marble Fade, Tiger Tooth and more).",
+        "Trade up 10 of the same skin for a random skin of the next tier. Equip skins in the Locker; other players see them online.",
+        "Moving and shooting now works like CS: running or jumping with the AK almost never hits, and moving with the AWP scoped in misses too (the scope blurs until you stand still).",
+        "The Paint AK is redesigned: no canister on top, now a see-through curved magazine full of paintballs.",
+        "Fixed the butterfly knife's handles swinging the wrong way and clipping through the blade.",
+      ],
+    },
+    {
+      v: "1.0.24", date: "2026-10-15", title: "Patch notes in the app",
       notes: [
         "New Patch notes button next to Check for updates: see what's new in this update and every update before it.",
         "The first time you open Mii Hub after an update, the patch notes pop up so you can see what's new.",

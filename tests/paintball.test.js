@@ -135,8 +135,32 @@ for (let i = 0; i < 3; i++) {
 assert(maxOff < 0.03, "first bullets accurate " + maxOff);
 for (let i = 3; i < 12; i++) { E.shotDirection(f, i * 0.1); for (let k = 0; k < 13; k++) E.updateArms(arms, m, T, i * 0.1 + k * T); }
 assert(arms.recY > 6, "spray climbs " + arms.recY);
+// moving shots miss (like CS): how often does a first shot land on a Mii-sized target (0.5 x 1.6 m) 10 m away?
+const hitRate = (weapon, setup, zoom) => {
+  let hits = 0;
+  for (let i = 0; i < 2000; i++) {
+    const mv = new E.Mover(world); mv.place(0, 10);
+    const a = new E.Arms(weapon); a.zoom = zoom || 0;
+    setup(mv, a);
+    const d = E.shotDirection({ mover: mv, arms: a, yaw: 0, pitch: 0 }, 0);
+    const t = 10 / -d.z, x = d.x * t, y = d.y * t;
+    if (Math.abs(x) < 0.25 && Math.abs(y) < 0.8) hits++;
+  }
+  return hits / 2000;
+};
+const running = (mv, a) => run(mv, 1.5, { side: 1, maxSpeed: a.maxSpeed() });
+const jumping = (mv, a) => { run(mv, 1.5, { side: 1, maxSpeed: a.maxSpeed() }); run(mv, 0.15, { side: 1, jump: true, maxSpeed: a.maxSpeed() }); assert(!mv.onGround, "in the air"); };
+const still = () => {};
+const rates = { akStill: hitRate("ak", still), akRun: hitRate("ak", running), akJump: hitRate("ak", jumping), awpScoped: hitRate("awp", still, 1), awpScopedRun: hitRate("awp", running, 1), awpNoScope: hitRate("awp", still) };
+assert(rates.akStill > 0.99, "AK standing hits " + rates.akStill);
+assert(rates.akRun < 0.12, "AK running mostly misses " + rates.akRun);
+assert(rates.akJump < 0.05, "AK jumping almost never hits " + rates.akJump);
+assert(rates.awpScoped > 0.99, "AWP scoped + still hits " + rates.awpScoped);
+assert(rates.awpScopedRun < 0.15, "AWP scoped + moving misses " + rates.awpScopedRun);
+assert(rates.awpNoScope < 0.7, "AWP no-scope is a gamble " + rates.awpNoScope);
+
 // recoil settles after letting go
 for (let k = 0; k < 128; k++) E.updateArms(arms, m, T, 2 + k * T);
 assert(arms.recY < 0.5 && arms.recoilIdx < 1, "recoil resets");
 
-console.log("All paintball tests passed. Stop " + (t * 1000).toFixed(0) + " ms, counter-strafe " + (t2 * 1000).toFixed(0) + " ms, jump " + top.toFixed(2) + " m, AK head " + E.damageFor("head", 10) + " / chest " + E.damageFor("chest", 10));
+console.log("All paintball tests passed. Stop " + (t * 1000).toFixed(0) + " ms, counter-strafe " + (t2 * 1000).toFixed(0) + " ms, jump " + top.toFixed(2) + " m, AK hits at 10 m: still " + rates.akStill + " / running " + rates.akRun + " / jumping " + rates.akJump + ", AK head " + E.damageFor("head", 10) + " / chest " + E.damageFor("chest", 10));

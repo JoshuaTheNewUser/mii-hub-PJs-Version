@@ -186,6 +186,8 @@ A first-person shooter on **Shipment** (from Call of Duty 4), made to feel like 
   - Stand still and your first few shots go right where you aim. Running makes you very inaccurate, and holding the trigger follows the AK's spray pattern: up, then left, then right. Counter-strafe (tap the opposite key) to stop quickly before you shoot.
   - **Loadouts:** before you spawn (and whenever you press **B**) pick **1 · Rifler** (Paint AK + knife) or **2 · Sniper** (Paint AWP + knife). Before the match or round starts you switch right away. Otherwise you get it on your next spawn.
   - The **AWP** works like CS:GO's: right click zooms in (twice, then out), one shot to the chest or head splats a Mii, 10 shots then a 3.7-second reload, and a bolt pull after every shot (about 1.5 s) that takes you out of the scope. Shooting without scoping ("no-scoping") is very inaccurate. You move slower with it, and even slower scoped in.
+  - **Moving shots miss, like CS:** running or jumping with the AK sends your shots almost anywhere in a wide circle. With the AWP scoped in, moving at all makes it inaccurate and blurs the scope; stand still for a clean shot.
+  - **Crates & Locker** (in the Paintball lobby): earn 🎨 credits by playing (kills, headshots, round wins, finishing and winning matches; new players start with 200) and open a **Splat Case** for 100. There are 50 skins inspired by CS, from Mil-Spec (blue, 79.92%) through Restricted (purple), Classified (pink) and Covert (red) to Rare Special (gold, 0.26%), which is always a Butterfly Knife. Trade up 10 of the same skin for one from the next tier. Equip skins in the Locker. Other players see your skins online.
   - The knife: left click slashes, right click stabs. Hitting someone in the back does a lot more damage. You run faster with the knife out.
 - **Movement is CS:GO's:** the same speeds, friction and jump height, Shift to walk quietly, Ctrl or C to crouch, and air strafing. Running makes footsteps others can hear. Walking doesn't.
 - **The Mii opponent plays by the same rules as you.** It hunts you down, follows your footsteps and gunshots, stops before it shoots, sprays and taps depending on how far away you are, and controls its recoil. **Its Paintball skill decides how good it is.** It gets better every time it wins or loses a fight with you.
@@ -268,7 +270,9 @@ js/homes3d.js         the apartment building and the inside of each home
 js/paintball/         Paintball (only loaded when you open it):
   pb-engine.js          movement, the AK and knife rules, hit boxes and the Mii's brain
   pb-map.js             the Shipment map
-  pb-models.js          the paint AK and AWP, the butterfly knife and your Mii hands
+  pb-models.js          the paint AK and AWP, the butterfly knife, your Mii hands and how skins are drawn
+  pb-skins.js           the skin catalog (rarities, odds, trade-ups)
+  pb-crates.js          credits, crates, the opening reel and the Locker
   pb-audio.js           sound effects
   pb-game.js            the lobby, the match, the HUD and the scoreboard
   pb-online.js          online play: Find Lobby, Host Lobby, passwords

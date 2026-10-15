@@ -109,6 +109,42 @@
   }
   var NOTE = function (m) { return 440 * Math.pow(2, (m - 69) / 12); };
 
+  // glockenspiel-ish bell: a sine with inharmonic partials
+  function bell(c, o, t, f, d, vol) {
+    tone(c, o, { t: t, f: f, a: 0.002, d: d, vol: vol });
+    tone(c, o, { t: t, f: f * 2.76, a: 0.001, d: d * 0.45, vol: vol * 0.35 });
+    tone(c, o, { t: t, f: f * 5.4, a: 0.001, d: d * 0.2, vol: vol * 0.15 });
+  }
+  // shimmering glitter: lots of tiny high bells over `dur`
+  function sparkle(c, o, t, dur, count, vol) {
+    for (var i = 0; i < count; i++) {
+      var tt = t + Math.pow(Math.random(), 1.4) * dur;
+      bell(c, o, tt, 2400 + Math.random() * 4200, 0.12 + Math.random() * 0.25, vol * (1 - (tt - t) / (dur * 1.3)));
+    }
+  }
+  // warm sustained chord (detuned saws through a lowpass)
+  function pad(c, o, t, midi, d, vol) {
+    for (var i = 0; i < midi.length; i++) {
+      tone(c, o, { t: t, f: NOTE(midi[i]), type: "sawtooth", a: 0.15, d: d, vol: vol, lp: 1800, detune: -7 });
+      tone(c, o, { t: t, f: NOTE(midi[i]), type: "sawtooth", a: 0.15, d: d, vol: vol, lp: 1800, detune: 7 });
+    }
+  }
+  // brassy fanfare: seq [[t, midi, dur, vol], ...]
+  function fanfare(c, o, t, seq, vol) {
+    for (var i = 0; i < seq.length; i++) {
+      var n = seq[i], v = vol * (n[3] || 1);
+      tone(c, o, { t: t + n[0], f: NOTE(n[1]), type: "sawtooth", a: 0.012, d: n[2], vol: v, lp: 2600 });
+      tone(c, o, { t: t + n[0], f: NOTE(n[1]), type: "square", a: 0.01, d: n[2] * 0.8, vol: v * 0.35, lp: 1400, detune: 5 });
+    }
+  }
+  // the "BOOM" when a rare item lands
+  function impact(c, o, t, k) {
+    tone(c, o, { t: t, f: 140, f2: 38, fT: 0.4, a: 0.002, d: 0.6 * k, vol: 1.2 * k });
+    burst(c, o, { t: t, type: "lowpass", f: 2400, f2: 200, Q: 0.7, a: 0.002, d: 0.5 * k, vol: 0.8 * k, color: "brown" });
+    burst(c, o, { t: t, type: "highpass", f: 3000, Q: 0.5, a: 0.002, d: 0.35, vol: 0.35 * k, color: "pink" });
+    ring(c, o, t, [523, 1046, 1568, 2093, 3136], 1.2, 0.35 * k);
+  }
+
   // ---------------------------------------------------------------------------------------------
   // Recipes: { dur, level (peak after normalisation), variants, build(c, out, variantIndex) }
   // ---------------------------------------------------------------------------------------------
@@ -307,9 +343,75 @@
     uiClick: { dur: 0.06, level: 0.4, build: function (c, o) {
       tone(c, o, { t: 0, f: 1900, f2: 1400, a: 0.001, d: 0.025, vol: 0.7 });
       click(c, o, 0, 3500, 0.5, 0.003);
+    } },
+
+    // ---- crates (pb-crates.js) ----
+    // the reel's "tk" each time an item passes the marker
+    crateTick: { dur: 0.07, level: 0.5, build: function (c, o) {
+      tone(c, o, { t: 0, f: 2300, f2: 1700, type: "triangle", a: 0.0008, d: 0.018, vol: 0.8 });
+      tone(c, o, { t: 0, f: 820, a: 0.001, d: 0.025, vol: 0.45 });
+      click(c, o, 0, 5200, 0.5, 0.004);
+    } },
+    // unlocking the case: two latch clacks, the lid swinging open
+    crateOpen: { dur: 1.0, level: 0.8, build: function (c, o) {
+      click(c, o, 0, 2200, 1, 0.01); ring(c, o, 0, [1400, 2600, 3900], 0.12, 0.4);
+      tone(c, o, { t: 0, f: 210, f2: 90, a: 0.001, d: 0.08, vol: 0.6 });
+      click(c, o, 0.11, 2600, 0.9, 0.008); ring(c, o, 0.11, [1700, 3100, 4600], 0.1, 0.35);
+      tone(c, o, { t: 0.11, f: 240, f2: 100, a: 0.001, d: 0.07, vol: 0.5 });
+      burst(c, o, { t: 0.18, type: "bandpass", f: 380, f2: 2600, fT: 0.35, Q: 1.1, a: 0.16, d: 0.38, vol: 0.55, color: "pink" }); // lid whoosh
+      burst(c, o, { t: 0.22, type: "bandpass", f: 2600, f2: 1200, Q: 3, a: 0.05, d: 0.18, vol: 0.18, color: "crackle" }); // hinge creak
+      tone(c, o, { t: 0.5, f: 130, f2: 70, a: 0.002, d: 0.12, vol: 0.45 });
+      burst(c, o, { t: 0.5, type: "lowpass", f: 900, f2: 300, Q: 0.7, a: 0.002, d: 0.1, vol: 0.4 }); // lid lands
+    } },
+    reveal_blue: { dur: 1.5, level: 0.6, build: function (c, o) {
+      bell(c, o, 0, NOTE(76), 0.9, 0.8); bell(c, o, 0.1, NOTE(83), 1.1, 0.9);
+      tone(c, o, { t: 0, f: NOTE(64), type: "triangle", a: 0.01, d: 0.8, vol: 0.25 });
+    } },
+    reveal_purple: { dur: 2.0, level: 0.68, build: function (c, o) {
+      var seq = [74, 79, 83, 86];
+      for (var i = 0; i < seq.length; i++) bell(c, o, i * 0.08, NOTE(seq[i]), 1.0 + i * 0.15, 0.85);
+      tone(c, o, { t: 0, f: NOTE(55), type: "triangle", a: 0.02, d: 1.2, vol: 0.3, lp: 1500 });
+      sparkle(c, o, 0.3, 0.9, 8, 0.12);
+    } },
+    reveal_pink: { dur: 2.6, level: 0.75, build: function (c, o) {
+      burst(c, o, { t: 0, type: "bandpass", f: 600, f2: 5000, fT: 0.22, Q: 1.5, a: 0.2, d: 0.08, vol: 0.4, color: "pink", shape: "lin" }); // swoosh up
+      var seq = [72, 76, 79, 84, 88];
+      for (var i = 0; i < seq.length; i++) bell(c, o, 0.22 + i * 0.07, NOTE(seq[i]), 1.2 + i * 0.12, 0.85);
+      pad(c, o, 0.5, [60, 64, 67, 72], 1.6, 0.18);
+      sparkle(c, o, 0.5, 1.6, 16, 0.14);
+    } },
+    reveal_red: { dur: 3.3, level: 0.85, build: function (c, o) {
+      burst(c, o, { t: 0, type: "bandpass", f: 300, f2: 6000, fT: 0.4, Q: 1.3, a: 0.38, d: 0.06, vol: 0.55, color: "pink", shape: "lin" }); // riser
+      impact(c, o, 0.4, 1);
+      fanfare(c, o, 0.4, [[0, 67, 0.13], [0.12, 72, 0.13], [0.24, 76, 0.13], [0.36, 79, 1.7, 1.2], [0.36, 72, 1.7, 0.8], [0.36, 76, 1.7, 0.8], [0.36, 84, 1.7, 0.6]], 0.3);
+      for (var i = 0; i < 5; i++) bell(c, o, 0.76 + i * 0.06, NOTE([84, 88, 91, 96, 100][i]), 1.4, 0.55);
+      sparkle(c, o, 0.75, 2.2, 30, 0.16);
+    } },
+    reveal_gold: { dur: 4.4, level: 0.9, build: function (c, o) {
+      burst(c, o, { t: 0, type: "bandpass", f: 200, f2: 7000, fT: 0.62, Q: 1.2, a: 0.6, d: 0.05, vol: 0.6, color: "pink", shape: "lin" }); // long riser
+      tone(c, o, { t: 0, f: 110, f2: 440, fT: 0.62, type: "sawtooth", a: 0.55, d: 0.08, vol: 0.18, lp: 1800, shape: "lin" });
+      impact(c, o, 0.64, 1.4);
+      fanfare(c, o, 0.64, [[0, 67, 0.11], [0.1, 67, 0.11], [0.2, 67, 0.11], [0.3, 72, 0.36], [0.68, 71, 0.12], [0.8, 72, 0.12], [0.92, 76, 0.12],
+        [1.04, 79, 2.2, 1.25], [1.04, 72, 2.2, 0.8], [1.04, 76, 2.2, 0.8], [1.04, 84, 2.2, 0.7], [1.04, 60, 2.2, 0.7]], 0.32);
+      pad(c, o, 1.6, [60, 67, 72, 76, 79], 2.4, 0.16);
+      for (var i = 0; i < 8; i++) bell(c, o, 1.68 + i * 0.055, NOTE([84, 88, 91, 96, 100, 103, 108, 103][i]), 1.6, 0.5);
+      sparkle(c, o, 0.66, 3.5, 60, 0.18);
+    } },
+    // trade-up contract: the machine clunks three times, whirs, then dings
+    tradeUp: { dur: 1.9, level: 0.8, build: function (c, o) {
+      for (var i = 0; i < 3; i++) {
+        var t = i * 0.16;
+        click(c, o, t, 1800, 1, 0.012); ring(c, o, t, [900 + i * 120, 1700 + i * 200, 2900], 0.1, 0.35);
+        tone(c, o, { t: t, f: 170, f2: 70, a: 0.001, d: 0.09, vol: 0.7 });
+      }
+      tone(c, o, { t: 0.45, f: 160, f2: 900, fT: 0.5, type: "sawtooth", a: 0.08, d: 0.45, vol: 0.22, lp: 1600, shape: "lin" }); // servo whir
+      burst(c, o, { t: 0.45, type: "bandpass", f: 500, f2: 3500, fT: 0.5, Q: 2, a: 0.4, d: 0.1, vol: 0.3, shape: "lin" });
+      bell(c, o, 1.0, NOTE(84), 0.9, 0.9); bell(c, o, 1.08, NOTE(91), 0.9, 0.7);
+      sparkle(c, o, 1.0, 0.7, 8, 0.1);
     } }
   };
-  var NO_PITCH_VAR = { roundStart: 1, roundWin: 1, roundLose: 1, matchWin: 1, matchLose: 1, kill: 1, tick: 1, uiClick: 1 };
+  var NO_PITCH_VAR = { roundStart: 1, roundWin: 1, roundLose: 1, matchWin: 1, matchLose: 1, kill: 1, tick: 1, uiClick: 1,
+    crateTick: 1, crateOpen: 1, reveal_blue: 1, reveal_purple: 1, reveal_pink: 1, reveal_red: 1, reveal_gold: 1, tradeUp: 1 };
 
   function renderRecipe(OAC, sampleRate, recipe, v) {
     var len = Math.ceil(recipe.dur * sampleRate);
@@ -331,10 +433,13 @@
     return new Promise(function (res) { c.oncomplete = function (e) { res(done(e.renderedBuffer)); }; });
   }
 
-  function create() {
+  // opts.only: render just these sounds (e.g. the crate screen only needs its own few)
+  function create(opts) {
     var AC = root.AudioContext || root.webkitAudioContext;
     var OAC = root.OfflineAudioContext || root.webkitOfflineAudioContext;
-    var noop = { resume: function () {}, play: function () { return null; }, setVolume: function () {}, dispose: function () {}, ready: Promise.resolve(), names: Object.keys(R), buffers: {} };
+    var names = Object.keys(R);
+    if (opts && opts.only) names = names.filter(function (n) { return opts.only.indexOf(n) >= 0; });
+    var noop = { resume: function () {}, play: function () { return null; }, setVolume: function () {}, dispose: function () {}, ready: Promise.resolve(), names: names, buffers: {} };
     if (!AC || !OAC) return noop;
     var ctx, master, comp;
     try {
@@ -347,7 +452,7 @@
 
     var buffers = {}, voices = {}, disposed = false, MAX_VOICES = 10;
     var jobs = [];
-    Object.keys(R).forEach(function (name) {
+    names.forEach(function (name) {
       var n = R[name].variants || 1;
       buffers[name] = [];
       for (var v = 0; v < n; v++) {
@@ -362,7 +467,7 @@
 
     var api = {
       ready: ready,
-      names: Object.keys(R),
+      names: names,
       buffers: buffers,
       resume: function () { try { if (ctx && ctx.state !== "running" && ctx.resume) ctx.resume(); } catch (e) {} },
       play: function (name, o) {

@@ -285,6 +285,7 @@
 .pb-vote-card .pb-votes{font-size:12px;color:#ffb21e;font-weight:800;min-height:15px}
 .pb-vote-result{margin-top:8px;font-weight:900;color:#6cff8a}
 .pb-srv{font-size:12px;font-weight:800;opacity:.8;margin-left:auto;margin-right:10px}
+.pb-earned{margin:6px 0 2px;color:#ffd23f;font-weight:800;font-size:15px}
 .pb-scope{position:absolute;inset:0;display:none;background:radial-gradient(circle at 50% 50%,transparent 0,transparent 44vmin,#000 calc(44vmin + 2px))}
 .pb-scope.show{display:block}
 .pb-scope i{position:absolute;background:#000}
@@ -355,9 +356,9 @@
     keys.appendChild(el("h3", null, "Controls"));
     const k = el("div", "pb-keys");
     k.innerHTML = [
-      "<kbd>W A S D</kbd> move", "<kbd>Mouse</kbd> aim", "<kbd>Left click</kbd> shoot / slash", "<kbd>Right click</kbd> knife stab",
+      "<kbd>W A S D</kbd> move", "<kbd>Mouse</kbd> aim", "<kbd>Left click</kbd> shoot / slash", "<kbd>Right click</kbd> AWP scope / stab",
       "<kbd>Space</kbd> jump", "<kbd>Shift</kbd> walk (quiet)", "<kbd>Ctrl</kbd> / <kbd>C</kbd> crouch", "<kbd>R</kbd> reload",
-      "<kbd>1</kbd> AK · <kbd>3</kbd> knife", "<kbd>Q</kbd> / wheel switch", "<kbd>F</kbd> inspect", "<kbd>Tab</kbd> scoreboard", "<kbd>Esc</kbd> menu",
+      "<kbd>1</kbd> gun · <kbd>3</kbd> knife", "<kbd>B</kbd> loadout", "<kbd>Q</kbd> / wheel switch", "<kbd>F</kbd> inspect", "<kbd>Tab</kbd> scoreboard", "<kbd>Esc</kbd> menu",
     ].map((s) => "<div>" + s + "</div>").join("");
     keys.appendChild(k);
     return keys;
@@ -407,9 +408,17 @@
         b.addEventListener("click", () => { tab = id; settings.tab = id; saveSettings(settings); showLobby(); });
         tabs.appendChild(b);
       }
+      // crates & locker (pb-crates.js): a button next to the tabs and your credits
+      const wallet = [];
+      if (root.PBCrates && root.PBCrates.open) {
+        const cb = el("button", "pb-tab pbc-tab", "🎁 Crates & Locker");
+        cb.addEventListener("click", () => root.PBCrates.open(rootEl, {}));
+        tabs.appendChild(cb);
+        wallet.push(root.PBCrates.creditsBadge());
+      }
       const x = el("button", "pb-x", "✕ Back to the hub");
       x.addEventListener("click", close);
-      head.append(h1, tabs, x);
+      head.append(h1, tabs, ...wallet, x);
       lob.appendChild(head);
       rootEl.appendChild(lob);
 
@@ -641,6 +650,18 @@
         skin: "#" + new THREE.Color(hexOf(lookYou.skin, hexOf(o.tYou.source && o.tYou.source.skin, "#f2c7a5"))).lerp(new THREE.Color("#f1d3c0"), 0.35).getHexString(),
       });
       this.vmScene.add(this.vm.group);
+      // your equipped skins (from the crates locker), kept up to date if you change them mid-match
+      this.mySkins = root.PBCrates && PBCrates.equipped ? PBCrates.equipped() : { ak: null, awp: null, knife: null };
+      if (this.vm.setSkins) this.vm.setSkins(this.mySkins);
+      this.earned = 0;
+      this.skinsOff = root.PBCrates && PBCrates.onChange ? PBCrates.onChange(() => {
+        const s = PBCrates.equipped();
+        if (JSON.stringify(s) === JSON.stringify(this.mySkins)) return;
+        this.mySkins = s;
+        if (this.vm.setSkins) this.vm.setSkins(s);
+        if (this.you) { this.you.skins = s; this.reskinAvatar(this.you); }
+        if (this.online && this.net) this.net.send({ t: "skins", s });
+      }) : null;
 
       this.audio = root.PBAudio.create();
       this.audio.setVolume(this.settings.volume);
@@ -656,6 +677,7 @@
 
       // the fighters
       this.you = this.addFighter("you", o.you.name, youPaint, o.you);
+      this.you.skins = this.mySkins;
       this.you.portrait = this.opts.portraitFor(o.you);
       if (this.online) {
         this.you.netId = this.net.id;
@@ -713,11 +735,23 @@
         l1l: bone("Leg_1_L"), l2l: bone("Leg_2_L"), al: find("Ankle_L"), l1r: bone("Leg_1_R"), l2r: bone("Leg_2_R"), ar: find("Ankle_R"),
       };
       f.useBones = ["head", "s1", "s2", "l1l", "l2l", "l1r", "l2r"].every((k) => f.bones[k]);
-      f.gunAK = root.PBModels.createWorldGun(f.color, "ak");
-      f.gunAWP = root.PBModels.createWorldGun(f.color, "awp");
-      for (const g of [f.gunAK, f.gunAWP]) { g.traverse((n) => { if (n.isMesh) n.castShadow = true; }); this.scene.add(g); g.visible = false; }
-      f.gun = f.gunAK;
+      this.buildWorldGuns(f);
       f.inst.holder.visible = f.gun.visible = f.alive;
+    }
+    // the guns other players see in your Mii's hands (wearing your skins)
+    buildWorldGuns(f) {
+      const sk = f.skins || {};
+      f.gunAK = root.PBModels.createWorldGun(f.color, "ak", sk.ak || null);
+      f.gunAWP = root.PBModels.createWorldGun(f.color, "awp", sk.awp || null);
+      for (const g of [f.gunAK, f.gunAWP]) { g.traverse((n) => { if (n.isMesh) n.castShadow = true; }); this.scene.add(g); g.visible = false; }
+      f.gun = f.arms && f.arms.primary === "awp" ? f.gunAWP : f.gunAK;
+    }
+    reskinAvatar(f) {
+      if (!f.inst || !f.gunAK) return;
+      const vis = f.gun.visible;
+      f.gunAK.removeFromParent(); f.gunAWP.removeFromParent();
+      this.buildWorldGuns(f);
+      f.gun.visible = vis;
     }
 
     // another player (online). p = { id, name, color, rec, tpl, look }
@@ -725,6 +759,7 @@
       if (this.byNet.has(p.id)) return this.byNet.get(p.id);
       const f = this.addFighter("remote", p.name, p.color || "#ff8a00", p.rec);
       f.netId = p.id;
+      f.skins = p.skins || null;
       f.alive = false;
       f.snaps = [];
       f.portrait = p.rec ? this.opts.portraitFor(p.rec) : "";
@@ -1102,6 +1137,7 @@
           this.resetAvatar(f);
         },
         bye: (m) => this.removeRemote(m.id),
+        skins: (m) => { const f = fOf(m.id); if (f && f !== this.you) { f.skins = m.s; this.reskinAvatar(f); } },
         room: (m) => {
           for (const p of m.room.players) { const f = fOf(p.id); if (f) { f.score = p.score; f.stats.deaths = Math.max(f.stats.deaths, p.deaths); } }
           this.updateScore();
@@ -1231,7 +1267,7 @@
       if (m.scores) for (const [id, sc] of Object.entries(m.scores)) { const f = this.byNet.get(id); if (f) f.score = sc; }
       this.phase = "end";
       const w = m.winner ? this.byNet.get(m.winner) : null;
-      if (w === this.you) { this.banner("ROUND WON", "", "win", 3); this.audio.play("roundWin"); }
+      if (w === this.you) { this.banner("ROUND WON", "", "win", 3); this.audio.play("roundWin"); this.earn("round"); }
       else if (w) { this.banner(w.name.toUpperCase() + " WINS THE ROUND", "", "lose", 3); this.audio.play("roundLose"); }
       else this.banner("DRAW", "Nobody won the round", "", 3);
       this.updateScore();
@@ -1374,7 +1410,7 @@
       this.updateScore();
       this.botLearns(winner);
       const matchOver = this.you.score >= this.toWin || this.bot.score >= this.toWin;
-      if (winner === this.you) { this.banner(matchOver ? "VICTORY" : "ROUND WON", why || "", "win"); this.audio.play(matchOver ? "matchWin" : "roundWin"); }
+      if (winner === this.you) { this.banner(matchOver ? "VICTORY" : "ROUND WON", why || "", "win"); this.audio.play(matchOver ? "matchWin" : "roundWin"); this.earn("round"); }
       else if (winner === this.bot) { this.banner(matchOver ? "DEFEAT" : "ROUND LOST", why || "", "lose"); this.audio.play(matchOver ? "matchLose" : "roundLose"); }
       else this.banner("DRAW", why || "Time's up", "");
       if (matchOver) this.phaseEnd = this.now + 3;
@@ -1846,7 +1882,7 @@
       attacker.stats.kills++;
       if (head) attacker.stats.hs++;
       this.killFeed(attacker, victim, weapon, head);
-      if (attacker === this.you) this.audio.play("kill", { vol: 0.9 });
+      if (attacker === this.you) { this.audio.play("kill", { vol: 0.9 }); if (victim !== this.you) this.earn("kill", head); }
       if (victim.inst) {
         victim.dead = 0.0001;
         victim.gun.visible = false;
@@ -2174,6 +2210,19 @@
     updateHUD() {
       const y = this.you, a = y.arms;
       const now = this.now;
+      // scoped in: the view blurs while you're inaccurate (moving, jumping), like CS; standing still it's sharp
+      let blur = 0;
+      if (a.zoom > 0 && y.alive) {
+        const sc = a.gun().scoped;
+        const extra = E.inaccuracy(y.mover, a) - (y.mover.duck > 0.5 ? sc.crouch : sc.stand);
+        blur = Math.round(Math.min(1, Math.max(0, extra / 0.06)) * 8 * 2) / 2;
+      }
+      if (blur !== this.scopeBlur) {
+        this.scopeBlur = blur;
+        const f = blur ? "blur(" + blur + "px)" : "";
+        this.canvas.style.filter = f;
+        this.hudScope.style.filter = blur ? "blur(" + (blur * 0.6) + "px)" : "";
+      }
       // the clock: round time (rounds), or time left in the match (respawn)
       if (this.phase === "freeze") this.clockLeft = this.phaseEnd - now;
       else if (this.mode === "rounds") { if (this.phase !== "end") this.clockLeft = this.roundEnd - now; }
@@ -2223,11 +2272,14 @@
       if (!this.online) this.paused = true;
       if (document.exitPointerLock && this.locked()) document.exitPointerLock();
       const won = winner === this.you;
+      if (why !== "disconnected") { this.earn("match"); if (won) this.earn("win"); }
       const ov = this.ovResult;
       ov.innerHTML = "";
       const p = el("div", "pb-panel pb-result");
       const big = why === "disconnected" ? "DISCONNECTED" : won ? "VICTORY" : winner ? "DEFEAT" : "DRAW";
       p.appendChild(el("div", "big " + (won ? "win" : winner ? "lose" : ""), big));
+      if (this.earned > 0) p.appendChild(el("div", "pb-earned", "+" + this.earned + " 🎨 credits earned · open crates in the lobby"));
+      this.earned = 0;
 
       if (!this.online) {
         const result = won ? "you" : winner ? "mii" : "draw";
@@ -2289,9 +2341,20 @@
       this.o.onExit(this.online ? "leave" : "lobby");
     }
 
+    // crate credits for playing (see PBCrates.EARN)
+    earn(kind, bonus) {
+      if (!root.PBCrates || !PBCrates.addCredits || !PBCrates.EARN) return;
+      const E2 = PBCrates.EARN;
+      const n = kind === "kill" ? (E2.kill || 0) + (bonus ? E2.headshot || 0 : 0) : kind === "round" ? E2.roundWin || 0 : kind === "match" ? E2.matchPlayed || 0 : kind === "win" ? E2.matchWin || 0 : 0;
+      if (n <= 0) return;
+      PBCrates.addCredits(n, kind);
+      this.earned += n;
+    }
+
     dispose() {
       if (this.disposed) return;
       this.disposed = true;
+      if (this.skinsOff) this.skinsOff();
       clearInterval(this.voteTimer);
       cancelAnimationFrame(this.raf);
       if (this.unbind) this.unbind();

@@ -102,6 +102,9 @@ async function player(port, name, mii) {
   a.send({ t: "shot", w: "awp", o: [0, 1, 0], e: [1, 1, 1], n: null, m: "" });
   await wait(40);
   assert.strictEqual(b.last("shot").w, "awp", "shot says which gun");
+  a.send({ t: "skins", s: { ak: "ak_redline", awp: "<script>", knife: "kn_fade" } });
+  await wait(40);
+  assert.deepStrictEqual(b.last("skins").s, { ak: "ak_redline", awp: null, knife: "kn_fade" }, "skins relayed (and cleaned)");
 
   // first to 20, then the intermission vote
   for (let i = 1; i < 20; i++) {

@@ -1,12 +1,17 @@
 /*
  * pb-models.js
  * Procedural weapon models + first-person viewmodel animation for the Paintball mini-game.
- *   - "AK": an AK-47 silhouette dressed as a modern paintball marker (hopper, air-tank stock,
- *     ported barrel, anodised accent parts).
+ *   - "AK": an AK-47 silhouette dressed as a modern paintball marker: a clear banana mag with the
+ *     paintballs stacked inside (no hopper, so the view over the gun stays clear), air-tank stock,
+ *     ported barrel, anodised accent parts.
+ *   - "AWP": thumbhole sniper marker with a slim clear feed tube and a box mag.
  *   - Butterfly knife (balisong) with two handles that really rotate around their own pivot pins.
  *   - Mii arms: plain round sleeves with a ball for a hand (the grip goes through it).
  * Everything is built from merged, vertex-coloured BufferGeometry (few draw calls), no assets.
  * Classic script: uses the global THREE (r147) and exposes window.PBModels.
+ *
+ * Weapon skins (PBSkins, see pb-skins.js): pattern textures, skin materials and preview pictures
+ * are attached to PBSkins at the end of this file.
  *
  * Viewmodel space = camera space (x right, y up, looking down -Z). The viewmodel group carries
  * its OWN lights (hemisphere + key + rim) unless opts.lights === false.
@@ -39,7 +44,27 @@
   function mix(a, b, t) { return a.clone().lerp(b, t); }
 
   // Builder: collects geometry parts (with a vertex colour each) and merges them into one geometry.
-  function Builder() { this.parts = []; this.off = new THREE.Matrix4(); }
+  // Skins: parts added while `b.skin` is 1 get skinMask = 1 (they wear the weapon skin; the rest keep
+  // their vertex colour), and when `b.uvp` is set every part gets box-projected UVs in gun space
+  // (side faces: u along the gun, v up; top/bottom faces: v across the width), so the pattern lines
+  // up across all the merged parts. `b.pivot` = where a withOffset() builder's origin sits in gun space.
+  function Builder() { this.parts = []; this.off = new THREE.Matrix4(); this.pivot = null; this.skin = 0; this.uvp = null; }
+  function projectUV(P, U, n, q, pv) {
+    var ox = pv ? pv.x : 0, oy = pv ? pv.y : 0, oz = pv ? pv.z : 0;
+    for (var t = 0; t + 2 < n; t += 3) {
+      var i0 = t * 3, i1 = i0 + 3, i2 = i0 + 6;
+      var ax = P[i1] - P[i0], ay = P[i1 + 1] - P[i0 + 1], az = P[i1 + 2] - P[i0 + 2];
+      var bx = P[i2] - P[i0], by = P[i2 + 1] - P[i0 + 1], bz = P[i2 + 2] - P[i0 + 2];
+      var nx = Math.abs(ay * bz - az * by), ny = Math.abs(az * bx - ax * bz), nz = Math.abs(ax * by - ay * bx);
+      var top = ny > nx && ny > nz, end = nz > nx && nz > ny;
+      for (var k = 0; k < 3; k++) {
+        var j = (t + k) * 3, x = P[j] + ox, y = P[j + 1] + oy, z = P[j + 2] + oz;
+        var u = (z - q.z0) * q.su, v = top ? 0.5 + x / q.H : (y - q.y0) / q.H;
+        if (end) u += x * Math.abs(q.su);
+        U[(t + k) * 2] = u; U[(t + k) * 2 + 1] = v;
+      }
+    }
+  }
   Builder.prototype.add = function (geo, color, m) {
     var g = geo.index ? geo.toNonIndexed() : geo.clone();
     if (!g.attributes.normal) g.computeVertexNormals();
@@ -61,7 +86,10 @@
     var C = new Float32Array(n * 3);
     var col = color instanceof THREE.Color ? color : new THREE.Color(color);
     for (var i = 0; i < n; i++) { C[i * 3] = col.r; C[i * 3 + 1] = col.g; C[i * 3 + 2] = col.b; }
-    this.parts.push({ p: P, n: N, c: C });
+    var U = new Float32Array(n * 2), SK = new Float32Array(n);
+    if (this.skin) SK.fill(1);
+    if (this.uvp) projectUV(P, U, n, this.uvp, this.pivot);
+    this.parts.push({ p: P, n: N, c: C, u: U, s: SK });
     g.dispose();
     if (geo !== g && geo.userData && geo.userData.temp) geo.dispose();
     return this;
@@ -70,14 +98,18 @@
     var total = 0, i;
     for (i = 0; i < this.parts.length; i++) total += this.parts[i].p.length;
     var P = new Float32Array(total), N = new Float32Array(total), C = new Float32Array(total), o = 0;
+    var U = new Float32Array(total / 3 * 2), SK = new Float32Array(total / 3);
     for (i = 0; i < this.parts.length; i++) {
       P.set(this.parts[i].p, o); N.set(this.parts[i].n, o); C.set(this.parts[i].c, o);
+      U.set(this.parts[i].u, o / 3 * 2); SK.set(this.parts[i].s, o / 3);
       o += this.parts[i].p.length;
     }
     var g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(P, 3));
     g.setAttribute("normal", new THREE.BufferAttribute(N, 3));
     g.setAttribute("color", new THREE.BufferAttribute(C, 3));
+    g.setAttribute("uv", new THREE.BufferAttribute(U, 2));
+    g.setAttribute("skinMask", new THREE.BufferAttribute(SK, 1));
     g.computeBoundingSphere();
     return g;
   };
@@ -86,7 +118,17 @@
     m.frustumCulled = false;
     return m;
   };
-  function withOffset(b, x, y, z) { b.off = new THREE.Matrix4().makeTranslation(-x, -y, -z); return b; }
+  function withOffset(b, x, y, z) { b.off = new THREE.Matrix4().makeTranslation(-x, -y, -z); b.pivot = new THREE.Vector3(x, y, z); return b; }
+  function withUV(q) { for (var i = 1; i < arguments.length; i++) arguments[i].uvp = q; }
+
+  // Skin UV layouts (gun space). u runs butt -> muzzle (blade: tang -> tip), v bottom -> top; the
+  // texture canvases (W x H px) have square pixels for these spans, so patterns are not stretched.
+  var SKIN_UV = {
+    ak: { z0: 0.36, su: -1 / 1.0, y0: -0.226, H: 0.32, W: 1024, Hpx: 328 },
+    awp: { z0: 0.375, su: -1 / 1.18, y0: -0.15, H: 0.31, W: 1024, Hpx: 269 },
+    blade: { z0: 0.013, su: -1 / 0.128, y0: -0.016, H: 0.032, W: 1024, Hpx: 256 },
+    handle: { z0: -0.009, su: 1 / 0.14, y0: -0.016, H: 0.032 * 1.094, W: 1024, Hpx: 256 }
+  };
 
   // Geometry primitives -------------------------------------------------------------------------
   function roundRectShape(w, h, r) {
@@ -209,7 +251,6 @@
   var AK = {
     magPivot: new THREE.Vector3(0, -0.006, -0.142),
     boltPos: new THREE.Vector3(0.024, 0.036, -0.152),
-    hopperPos: new THREE.Vector3(0, 0.07, -0.035),
     muzzle: new THREE.Vector3(0, 0.012, -0.62)
   };
 
@@ -225,15 +266,29 @@
     };
   }
 
-  // B = { poly, metal, mag, bolt, hopper, shell, balls } (any can be the same builder)
+  // Banana magazine curve (gun space): centreline c(s), s = 0 (top, in the magwell) .. 1 (floor plate).
+  // The mag sweeps forward like a real AK mag; its edges are offset along the curve's normal so the
+  // floor plate ends up square to the mag.
+  function akMagFrame(s) {
+    var z = -0.108 - 0.095 * Math.pow(s, 1.45), y = -0.006 - 0.19 * s;
+    var tz = -0.1378 * Math.pow(Math.max(s, 1e-4), 0.45), ty = -0.19, tl = Math.sqrt(tz * tz + ty * ty);
+    tz /= tl; ty /= tl;
+    return { z: z, y: y, tz: tz, ty: ty, nz: -ty, ny: tz, w: 0.034 + 0.006 * s }; // n = toward the rear edge
+  }
+
+  // B = { poly, metal, mag, magShell, magBalls, bolt } (any can be the same builder)
   function buildAK(B, pal) {
     var poly = B.poly, metal = B.metal, i;
     // ---- receiver (stamped AK shape) ----
+    poly.skin = 1;
     poly.add(sideShape([[0.088, 0.0], [0.088, 0.046], [0.078, 0.058], [-0.196, 0.058], [-0.212, 0.05], [-0.212, -0.004], [-0.17, -0.004], [-0.162, -0.016], [-0.072, -0.016], [-0.066, -0.002], [0.088, 0.0]], 0.040, 0.0025), pal.dark2);
+    poly.skin = 0;
     // dust cover (rounded, ribbed) on top
     var dc = new THREE.CylinderGeometry(0.0195, 0.0195, 0.25, 18, 1, false, PI / 2, PI);
     dc.rotateX(PI / 2);
+    metal.skin = 1;
     metal.add(dc, pal.grey, mtx(0, 0.052, -0.06));
+    metal.skin = 0;
     for (i = 0; i < 3; i++) metal.add(new THREE.TorusGeometry(0.0196, 0.0016, 4, 12, PI), pal.dark, mtx(0, 0.052, 0.04 - i * 0.012, 0, 0, 0));
     metal.add(rbox(0.036, 0.012, 0.02, 0.004, 0.002), pal.grey, mtx(0, 0.06, 0.07)); // rear lip
     // trunnion rivets + side rail plate (left side) + accent stripe
@@ -255,7 +310,9 @@
     poly.add(sideShape([[0.022, 0.0], [-0.022, 0.0], [-0.012, -0.03], [-0.002, -0.06], [0.004, -0.098], [0.016, -0.112], [0.042, -0.108], [0.046, -0.094], [0.036, -0.05], [0.028, -0.02]], 0.034, 0.005), pal.accent);
     for (i = 0; i < 4; i++) poly.add(rbox(0.036, 0.0035, 0.012, 0.0015, 0.0008), pal.accentD, mtx(0, -0.035 - i * 0.017, 0.033 + i * 0.0045 - 0.004, 0.33));
     // ---- lower handguard (accent) with grooves and M-LOK slots ----
+    poly.skin = 1;
     poly.add(sideShape([[-0.212, -0.006], [-0.212, 0.034], [-0.395, 0.034], [-0.405, 0.024], [-0.405, -0.0], [-0.39, -0.024], [-0.235, -0.024], [-0.222, -0.012]], 0.052, 0.006), pal.accent);
+    poly.skin = 0;
     for (i = 0; i < 3; i++) {
       poly.add(rbox(0.0035, 0.012, 0.03, 0.005, 0.001), pal.dark, mtx(-0.0262, 0.004, -0.255 - i * 0.045));
       poly.add(rbox(0.0035, 0.012, 0.03, 0.005, 0.001), pal.dark, mtx(0.0262, 0.004, -0.255 - i * 0.045));
@@ -264,7 +321,9 @@
     metal.add(rbox(0.05, 0.03, 0.012, 0.006, 0.002), pal.dark2, mtx(0, 0.01, -0.408)); // handguard retainer
     // ---- gas tube + upper handguard ----
     metal.add(cylZ(0.0105, 0.0105, 0.27, 14), pal.grey, mtx(0, 0.052, -0.33));
+    poly.skin = 1;
     poly.add(sideShape([[-0.2, 0.038], [-0.2, 0.066], [-0.205, 0.072], [-0.36, 0.072], [-0.37, 0.06], [-0.37, 0.038]], 0.034, 0.006), pal.accent);
+    poly.skin = 0;
     for (i = 0; i < 4; i++) poly.add(rbox(0.036, 0.003, 0.012, 0.0015, 0.0008), pal.accentD, mtx(0, 0.074, -0.23 - i * 0.035));
     // gas block + front sight
     metal.add(sideShape([[-0.44, -0.012], [-0.44, 0.062], [-0.47, 0.062], [-0.475, 0.04], [-0.475, -0.012]], 0.03, 0.002), pal.dark2);
@@ -292,14 +351,17 @@
     metal.add(cylZ(0.0115, 0.0115, 0.002, 16), pal.black, mtx(0, 0.012, -0.633)); // bore shadow
     metal.add(rbox(0.005, 0.012, 0.022, 0.002, 0.001), pal.black, mtx(0, 0.03, -0.6)); // brake port slot
     // ---- stock: skeleton frame (accent) + compressed-air tank (as the stock) ----
+    poly.skin = 1;
     poly.add(sideShape([[0.086, 0.048], [0.12, 0.044], [0.3, 0.012], [0.33, 0.012], [0.33, 0.0], [0.3, 0.0], [0.12, 0.03], [0.086, 0.03]], 0.02, 0.003), pal.accent);
+    poly.skin = 0;
     poly.add(sideShape([[0.31, 0.02], [0.345, 0.024], [0.348, -0.072], [0.31, -0.07]], 0.046, 0.006), pal.dark); // butt pad
-    var tankAxis = new THREE.Vector3(0, -0.035, 0.205);
     var tilt = -0.11;
     var tankM = function (x, y, z) { return new THREE.Matrix4().compose(new THREE.Vector3(x || 0, (y || 0) - 0.032, z || 0.205), new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt, 0, 0)), new THREE.Vector3(1, 1, 1)); };
+    metal.skin = 1;
     metal.add(cylZ(0.034, 0.034, 0.17, 24), pal.steel, tankM());
     var cap = sph(0.034, 24, 12); cap.scale(1, 1, 0.55);
     metal.add(cap, pal.steel, tankM(0, 0, 0.29));
+    metal.skin = 0;
     for (i = 0; i < 2; i++) metal.add(cylZ(0.0352, 0.0352, 0.012, 24), pal.accent, tankM(0, 0, 0.15 + i * 0.1));
     metal.add(cylZ(0.022, 0.03, 0.02, 20), pal.grey, tankM(0, 0, 0.11)); // regulator
     metal.add(cylZ(0.02, 0.02, 0.03, 16), pal.dark2, tankM(0, 0.0, 0.088)); // ASA adapter
@@ -307,61 +369,62 @@
     poly.add(cylX(0.009, 0.0125, 16), pal.white, tankM(-0.0185, 0.02, 0.112));
     poly.add(box(0.001, 0.008, 0.0012), pal.black, tankM(-0.025, 0.022, 0.112).multiply(mtx(0, 0, 0, 0.8)));
     // stock-to-receiver plate
+    poly.skin = 1;
     poly.add(rbox(0.036, 0.05, 0.016, 0.006, 0.002), pal.dark2, mtx(0, 0.022, 0.09));
+    poly.skin = 0;
 
-    // ---- magazine (banana mag) – built relative to the mag pivot ----
-    var mag = B.mag, sh = [], s, N = 10;
-    for (i = 0; i <= N; i++) { s = i / N; sh.push([-0.074 - 0.085 * Math.pow(s, 1.5), -0.006 - 0.2 * s]); }
-    for (i = N; i >= 0; i--) { s = i / N; sh.push([-0.142 - 0.105 * Math.pow(s, 1.35), -0.006 - 0.19 * s]); }
-    mag.add(sideShape(sh, 0.028, 0.0035), pal.dark2);
-    for (i = 1; i < N; i += 2) { // side ribs
-      s = i / N;
-      var zr = -0.074 - 0.085 * Math.pow(s, 1.5), zf = -0.142 - 0.105 * Math.pow(s, 1.35), yy = -0.006 - 0.195 * s;
-      var ln = Math.abs(zf - zr) - 0.012, ang2 = Math.atan2(0.01, Math.abs(zf - zr)) * 0;
-      mag.add(rbox(0.031, 0.006, ln, 0.002, 0.001), pal.accent, mtx(0, yy, (zr + zf) / 2, -0.08 - s * 0.35 + ang2));
+    // ---- magazine: a clear polycarbonate banana mag full of paintballs, in a slim frame ----
+    // (built in gun space; the mag builders are offset to the mag pivot)
+    var mag = B.mag, N = 16, f, sh = [], rearS = [], frontS = [];
+    for (i = 0; i <= N; i++) { f = akMagFrame(i / N); sh.push([f.z + f.nz * f.w, f.y + f.ny * f.w]); }
+    for (i = N; i >= 0; i--) { f = akMagFrame(i / N); sh.push([f.z - f.nz * f.w, f.y - f.ny * f.w]); }
+    B.magShell.add(sideShape(sh, 0.025, 0.003), pal.white); // the clear body
+    var core = []; // a thin dark divider down the middle, so the balls stand out against it
+    for (i = 0; i <= N; i++) { f = akMagFrame(i / N); core.push([f.z + f.nz * (f.w - 0.004), f.y + f.ny * (f.w - 0.004)]); }
+    for (i = N; i >= 0; i--) { f = akMagFrame(i / N); core.push([f.z - f.nz * (f.w - 0.004), f.y - f.ny * (f.w - 0.004)]); }
+    B.mag.add(sideShape(core, 0.0024, 0.0004), pal.dark);
+    // rear + front spines (the frame that holds the clear body; these wear the skin)
+    for (i = 0; i <= N; i++) { f = akMagFrame(i / N); rearS.push([f.z + f.nz * (f.w + 0.002), f.y + f.ny * (f.w + 0.002)]); }
+    for (i = N; i >= 0; i--) { f = akMagFrame(i / N); rearS.push([f.z + f.nz * (f.w - 0.009), f.y + f.ny * (f.w - 0.009)]); }
+    for (i = 0; i <= N; i++) { f = akMagFrame(i / N); frontS.push([f.z - f.nz * (f.w + 0.002), f.y - f.ny * (f.w + 0.002)]); }
+    for (i = N; i >= 0; i--) { f = akMagFrame(i / N); frontS.push([f.z - f.nz * (f.w - 0.008), f.y - f.ny * (f.w - 0.008)]); }
+    mag.skin = 1;
+    mag.add(sideShape(rearS, 0.029, 0.0025), pal.dark2);
+    mag.add(sideShape(frontS, 0.029, 0.0025), pal.dark2);
+    // floor plate (square to the mag) + feed lips
+    f = akMagFrame(1);
+    mag.add(rbox(0.034, 0.012, f.w * 2 + 0.01, 0.004, 0.002), pal.dark2, mtx(0, f.y - f.ty * 0.003, f.z - f.tz * 0.003, Math.atan2(-f.ny, f.nz)));
+    mag.skin = 0;
+    mag.add(rbox(0.036, 0.004, f.w * 2 + 0.006, 0.0015, 0.001), pal.accent, mtx(0, f.y - f.ty * 0.0105, f.z - f.tz * 0.0105, Math.atan2(-f.ny, f.nz)));
+    mag.add(rbox(0.03, 0.01, 0.07, 0.003, 0.0015), pal.dark, mtx(0, -0.009, -0.108)); // feed lips
+    // accent ribs around the clear body + a round-count scale on the rear spine
+    for (i = 0; i < 3; i++) {
+      f = akMagFrame(0.3 + i * 0.25);
+      mag.add(rbox(0.0285, 0.0035, f.w * 2, 0.0012, 0.0008), pal.accent, mtx(0, f.y, f.z, Math.atan2(-f.ny, f.nz)));
     }
-    mag.add(rbox(0.034, 0.012, 0.06, 0.004, 0.002), pal.accent, mtx(0, -0.198, -0.205, -0.5)); // floor plate
-    mag.add(box(0.026, 0.006, 0.065), pal.dark, mtx(0, 0.0, -0.108)); // feed lips
+    for (i = 1; i < 9; i++) {
+      f = akMagFrame(i / 9.5);
+      var tx = f.z + f.nz * (f.w - 0.004), ty = f.y + f.ny * (f.w - 0.004);
+      mag.add(box(0.0305, 0.0014, i % 2 ? 0.004 : 0.007), pal.white, mtx(0, ty, tx - f.nz * 0.001, Math.atan2(-f.ny, f.nz)));
+    }
+    // paintballs: a staggered double stack following the curve (the top one peeks out of the lips)
+    var rb = 0.0086, ballGeo = sph(rb, 12, 9), arc = 0, next = 0.0, prev = akMagFrame(0), side = 0, seed = 11;
+    var rnd = function () { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    var hi = mix(pal.ball, new THREE.Color(1, 1, 1), 0.35);
+    for (i = 0; i <= 400; i++) {
+      f = akMagFrame(0.045 + i / 400 * 0.86);
+      arc += Math.sqrt((f.z - prev.z) * (f.z - prev.z) + (f.y - prev.y) * (f.y - prev.y));
+      prev = f;
+      if (arc < next) continue;
+      var off = (side ? 1 : -1) * 0.0084;
+      B.magBalls.add(ballGeo, rnd() < 0.82 ? pal.ball : hi, mtx((side ? 1 : -1) * 0.0018, f.y + f.ny * off, f.z + f.nz * off, rnd() * 3, rnd() * 3, 0));
+      side ^= 1; next += 0.0124;
+    }
 
     // ---- charging handle (relative to boltPos) ----
     B.bolt.add(cylX(0.0055, 0.022, 10), pal.steel, mtx(AK.boltPos.x + 0.008, AK.boltPos.y, AK.boltPos.z));
     B.bolt.add(sph(0.0075, 12, 8), pal.accent, mtx(AK.boltPos.x + 0.021, AK.boltPos.y, AK.boltPos.z));
     B.bolt.add(box(0.004, 0.012, 0.05), pal.steel, mtx(AK.boltPos.x - 0.003, AK.boltPos.y, AK.boltPos.z + 0.022));
-
-    // ---- hopper (relative to hopperPos) ----
-    var H = AK.hopperPos, hx = H.x, hy = H.y, hz = H.z;
-    var hs = B.hopper, ballsB = B.balls, shellB = B.shell;
-    hs.add(cylY(0.017, 0.019, 0.04, 16), pal.accent, mtx(hx, hy + 0.018, hz)); // feed neck
-    hs.add(cylY(0.021, 0.021, 0.012, 16), pal.dark, mtx(hx, hy + 0.005, hz)); // clamp
-    hs.add(box(0.006, 0.01, 0.012), pal.steel, mtx(hx + 0.022, hy + 0.005, hz));
-    var cy = hy + 0.078;
-    var low = new THREE.SphereGeometry(1, 28, 10, 0, TAU, PI / 2, PI / 2);
-    hs.add(low, pal.accent, mtx(hx, cy, hz, 0, 0, 0, 0.064, 0.04, 0.1));
-    hs.add(new THREE.TorusGeometry(1, 0.075, 6, 32), pal.dark, mtx(hx, cy, hz, PI / 2, 0, 0, 0.066, 0.102, 0.07)); // rim
-    var top = new THREE.SphereGeometry(1, 28, 10, 0, TAU, 0, PI / 2);
-    shellB.add(top, pal.accentL, mtx(hx, cy, hz, 0, 0, 0, 0.062, 0.058, 0.098));
-    // solid lid cap over the top of the dome (the sides stay a translucent window) + lid latch
-    var capG = new THREE.SphereGeometry(1, 28, 6, 0, TAU, 0, PI * 0.2);
-    hs.add(capG, pal.accent, mtx(hx, cy, hz, 0, 0, 0, 0.0645, 0.061, 0.1005));
-    hs.add(new THREE.TorusGeometry(1, 0.05, 5, 28), pal.dark, mtx(hx, cy + 0.061 * Math.cos(PI * 0.2), hz, PI / 2, 0, 0, 0.0645 * Math.sin(PI * 0.2), 0.1005 * Math.sin(PI * 0.2), 0.06));
-    hs.add(rbox(0.022, 0.008, 0.03, 0.004, 0.002), pal.dark, mtx(hx, cy + 0.06, hz - 0.012));
-    hs.add(rbox(0.014, 0.016, 0.01, 0.003, 0.002), pal.dark, mtx(hx, cy + 0.035, hz - 0.095, -0.5)); // latch
-    for (i = 0; i < 3; i++) {
-      hs.add(rbox(0.004, 0.006, 0.05, 0.002, 0.001), pal.dark, mtx(hx - 0.064, cy - 0.012 - i * 0.012, hz, 0, 0, 0.2 + i * 0.25));
-      hs.add(rbox(0.004, 0.006, 0.05, 0.002, 0.001), pal.dark, mtx(hx + 0.064, cy - 0.012 - i * 0.012, hz, 0, 0, -0.2 - i * 0.25));
-    }
-    // paintballs inside the hopper + a couple in the neck
-    var rb = 0.0088, ballGeo = sph(rb, 10, 8), seed = 7;
-    var rnd = function () { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-    for (var bx = -2; bx <= 2; bx++) for (var by = 0; by <= 3; by++) for (var bz = -4; bz <= 4; bz++) {
-      var px = bx * 0.019 + (by % 2) * 0.008, pyb = by * 0.016 - 0.024, pz = bz * 0.019 + (by % 2) * 0.008;
-      var ex = px / 0.054, ey = pyb / 0.042, ez = pz / 0.088;
-      if (ex * ex + ey * ey + ez * ez > 1) continue;
-      if (pyb > 0.025) continue;
-      var bc = rnd() < 0.85 ? pal.ball : mix(pal.ball, new THREE.Color(1, 1, 1), 0.4);
-      ballsB.add(ballGeo, bc, mtx(hx + px, cy + pyb, hz + pz, rnd() * 3, rnd() * 3, 0));
-    }
-    ballsB.add(ballGeo, pal.ball, mtx(hx, hy + 0.028, hz));
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -402,9 +465,11 @@
     var hole = new THREE.Path();
     var hp = [[0.066, 0.004], [0.24, 0.014], [0.262, 0.002], [0.262, -0.088], [0.245, -0.1], [0.095, -0.084], [0.07, -0.066], [0.062, -0.03]];
     hole.moveTo(hp[0][0], hp[0][1]); for (i = 1; i < hp.length; i++) hole.lineTo(hp[i][0], hp[i][1]);
+    poly.skin = 1;
     poly.add(sideShape([[-0.026, 0.024], [0.06, 0.024], [0.1, 0.044], [0.13, 0.058], [0.3, 0.058], [0.335, 0.052], [0.352, 0.044], [0.356, -0.13],
       [0.34, -0.142], [0.29, -0.134], [0.13, -0.104], [0.07, -0.112], [0.048, -0.122], [0.02, -0.12], [0.008, -0.106], [0.002, -0.07], [-0.008, -0.034], [-0.022, -0.012]],
       0.04, 0.005, [hole]), pal.accent);
+    poly.skin = 0;
     for (i = 0; i < 4; i++) poly.add(rbox(0.042, 0.0035, 0.012, 0.0015, 0.0008), pal.accentD, mtx(0, -0.04 - i * 0.017, -0.004 + i * 0.0035, 0.2)); // grip grooves
     poly.add(rbox(0.05, 0.19, 0.02, 0.008, 0.004), pal.dark, mtx(0, -0.044, 0.364)); // butt pad
     poly.add(rbox(0.034, 0.012, 0.13, 0.005, 0.003), pal.dark, mtx(0, 0.062, 0.215)); // cheek piece
@@ -414,7 +479,9 @@
     poly.add(box(0.003, 0.006, 0.2), pal.dark, mtx(0.0205, 0.036, 0.2));
     metal.add(cylX(0.006, 0.044, 10), pal.steel, mtx(0, -0.118, 0.29)); // sling stud
     // ---- chassis / forend (accent) under the action and barrel ----
+    poly.skin = 1;
     poly.add(sideShape([[0.06, 0.024], [0.06, -0.006], [0.0, -0.03], [-0.17, -0.03], [-0.19, -0.022], [-0.44, -0.018], [-0.462, -0.008], [-0.466, 0.014], [-0.456, 0.026], [-0.2, 0.026], [-0.17, 0.024]], 0.054, 0.006), pal.accent);
+    poly.skin = 0;
     for (i = 0; i < 5; i++) { // vent slots
       poly.add(rbox(0.004, 0.012, 0.036, 0.005, 0.001), pal.dark, mtx(-0.0272, 0.004, -0.23 - i * 0.045));
       poly.add(rbox(0.004, 0.012, 0.036, 0.005, 0.001), pal.dark, mtx(0.0272, 0.004, -0.23 - i * 0.045));
@@ -426,7 +493,9 @@
     poly.add(sideShape([[-0.054, -0.03], [-0.054, -0.05], [-0.044, -0.062], [0.004, -0.062], [0.01, -0.052], [0.004, -0.03], [-0.002, -0.032], [-0.003, -0.054], [-0.04, -0.054], [-0.046, -0.046], [-0.046, -0.03]], 0.012, 0.0012), pal.dark);
     metal.add(sideShape([[-0.022, -0.026], [-0.028, -0.036], [-0.031, -0.05], [-0.025, -0.053], [-0.022, -0.04], [-0.016, -0.026]], 0.006, 0.001), pal.accentL);
     // ---- action: round receiver, rail, ejection port ----
+    metal.skin = 1;
     metal.add(cylZ(0.021, 0.021, 0.23, 22), pal.dark2, mtx(0, by, -0.055));
+    metal.skin = 0;
     metal.add(cylZ(0.0225, 0.0225, 0.012, 22), pal.dark, mtx(0, by, 0.052));
     metal.add(cylZ(0.0225, 0.0225, 0.012, 22), pal.dark, mtx(0, by, -0.165));
     metal.add(rbox(0.024, 0.008, 0.25, 0.002, 0.001), pal.dark, mtx(0, by + 0.024, -0.06)); // picatinny rail
@@ -434,8 +503,10 @@
     poly.add(rbox(0.006, 0.014, 0.07, 0.003, 0.001), pal.black, mtx(0.019, by + 0.008, -0.045)); // ejection port
     metal.add(rbox(0.008, 0.012, 0.03, 0.003, 0.001), pal.accent, mtx(-0.02, by - 0.006, 0.03)); // safety / bolt release
     // ---- barrel: shank, long fluted section, crown + big ported brake ----
+    metal.skin = 1; // barrel shroud / fluted barrel wears the skin too
     metal.add(cylZ(0.016, 0.016, 0.07, 22), pal.grey, mtx(0, by, -0.2));
     metal.add(flutedZ(0.0138, 0.44, 6, 0.17), pal.grey, mtx(0, by, -0.455));
+    metal.skin = 0;
     metal.add(cylZ(0.0145, 0.0145, 0.008, 18), pal.dark, mtx(0, by, -0.24));
     metal.add(cylZ(0.0125, 0.0125, 0.05, 18), pal.grey, mtx(0, by, -0.69));
     metal.add(cylZ(0.0155, 0.0155, 0.01, 18), pal.dark, mtx(0, by, -0.715)); // lock nut
@@ -492,7 +563,9 @@
     for (var z = tz0 + 0.012; z < tz1 - 0.004; z += rb * 2.02) B.balls.add(bg, pal.ball, mtx(tx, ty, z));
     // ---- magazine (box mag, paintballs visible through the side slot) – relative to the mag pivot ----
     var mag = B.mag, mp = AWP.magPivot;
+    mag.skin = 1;
     mag.add(rbox(0.03, 0.07, 0.074, 0.006, 0.003), pal.dark2, mtx(0, mp.y - 0.032, mp.z));
+    mag.skin = 0;
     mag.add(rbox(0.036, 0.012, 0.082, 0.004, 0.002), pal.accent, mtx(0, mp.y - 0.07, mp.z)); // floor plate
     mag.add(rbox(0.032, 0.004, 0.06, 0.002, 0.001), pal.accent, mtx(0, mp.y - 0.02, mp.z));
     for (i = 0; i < 3; i++) for (k = -1; k <= 1; k += 2) mag.add(sph(0.0085, 10, 8), pal.ball, mtx(k * 0.009, mp.y - 0.034, mp.z + 0.02 - i * 0.02));
@@ -511,9 +584,20 @@
 
   // ---------------------------------------------------------------------------------------------
   // Butterfly knife geometry. Knife frame: tang centre at origin, blade forward (-Z), spine +Y.
-  // Pins along X: safe handle (A) pin at +PIN, bite handle (B) pin at -PIN.
+  // The two pivot pins run along X through the tang: the safe handle (A) on the spine-side pin at
+  // y = +PIN, the bite handle (B) on the edge-side pin at y = -PIN.
+  //
+  // Hinge rules (like a real balisong), with a = blade angle about pin A (relative to handle A) and
+  // b = handle B angle about pin B (relative to the blade), both rotations about +X:
+  //   a = 0 open (blade out, B lying against A), a = PI blade closed into A's channel (spine first);
+  //   b = 0 B open (against A),                  b = PI B closed onto the blade (edge in B's channel).
+  // Each joint only ever moves inside [0, PI]. Every handle's pivot end is a half-disc of radius
+  // H_H/2 <= PIN around its own pin, so the two pivot ends never overlap, and the hardware that
+  // crosses a handle's channel (screws, spacers) sits on the side the blade never sweeps (A: -y,
+  // B: +y) and beyond the blade's reach near the pommel, so the blade only ever passes through the
+  // open channel between the liners.
   // ---------------------------------------------------------------------------------------------
-  var PIN = 0.0072, H_LEN = 0.128, H_H = 0.0158, PLATE_X = 0.0034, PLATE_T = 0.0019;
+  var PIN = 0.0082, H_LEN = 0.128, H_H = 0.0162, PLATE_X = 0.0034, PLATE_T = 0.0019;
 
   function knifePalette(accent) {
     var A = lin(accent || "#ff3fa4");
@@ -538,24 +622,26 @@
     var g = new THREE.ExtrudeGeometry(s, { depth: 0.0016, bevelEnabled: true, bevelThickness: 0.0005, bevelSize: 0.0009, bevelSegments: 1, curveSegments: 10 });
     g.rotateY(PI / 2); // u -> -z, extrusion -> +x
     g.translate(-0.0008, 0, 0);
+    b.skin = 1;
     b.add(g, pal.steel);
     // fuller/grind line (darker strip on both faces)
     b.add(box(0.0032, 0.0016, 0.05), pal.steelD, mtx(0, 0.0065, -0.045));
+    b.skin = 0;
     // tang pins
     b.add(cylX(0.0022, 0.0095, 10), pal.steel, mtx(0, PIN, 0));
     b.add(cylX(0.0022, 0.0095, 10), pal.steel, mtx(0, -PIN, 0));
-    b.add(cylX(0.0013, 0.009, 8), pal.dark, mtx(0, 0, 0.004)); // tang stop pin
+    b.add(cylX(0.001, 0.0085, 8), pal.dark, mtx(0, 0, 0.004)); // tang stop pin (sits in the gap between the handles)
   }
 
   // Handle built relative to its own pin (pin at origin), extending to +Z when open.
   function buildHandle(b, pal, isBite) {
     var s = new THREE.Shape(), L = H_LEN, h = H_H / 2;
-    s.moveTo(-0.006, -h + 0.002);
-    s.quadraticCurveTo(-0.009, 0, -0.006, h - 0.002);
-    s.lineTo(L - 0.006, h);
-    s.quadraticCurveTo(L + 0.002, h, L + 0.002, 0);
-    s.quadraticCurveTo(L + 0.002, -h, L - 0.006, -h);
-    s.lineTo(-0.006, -h + 0.002);
+    s.moveTo(0, -h);
+    s.lineTo(L - 0.006, -h);
+    s.quadraticCurveTo(L + 0.002, -h, L + 0.002, 0);
+    s.quadraticCurveTo(L + 0.002, h, L - 0.006, h);
+    s.lineTo(0, h);
+    s.absarc(0, 0, h, PI / 2, PI * 1.5, false); // pivot end: a half-disc around the pin
     // skeleton holes
     s.holes.push(circlePath(0.0, 0.0, 0.0024, 10));
     var x0 = 0.014;
@@ -565,16 +651,19 @@
     }
     var col = pal.accent;
     var plate = shapeSide(s, PLATE_T, 0.0004);
+    b.skin = 1;
     b.add(plate, col, mtx(PLATE_X, 0, 0));
     b.add(plate, col, mtx(-PLATE_X, 0, 0));
-    // spacers (between plates), pommel and screws
-    b.add(rbox(PLATE_X * 2, H_H * 0.62, 0.006, 0.002, 0.0005), pal.dark, mtx(0, 0, L - 0.003));
-    b.add(rbox(PLATE_X * 2, 0.004, 0.012, 0.0015, 0.0005), pal.dark, mtx(0, isBite ? -h + 0.002 : h - 0.002, 0.007));
-    for (var k = 0; k < 3; k++) b.add(cylX(0.0016, PLATE_X * 2 + PLATE_T * 2 + 0.001, 8), pal.steelD, mtx(0, 0, 0.026 + k * 0.03 + 0.008));
-    b.add(cylX(0.0028, PLATE_X * 2 + PLATE_T * 2 + 0.0012, 12), pal.gold, mtx(0, 0, 0)); // pivot screw heads
-    if (isBite) { // latch at the end of the bite handle
-      b.add(rbox(0.0028, 0.0036, 0.03, 0.0012, 0.0004), pal.steel, mtx(0, -h - 0.0012, L - 0.008, 0.06));
-      b.add(cylX(0.0016, PLATE_X * 2 + PLATE_T * 2 + 0.001, 8), pal.steel, mtx(0, -h + 0.001, L - 0.002));
+    b.skin = 0;
+    // channel-crossing hardware: on the side of the channel the blade never sweeps (see above)
+    var hw = isBite ? 1 : -1, CW = PLATE_X * 2 + PLATE_T * 2 + 0.001;
+    b.add(rbox(PLATE_X * 2, H_H * 0.62, 0.006, 0.002, 0.0005), pal.dark, mtx(0, 0, L - 0.003)); // pommel spacer
+    b.add(rbox(PLATE_X * 2, 0.003, 0.012, 0.0012, 0.0005), pal.dark, mtx(0, hw * (h - 0.0022), 0.021)); // spacer
+    for (var k = 0; k < 3; k++) b.add(cylX(0.0014, CW, 8), pal.steelD, mtx(0, hw * 0.0062, 0.035 + k * 0.0275));
+    b.add(cylX(0.0028, CW + 0.0002, 12), pal.gold, mtx(0, 0, 0)); // pivot screw heads
+    if (isBite) { // latch at the end of the bite handle (beyond the blade tip's reach); clasps A when closed
+      b.add(rbox(0.0028, 0.0036, 0.016, 0.0012, 0.0004), pal.steel, mtx(0, -h - 0.0012, L - 0.004, 0.06));
+      b.add(cylX(0.0016, CW, 8), pal.steel, mtx(0, -h + 0.001, L - 0.002));
     }
   }
 
@@ -582,9 +671,9 @@
   function makeBalisong(accent, mats) {
     var pal = knifePalette(accent);
     var rootK = new THREE.Group();
-    var bA = new Builder(); buildHandle(bA, pal, false);
-    var bB = new Builder(); buildHandle(bB, pal, true);
-    var bl = new Builder(); buildBlade(bl, pal);
+    var bA = new Builder(), bB = new Builder(), bl = new Builder();
+    withUV(SKIN_UV.handle, bA, bB); withUV(SKIN_UV.blade, bl);
+    buildHandle(bA, pal, false); buildHandle(bB, pal, true); buildBlade(bl, pal);
     var handleA = bA.mesh(mats.metal); handleA.position.set(0, PIN, 0); rootK.add(handleA);
     var bladeNode = new THREE.Group(); bladeNode.position.set(0, PIN, 0); rootK.add(bladeNode);
     var blade = bl.mesh(mats.steel); blade.position.set(0, -PIN, 0); bladeNode.add(blade);
@@ -593,7 +682,7 @@
     return {
       root: rootK,
       set: function (a, b) { bladeNode.rotation.x = a; bNode.rotation.x = b; },
-      meshes: [handleA, blade, handleB]
+      meshes: [handleA, blade, handleB], blade: blade, handles: [handleA, handleB]
     };
   }
 
@@ -733,44 +822,248 @@
   }
 
   // ---------------------------------------------------------------------------------------------
-  // World (third-person) models
+  // Weapon skins: pattern textures (drawn by PBSkins.drawPattern in pb-skins.js) and materials,
+  // both cached per skin id. A skin material is a MeshStandardMaterial with a small shader patch:
+  // parts whose skinMask is 1 take the pattern (and the skin's metalness / roughness / glow), the
+  // rest of the merged mesh keeps its vertex colours, so skinning a gun costs no extra draw calls.
+  //   fx.glow  -> emissive map (the pattern's bright accent colours)
+  //   fx.metal -> high metalness, reflecting the shared envMap
+  //   fx.shift -> fresnel hue shift (colours slide with the viewing angle) + a slow shimmer
   // ---------------------------------------------------------------------------------------------
-  function createWorldGun(accent, kind) {
-    if (kind === "awp") return createWorldAWP(accent);
+  var _skinTime = { value: 0 }; // shared shimmer clock (advanced by the viewmodel's update)
+  var _skinTex = {}, _skinMats = {};
+  var HANDLE_PATTERNS = { web: 1, casehardened: 1, slaughter: 1, solid: 1, dragon: 1 }; // knife skins that cover the handles too
+  function skinOf(id) { var S = root.PBSkins; return id && S && S.BY_ID ? S.BY_ID[id] || null : null; }
+  function skinLayout(skin) { return skin.weapon === "awp" ? SKIN_UV.awp : skin.weapon === "knife" ? SKIN_UV.blade : SKIN_UV.ak; }
+  function skinsHandles(skin) { if (typeof skin === "string") skin = skinOf(skin); return !!(skin && HANDLE_PATTERNS[skin.pattern]); }
+  function canvasTex(c) {
+    var t = new THREE.CanvasTexture(c);
+    t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return t;
+  }
+  function drawSkin(skin, scale) {
+    var L = skinLayout(skin);
+    return root.PBSkins.drawPattern(skin, Math.round(L.W * scale), Math.round(L.Hpx * scale));
+  }
+  function skinTextures(id) {
+    if (_skinTex[id]) return _skinTex[id];
+    var s = skinOf(id);
+    if (!s || typeof document === "undefined" || !root.PBSkins.drawPattern) return null;
+    var art = drawSkin(s, 1);
+    return (_skinTex[id] = { skin: s, map: canvasTex(art.color), glow: art.glow ? canvasTex(art.glow) : null });
+  }
+
+  var PART_BASE = { // the unskinned look of each part kind (same as the default materials)
+    poly: { rough: 0.55, metal: 0.05, envI: 0.6 }, metal: { rough: 0.3, metal: 0.65, envI: 0.9 },
+    blade: { rough: 0.16, metal: 0.95, envI: 1.25 }, handle: { rough: 0.28, metal: 0.7, envI: 0.9 }
+  };
+  var SKIN_VERT_PARS = "attribute float skinMask;\nvarying float vSkin;\n";
+  var SKIN_FRAG_PARS = [
+    "uniform float uSkinMetal;", "uniform float uSkinRough;", "uniform float uShift;", "uniform float uTime;", "varying float vSkin;",
+    "vec3 pbHue( vec3 c, float a ) { const vec3 k = vec3( 0.57735 ); float ca = cos( a ); return c * ca + cross( k, c ) * sin( a ) + k * dot( k, c ) * ( 1.0 - ca ); }", ""].join("\n");
+  var SKIN_MAP = [
+    "vec3 pbBase = diffuseColor.rgb;",
+    "#ifdef USE_COLOR", "pbBase *= vColor;", "#endif",
+    "vec3 pbTex = texture2D( map, vUv ).rgb;",
+    "float pbShift = 0.0;",
+    "#ifdef SKIN_SHIFT",
+    "float pbFr = 1.0 - abs( dot( normalize( vNormal ), normalize( vViewPosition ) ) );",
+    "pbShift = uShift * ( pbFr * pbFr * 2.4 + 0.3 * sin( uTime * 0.9 + vUv.x * 7.0 ) );",
+    "pbTex = max( pbHue( pbTex, pbShift ), 0.0 );",
+    "#endif",
+    "diffuseColor.rgb = mix( pbBase, pbTex, vSkin );"].join("\n");
+  var SKIN_EMISSIVE = [
+    "#ifdef USE_EMISSIVEMAP",
+    "vec3 pbGlow = texture2D( emissiveMap, vUv ).rgb;",
+    "#ifdef SKIN_SHIFT", "pbGlow = max( pbHue( pbGlow, pbShift ), 0.0 );", "#endif",
+    "totalEmissiveRadiance *= pbGlow * vSkin;",
+    "#endif"].join("\n");
+  function patchSkinShader(sh, u) {
+    for (var k in u) sh.uniforms[k] = u[k];
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\n" + SKIN_VERT_PARS)
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\n\tvSkin = skinMask;");
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\n" + SKIN_FRAG_PARS)
+      .replace("#include <map_fragment>", SKIN_MAP)
+      .replace("#include <color_fragment>", "")
+      .replace("#include <roughnessmap_fragment>", "float roughnessFactor = mix( roughness, uSkinRough, vSkin );")
+      .replace("#include <metalnessmap_fragment>", "float metalnessFactor = mix( metalness, uSkinMetal, vSkin );")
+      .replace("#include <emissivemap_fragment>", SKIN_EMISSIVE);
+  }
+  function makeSkinMaterial(skin, tex, part) {
+    var b = PART_BASE[part] || PART_BASE.poly, fx = skin.fx || {}, gold = skin.tier === "gold";
+    var m = stdMat({ rough: b.rough, metal: b.metal, envI: fx.metal ? Math.max(b.envI, gold ? 1.35 : 1.1) : b.envI });
+    m.map = tex.map;
+    if (tex.glow) { m.emissiveMap = tex.glow; m.emissive = new THREE.Color(1, 1, 1); m.emissiveIntensity = gold ? 0.85 : 1.0; }
+    var sMetal = fx.metal ? (gold ? 0.88 : 0.7) : (part === "blade" ? 0.45 : skin.tier === "blue" ? 0.04 : 0.12);
+    var sRough = fx.metal ? (gold ? 0.18 : 0.28) : (skin.tier === "blue" ? 0.62 : skin.tier === "purple" ? 0.5 : 0.4);
+    var u = { uSkinMetal: { value: sMetal }, uSkinRough: { value: sRough }, uShift: { value: fx.shift ? 1 : 0 }, uTime: _skinTime };
+    if (fx.shift) m.defines = { SKIN_SHIFT: "" };
+    m.onBeforeCompile = function (sh) { patchSkinShader(sh, u); };
+    m.customProgramCacheKey = function () { return "pbskin"; };
+    m.userData.pbSkin = skin.id;
+    return m;
+  }
+  // PBSkins.material(skinId, part): part = "poly" (plastic/painted parts), "metal", "blade" or "handle".
+  // Cached and shared (do not dispose). Returns null for an unknown skin. For a knife skin whose
+  // pattern does not cover the handles, "handle" gives the plain (unskinned) handle material.
+  function skinMaterial(id, part) {
+    if (!PART_BASE[part]) part = "poly";
+    var key = id + "|" + part;
+    if (_skinMats[key]) return _skinMats[key];
+    var tx = skinTextures(id);
+    if (!tx) return null;
+    if (part === "handle" && !skinsHandles(tx.skin)) return (_skinMats[key] = stdMat({ rough: 0.28, metal: 0.7 }));
+    return (_skinMats[key] = makeSkinMaterial(tx.skin, tx, part));
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Gun meshes in gun space (shared by the world models and the skin previews)
+  // ---------------------------------------------------------------------------------------------
+  function worldMats(shellOpacity) {
+    return {
+      poly: stdMat({ rough: 0.55, metal: 0.05, envI: 0.6 }), metal: stdMat({ rough: 0.32, metal: 0.65 }),
+      shell: stdMat({ rough: 0.08, metal: 0, transparent: true, opacity: shellOpacity, envI: 1.4 }),
+      lens: stdMat({ rough: 0.05, metal: 0.6, envI: 2.0 })
+    };
+  }
+  function buildGunMeshes(kind, accent, mats) {
     var pal = akPalette(accent || "#ff3fa4");
-    var poly = new Builder(), metal = new Builder(), shell = new Builder();
-    buildAK({ poly: poly, metal: metal, mag: poly, bolt: metal, hopper: poly, shell: shell, balls: poly }, pal);
+    var poly = new Builder(), metal = new Builder(), shell = new Builder(), lens = kind === "awp" ? new Builder() : null;
+    withUV(SKIN_UV[kind === "awp" ? "awp" : "ak"], poly, metal);
+    if (kind === "awp") buildAWP({ poly: poly, metal: metal, mag: poly, bolt: metal, shell: shell, balls: poly, lens: lens }, pal);
+    else buildAK({ poly: poly, metal: metal, mag: poly, magShell: shell, magBalls: poly, bolt: metal }, pal);
+    var grp = new THREE.Group();
+    var pm = poly.mesh(mats.poly), mm = metal.mesh(mats.metal);
+    grp.add(pm, mm);
+    if (lens) grp.add(lens.mesh(mats.lens));
+    var sh = shell.mesh(mats.shell); sh.renderOrder = 2; grp.add(sh);
+    return { group: grp, poly: pm, metal: mm };
+  }
+  function skinGun(gm, mats, skinId) {
+    var p = skinId ? skinMaterial(skinId, "poly") : null, m = skinId ? skinMaterial(skinId, "metal") : null;
+    gm.poly.material = p || mats.poly; gm.metal.material = m || mats.metal;
+  }
+  function skinKnife(k, mats, skinId) {
+    var b = skinId ? skinMaterial(skinId, "blade") : null, h = skinId ? skinMaterial(skinId, "handle") : null;
+    k.blade.material = b || mats.steel;
+    k.handles[0].material = k.handles[1].material = h || mats.metal;
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Skin previews: a side view (muzzle / blade tip to the right) on a transparent background, from
+  // one small offscreen renderer that is created once and reused. Cached per skin id + size.
+  // ---------------------------------------------------------------------------------------------
+  var _pv = null, _pvCache = {};
+  function previewRig() {
+    if (_pv) return _pv;
+    var r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    r.outputEncoding = THREE.sRGBEncoding; r.setPixelRatio(1); r.setClearColor(0x000000, 0);
+    var scene = new THREE.Scene();
+    var key = new THREE.DirectionalLight(0xfff6ea, 1.05); key.position.set(1.0, 1.4, -0.3);
+    var fill = new THREE.DirectionalLight(0xbfd8ff, 0.4); fill.position.set(1.0, -0.4, 0.8);
+    scene.add(new THREE.HemisphereLight(0xeef4ff, 0x4a4038, 0.75), key, fill);
+    _pv = { r: r, scene: scene, cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 20), models: {} };
+    return _pv;
+  }
+  function previewModel(kind) {
+    var pv = previewRig();
+    if (pv.models[kind]) return pv.models[kind];
+    var o;
+    if (kind === "knife") {
+      var km = { metal: stdMat({ rough: 0.3, metal: 0.7 }), steel: stdMat({ rough: 0.18, metal: 0.95, envI: 1.2 }) };
+      var k = makeBalisong("#2a2d33", km); k.set(0, 0);
+      o = { group: k.root, parts: [[k.blade, "blade", km.steel], [k.handles[0], "handle", km.metal], [k.handles[1], "handle", km.metal]] };
+    } else {
+      var d = worldMats(0.4), gm = buildGunMeshes(kind, "#3d4149", d);
+      o = { group: gm.group, parts: [[gm.poly, "poly", d.poly], [gm.metal, "metal", d.metal]] };
+    }
+    o.group.visible = false;
+    pv.scene.add(o.group);
+    // camera: from the right-hand side (+X), a touch above, fitted to the model's bounds
+    o.group.updateMatrixWorld(true);
+    var box = new THREE.Box3().setFromObject(o.group), c = box.getCenter(new THREE.Vector3()), R = box.getSize(new THREE.Vector3()).length();
+    o.camPos = c.clone().add(new THREE.Vector3(R * 2, R * 0.32, R * 0.04)); o.center = c; o.R = R;
+    o.box = box;
+    return (pv.models[kind] = o);
+  }
+  function fitPreviewCam(cam, o, aspect) {
+    cam.position.copy(o.camPos); cam.lookAt(o.center); cam.updateMatrixWorld(true);
+    var inv = cam.matrixWorldInverse, b = o.box, v = new THREE.Vector3(), x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (var i = 0; i < 8; i++) {
+      v.set(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).applyMatrix4(inv);
+      x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y);
+    }
+    var w = (x1 - x0) * 1.04, h = (y1 - y0) * 1.08, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    if (w / h > aspect) h = w / aspect; else w = h * aspect;
+    cam.left = cx - w / 2; cam.right = cx + w / 2; cam.top = cy + h / 2; cam.bottom = cy - h / 2;
+    cam.near = 0.01; cam.far = o.R * 5; cam.updateProjectionMatrix();
+  }
+  // PBSkins.preview(skinId, w, h) -> HTMLCanvasElement (w x h) with the weapon wearing the skin
+  function preview(id, w, h) {
+    w = Math.max(16, Math.round(w || 256)); h = Math.max(16, Math.round(h || w / 2));
+    var key = id + "@" + w + "x" + h;
+    if (_pvCache[key]) return _pvCache[key];
+    var out = document.createElement("canvas"); out.width = w; out.height = h;
+    var s = skinOf(id);
+    if (!s) return out;
+    var tex = null, mats = [];
+    try {
+      var pv = previewRig(), kind = s.weapon === "awp" ? "awp" : s.weapon === "knife" ? "knife" : "ak";
+      var o = previewModel(kind), ss = w * h > 300000 ? 1 : 2;
+      // a half-resolution copy of the pattern is plenty for a small picture; freed right after
+      var art = drawSkin(s, 0.5);
+      tex = { map: canvasTex(art.color), glow: art.glow ? canvasTex(art.glow) : null };
+      for (var i = 0; i < o.parts.length; i++) {
+        var p = o.parts[i], m = p[1] !== "handle" || skinsHandles(s) ? makeSkinMaterial(s, tex, p[1]) : null;
+        p[0].material = m || p[2];
+        if (m) mats.push(m);
+      }
+      o.group.visible = true;
+      fitPreviewCam(pv.cam, o, w / h);
+      pv.r.setSize(w * ss, h * ss, false);
+      pv.r.render(pv.scene, pv.cam);
+      var g = out.getContext("2d");
+      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+      g.drawImage(pv.r.domElement, 0, 0, w, h);
+      o.group.visible = false;
+    } catch (e) { /* no WebGL here: leave the picture blank */ }
+    for (var j = 0; j < mats.length; j++) mats[j].dispose();
+    if (tex) { tex.map.dispose(); if (tex.glow) tex.glow.dispose(); }
+    _pvCache[key] = out;
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // World (third-person) models. Each has userData.setSkin(skinId|null) to re-skin it later.
+  // ---------------------------------------------------------------------------------------------
+  function createWorldGun(accent, kind, skinId) {
+    if (kind === "awp") return createWorldAWP(accent, skinId);
+    var mats = worldMats(0.42), gm = buildGunMeshes("ak", accent, mats);
     var g = new THREE.Group();
-    var inner = new THREE.Group(); inner.rotation.y = PI; inner.scale.setScalar(0.9); g.add(inner); // barrel -> +Z, ~0.88 m long
-    inner.add(poly.mesh(stdMat({ rough: 0.55, metal: 0.05, envI: 0.6 })));
-    inner.add(metal.mesh(stdMat({ rough: 0.32, metal: 0.65 })));
-    var sm = stdMat({ rough: 0.08, metal: 0, transparent: true, opacity: 0.42, envI: 1.4 });
-    inner.add(shell.mesh(sm));
+    var inner = gm.group; inner.rotation.y = PI; inner.scale.setScalar(0.9); g.add(inner); // barrel -> +Z, ~0.88 m long
     g.name = "PBWorldGun";
+    g.userData.kind = "ak";
     g.userData.muzzle = new THREE.Vector3(-AK.muzzle.x, AK.muzzle.y, -AK.muzzle.z).multiplyScalar(0.9); // local muzzle point (tracer start)
+    g.userData.setSkin = function (id) { skinGun(gm, mats, id); };
+    skinGun(gm, mats, skinId);
     return g;
   }
 
   // third-person AWP: origin at the top of the pistol grip, barrel +Z, ~1.15 m long, 4 draw calls
-  function createWorldAWP(accent) {
-    var pal = akPalette(accent || "#ff3fa4");
-    var poly = new Builder(), metal = new Builder(), shell = new Builder(), lens = new Builder();
-    buildAWP({ poly: poly, metal: metal, mag: poly, bolt: metal, shell: shell, balls: poly, lens: lens }, pal);
+  function createWorldAWP(accent, skinId) {
+    var mats = worldMats(0.38), gm = buildGunMeshes("awp", accent, mats);
     var S = 0.98;
     var g = new THREE.Group();
-    var inner = new THREE.Group(); inner.rotation.y = PI; inner.scale.setScalar(S); g.add(inner);
-    inner.add(poly.mesh(stdMat({ rough: 0.55, metal: 0.05, envI: 0.6 })));
-    inner.add(metal.mesh(stdMat({ rough: 0.32, metal: 0.65 })));
-    inner.add(lens.mesh(stdMat({ rough: 0.05, metal: 0.6, envI: 2.0 })));
-    var sm = stdMat({ rough: 0.08, metal: 0, transparent: true, opacity: 0.38, envI: 1.4 });
-    var sh = shell.mesh(sm); sh.renderOrder = 2; inner.add(sh);
+    var inner = gm.group; inner.rotation.y = PI; inner.scale.setScalar(S); g.add(inner);
     g.name = "PBWorldAWP";
     g.userData.kind = "awp";
     g.userData.muzzle = new THREE.Vector3(-AWP.muzzle.x, AWP.muzzle.y, -AWP.muzzle.z).multiplyScalar(S);
+    g.userData.setSkin = function (id) { skinGun(gm, mats, id); };
+    skinGun(gm, mats, skinId);
     return g;
   }
 
-  function createWorldKnife(accent) {
+  function createWorldKnife(accent, skinId) {
     var mats = { metal: stdMat({ rough: 0.3, metal: 0.7 }), steel: stdMat({ rough: 0.18, metal: 0.95, envI: 1.2 }) };
     var k = makeBalisong(accent || "#ff3fa4", mats);
     var g = new THREE.Group();
@@ -778,6 +1071,9 @@
     inner.add(k.root); g.add(inner);
     k.set(0, 0);
     g.userData.setOpen = function (open) { if (open) k.set(0, 0); else k.set(PI, PI); };
+    g.userData.setAngles = function (a, b) { k.set(a, b); }; // a: blade about the safe pin, b: bite handle about its pin (0..PI each)
+    g.userData.setSkin = function (id) { skinKnife(k, mats, id); };
+    skinKnife(k, mats, skinId);
     g.name = "PBWorldKnife";
     return g;
   }
@@ -820,18 +1116,19 @@
     var akRoot = new THREE.Group(); swayRoot.add(akRoot);
     var akGun = new THREE.Group(); akRoot.add(akGun);
     var bPoly = new Builder(), bMetal = new Builder();
-    var bMag = withOffset(new Builder(), AK.magPivot.x, AK.magPivot.y, AK.magPivot.z);
+    var mp = AK.magPivot;
+    var bMag = withOffset(new Builder(), mp.x, mp.y, mp.z), bMagShell = withOffset(new Builder(), mp.x, mp.y, mp.z), bMagBalls = withOffset(new Builder(), mp.x, mp.y, mp.z);
     var bBolt = withOffset(new Builder(), AK.boltPos.x, AK.boltPos.y, AK.boltPos.z);
-    var bHop = withOffset(new Builder(), AK.hopperPos.x, AK.hopperPos.y, AK.hopperPos.z);
-    var bShell = withOffset(new Builder(), AK.hopperPos.x, AK.hopperPos.y, AK.hopperPos.z);
-    var bBalls = withOffset(new Builder(), AK.hopperPos.x, AK.hopperPos.y, AK.hopperPos.z);
-    buildAK({ poly: bPoly, metal: bMetal, mag: bMag, bolt: bBolt, hopper: bHop, shell: bShell, balls: bBalls }, pal);
-    akGun.add(bPoly.mesh(M.poly), bMetal.mesh(M.metal));
-    var magMesh = bMag.mesh(M.poly); magMesh.position.copy(AK.magPivot); akGun.add(magMesh);
+    withUV(SKIN_UV.ak, bPoly, bMetal, bMag);
+    buildAK({ poly: bPoly, metal: bMetal, mag: bMag, magShell: bMagShell, magBalls: bMagBalls, bolt: bBolt }, pal);
+    var akPoly = bPoly.mesh(M.poly), akMetal = bMetal.mesh(M.metal);
+    akGun.add(akPoly, akMetal);
+    // the clear banana mag: frame + paintballs + clear body, moved as one by the reload
+    var magMesh = new THREE.Group(); magMesh.position.copy(mp); akGun.add(magMesh);
+    var akMagFrameMesh = bMag.mesh(M.poly), akMagBalls = bMagBalls.mesh(M.balls), akMagShell = bMagShell.mesh(M.shell);
+    akMagShell.renderOrder = 2;
+    magMesh.add(akMagFrameMesh, akMagBalls, akMagShell);
     var boltMesh = bBolt.mesh(M.metal); boltMesh.position.copy(AK.boltPos); akGun.add(boltMesh);
-    var hopper = new THREE.Group(); hopper.position.copy(AK.hopperPos); akGun.add(hopper);
-    var shellMesh = bShell.mesh(M.shell); shellMesh.renderOrder = 2;
-    hopper.add(bHop.mesh(M.poly), bBalls.mesh(M.balls), shellMesh);
     var muzzleNode = new THREE.Object3D(); muzzleNode.position.copy(AK.muzzle); akGun.add(muzzleNode);
     // muzzle paint puff
     var puffTex = puffTexture(accentHex); disposables.push(puffTex);
@@ -865,8 +1162,10 @@
     var wPoly = new Builder(), wMetal = new Builder(), wLens = new Builder(), wShell = new Builder();
     var wMag = withOffset(new Builder(), AWP.magPivot.x, AWP.magPivot.y, AWP.magPivot.z);
     var wBolt = withOffset(new Builder(), AWP.boltPos.x, AWP.boltPos.y, AWP.boltPos.z);
+    withUV(SKIN_UV.awp, wPoly, wMetal, wMag);
     buildAWP({ poly: wPoly, metal: wMetal, mag: wMag, bolt: wBolt, shell: wShell, balls: wPoly, lens: wLens }, pal);
-    awpGun.add(wPoly.mesh(M.poly), wMetal.mesh(M.metal), wLens.mesh(M.lens));
+    var awpPoly = wPoly.mesh(M.poly), awpMetal = wMetal.mesh(M.metal);
+    awpGun.add(awpPoly, awpMetal, wLens.mesh(M.lens));
     var awpTube = wShell.mesh(M.shell); awpTube.renderOrder = 2; awpGun.add(awpTube);
     var awpMag = wMag.mesh(M.poly); awpMag.position.copy(AWP.magPivot); awpGun.add(awpMag);
     var awpBolt = wBolt.mesh(M.metal); awpBolt.position.copy(AWP.boltPos); awpGun.add(awpBolt);
@@ -1161,7 +1460,9 @@
           py: K([[0, 0], [1.55, 0], [1.7, -0.03], [1.84, 0.035, "o"], [2.05, 0], [2.4, -0.05], [3.4, -0.055], [3.85, 0], [R2, 0], [R2 + 0.08, -0.03, "o"], [4.4, 0]]),
           rz: K([[0, 0], [0.42, 0], [0.8, 0.08], [1.25, -0.06], [1.55, 0], [1.7, 0.15], [1.84, -0.2, "o"], [2.1, 0], [R2, 0], [R2 + 0.08, -0.1, "o"], [4.4, 0]]),
           krx: K([[0, 0], [0.45, 0], [1.15, 2 * TAU, "s"]]),
-          b: K([[0, 0], [1.05, 0], [1.5, -TAU, "s"], [3.02, -TAU], [3.45, -2 * TAU, "s"]]),
+          // bite-handle fans: B swings down around its own pin, closes onto the blade's edge and swings
+          // back out (b stays in 0..PI, so it never passes through the safe handle)
+          b: K([[0, 0], [1.05, 0], [1.27, PI, "o"], [1.5, 0, "s"], [3.02, 0], [3.24, PI, "o"], [3.45, 0, "s"]]),
           // the toss: carried in a ballistic arc while flipping end over end
           hw: K([[0, 0], [T1, 0], [T2, 1, "l"], [R1, 1], [R2, 0, "l"]]),
           kh: K([[0, 0], [T1, 0], [(T1 + T2) / 2, 0.13, "q"], [T2, 0, "Q"], [R1, 0], [(R1 + R2) / 2, 0.12, "q"], [R2, 0, "Q"]]),
@@ -1176,11 +1477,12 @@
     }
 
     // ------------------------------------------------------------------ state
-    var weapon = "ak";
+    var weapon = "ak", skins = { ak: null, awp: null, knife: null };
     var action = null, actT = 0, snap = null, snapT = 1;
     var cur = {}; // last evaluated channel values
     var kickZ = new Spring(520, 0.62), kickR = new Spring(520, 0.55), kickRoll = new Spring(380, 0.5), kickX = new Spring(420, 0.6);
-    var hopX = new Spring(170, 0.18), hopZ = new Spring(170, 0.18), hopY = new Spring(300, 0.3);
+    var ballS = new Spring(300, 0.3); // paintballs rattling in the clear mag
+
     var landS = new Spring(140, 0.45), dryS = new Spring(900, 0.6);
     var sm = { sx: 0, sy: 0, crouch: 0, air: 0, speed: 0, rollLag: 0 };
     var puffT = 1, time = 0, recoilHeat = 0;
@@ -1248,9 +1550,8 @@
       recoilHeat = Math.max(0, recoilHeat - dt * 2.5);
       akGun.position.set(kx * 0.004, kr * 0.006 + recoilHeat * 0.004, kz * 0.032 + dz * 0.004);
       akGun.rotation.set(kr * 0.07 + recoilHeat * 0.02, kx * 0.02, kroll * 0.05);
-      // hopper jiggle
-      hopper.rotation.set(hopX.step(dt) * 0.12, 0, hopZ.step(dt) * 0.12);
-      hopper.position.y = AK.hopperPos.y + hopY.step(dt) * 0.004;
+      // the balls in the clear mag rattle a little with each shot
+      akMagBalls.position.y = ballS.step(dt) * 0.0012;
       // mag
       magMesh.position.set(AK.magPivot.x, AK.magPivot.y + c.magY, AK.magPivot.z + c.magZ);
       magMesh.rotation.set(c.magRX, 0, 0);
@@ -1371,6 +1672,7 @@
       s = s || {};
       dt = Math.min(Math.max(dt || 0, 0), 0.05);
       time = s.t !== undefined ? s.t : time + dt;
+      _skinTime.value = time;
       var speed = Math.max(0, Math.min(1, s.speed || 0)), phase = s.phase || 0;
       // smoothed inputs
       var kS = 1 - Math.exp(-dt * 10);
@@ -1448,7 +1750,7 @@
         kickR.v += 7 + Math.random() * 3;
         kickRoll.v += (Math.random() - 0.5) * 12;
         kickX.v += (Math.random() - 0.5) * 6;
-        hopX.v += 2.5 + Math.random(); hopZ.v += (Math.random() - 0.5) * 5; hopY.v += 3;
+        ballS.v += 3;
         recoilHeat = Math.min(1, recoilHeat + 0.25);
         puffT = 0; puff.visible = true; puffMat.rotation = Math.random() * TAU;
       },
@@ -1488,6 +1790,27 @@
       },
       _tune: { AK_BASE: AK_BASE, KN_BASE: KN_BASE, KN_SHOW: KN_SHOW, KN_LEFT: KN_LEFT, SHOULDER_LK: SHOULDER_LK, SHOULDER_R: SHOULDER_R, SHOULDER_RK: SHOULDER_RK, SHOULDER_L: SHOULDER_L, LH_GUARD: LH_GUARD, LH_MAG_LOCAL: LH_MAG_LOCAL, LH_BOLT: LH_BOLT, kHand: kHand, bali: bali, rHandAK: rHandAK, lHandAK: lHandAK, AWP_BASE: AWP_BASE, AWP_SCOPE: AWP_SCOPE, RH_GRIP_AWP: RH_GRIP_AWP, RH_BOLT_OFF: RH_BOLT_OFF, RH_BOLT_Q: RH_BOLT_Q, LH_MAG_AWP: LH_MAG_AWP, rHandAWP: rHandAWP, lHandAWP: lHandAWP },
       current: function () { return { weapon: weapon, action: action ? action.name : null, t: actT }; },
+      // Re-skin the held weapons at any time: { ak: skinId|null, awp: skinId|null, knife: skinId|null }
+      // (a missing key leaves that weapon as it is, null = the default look). Skin materials are
+      // cached and shared, so this is cheap to call again.
+      setSkins: function (o) {
+        o = o || {};
+        if ("ak" in o) {
+          var ap = o.ak ? skinMaterial(o.ak, "poly") : null, am = o.ak ? skinMaterial(o.ak, "metal") : null;
+          akPoly.material = akMagFrameMesh.material = ap || M.poly; akMetal.material = am || M.metal;
+          skins.ak = ap ? o.ak : null;
+        }
+        if ("awp" in o) {
+          var wp = o.awp ? skinMaterial(o.awp, "poly") : null, wm = o.awp ? skinMaterial(o.awp, "metal") : null;
+          awpPoly.material = awpMag.material = wp || M.poly; awpMetal.material = wm || M.metal;
+          skins.awp = wp ? o.awp : null;
+        }
+        if ("knife" in o) {
+          skinKnife(bali, { metal: M.kmetal, steel: M.ksteel }, o.knife || null);
+          skins.knife = o.knife && skinOf(o.knife) ? o.knife : null;
+        }
+      },
+      skins: function () { return { ak: skins.ak, awp: skins.awp, knife: skins.knife }; },
       dispose: function () {
         group.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
         for (var i = 0; i < disposables.length; i++) disposables[i].dispose();
@@ -1507,4 +1830,11 @@
     splatTextures: splatTextures,
     paintBallMaterial: paintBallMaterial
   };
+
+  // Skin rendering lives on PBSkins next to the catalog (pb-skins.js draws the pattern art)
+  var PBS = root.PBSkins || (root.PBSkins = {});
+  PBS.material = skinMaterial; // (skinId, part: "poly" | "metal" | "blade" | "handle") -> THREE.Material (cached, shared)
+  PBS.preview = preview; // (skinId, w, h) -> HTMLCanvasElement, transparent side view (cached per id + size)
+  PBS.textures = skinTextures; // (skinId) -> { map, glow|null } (cached)
+  PBS.skinsHandles = skinsHandles; // (skinId | skin) -> does this knife skin cover the handles too?
 })(typeof window !== "undefined" ? window : this);
