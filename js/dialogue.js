@@ -227,22 +227,146 @@
       return steps;
     },
 
-    disagree() {
+    disagree(A, B) {
       const topics = [
         ["Cats are the best pets.", "No way, dogs are!"],
         ["Pineapple belongs on pizza.", "Absolutely not!"],
         ["Summer is the best season.", "Winter is better!"],
+        ["Socks with sandals are stylish.", "That's a crime!"],
+        ["The last cookie is mine.", "I saw it first!"],
       ];
       const [x, y] = pick(topics);
-      return [
+      const start = [
         { who: "A", say: x, dur: 2.2 },
         { who: "B", say: y, expr: "angry", emote: "💢", dur: 2.2 },
         { who: "A", say: "Hmph!", expr: "angry", dur: 1.4 },
+      ];
+      // grumpy Miis don't always make up straight away: then it's a real fight
+      const grump = (200 - traits(A).kindness - traits(B).kindness) / 200;
+      if (Math.random() < 0.2 + grump * 0.45) {
+        return { fight: true, steps: start.concat([
+          { who: "B", say: pick(["I'm not talking to you!", "Fine! Be that way!", "You're impossible!"]), expr: "angry", emote: "💢", dur: 2.0 },
+          { who: "A", say: pick(["Good! Hmph!", "See if I care!", "*turns away*"]), expr: "angry", dur: 1.8 },
+        ]) };
+      }
+      return start.concat([
         { who: "B", say: "...Want to be friends anyway?", dur: 2.2 },
         { who: "A", say: "Of course!", expr: "laugh", emote: "🤝", dur: 1.8 },
+      ]);
+    },
+
+    // still upset after a fight: a frosty little exchange
+    cold() {
+      return [
+        { who: "A", say: pick(["...", "Oh. It's you.", "*looks away*"]), expr: "angry", dur: 1.8 },
+        { who: "B", say: pick(["Hmph.", "Whatever.", "..."]), expr: "angry", emote: "💢", dur: 1.6 },
       ];
     },
 
+    // you helped them make up after a fight
+    makeUp() {
+      return [
+        { who: "A", say: pick(["Um... {B}? Can we talk?", "{B}... I'm sorry about before."]), expr: "sad", dur: 2.2 },
+        { who: "B", say: pick(["I'm sorry too...", "I was being silly. Sorry, {A}."]), expr: "sad", dur: 2.2 },
+        { who: "A", say: pick(["Friends again?", "Let's never fight again!"]), dur: 1.8 },
+        { who: "both", say: "Friends!", arms: "cheer", hop: true, emote: "🤝", dur: 2.0 },
+      ];
+    },
+
+    // telling a crush how they feel (ctx.confess.success decides the answer)
+    confess(A, B, scene, points, ctx) {
+      const yes = ctx && ctx.confess && ctx.confess.success;
+      const steps = [
+        { who: "A", say: pick(["{B}... can I tell you something?", "Um, {B}? I have to say something..."]), expr: "sad", dur: 2.2 },
+        { who: "B", say: "Sure, what is it?", dur: 1.6 },
+        { who: "A", say: pick(["I... I really like you! 💗", "Will you go out with me? 💌", "My heart goes doki doki when I see you!"]), emote: "💗", dur: 2.6 },
+        { who: "B", say: "...!", expr: "surprised", emote: "❗", dur: 1.5 },
+      ];
+      if (yes) return steps.concat([
+        { who: "B", say: pick(["I like you too! 💕", "Yes! I've been waiting for you to ask!", "Really?! Me too!"]), emote: "💕", arms: "cheer", hop: true, dur: 2.4 },
+        { who: "both", say: "💑", emote: "💖", dance: true, hop: true, dur: 2.4 },
+      ]);
+      return steps.concat([
+        { who: "B", say: pick(["Oh... I'm sorry. Can we just be friends?", "You're really nice, but... I just like you as a friend."]), expr: "sad", dur: 2.6 },
+        { who: "A", say: pick(["Oh... okay. I understand.", "*sniff* ...Friends is good too."]), expr: "sad", emote: "💔", dur: 2.4 },
+      ]);
+    },
+
+    // a couple on a date
+    date() {
+      const what = pick([
+        ["Want to go for a walk together?", "I'd love that! 💕"],
+        ["I made you a sandwich!", "You're the best! 💕"],
+        ["Look at the sky... it's so pretty.", "Not as pretty as you. 💕"],
+        ["Let's take a selfie!", "Say cheese! 📸"],
+      ]);
+      return [
+        { who: "A", say: pick(["Hi, sweetie!", "There you are, {B}! 💕"]), emote: "💕", dur: 1.8 },
+        { who: "A", say: what[0], dur: 2.2 },
+        { who: "B", say: what[1], emote: "💖", dur: 2.2 },
+        { who: "both", emote: "💞", arms: "out", dance: true, dur: 2.2 },
+      ];
+    },
+
+    // rivals: always competing
+    rivalry() {
+      const contest = pick([
+        ["Bet I can jump higher than you!", "jump"],
+        ["Staring contest. Now.", "stare"],
+        ["I'm faster than you!", "jump"],
+      ]);
+      const aWins = Math.random() < 0.5;
+      return [
+        { who: "A", say: "Oh, it's you, {B}.", expr: "angry", emote: "⚡", dur: 1.8 },
+        { who: "B", say: "{A}. My rival.", expr: "angry", dur: 1.6 },
+        { who: "A", say: contest[0], dur: 2.0 },
+        { who: "both", say: contest[1] === "stare" ? "..." : "Hup!", hop: contest[1] !== "stare", moonJump: contest[1] === "jump", dur: 2.2 },
+        { who: aWins ? "A" : "B", say: pick(["Ha! I win!", "Victory is mine!", "Too easy!"]), arms: "cheer", hop: true, dur: 1.8 },
+        { who: aWins ? "B" : "A", say: pick(["Next time, rival!", "Grr! Rematch!", "Hmph. Lucky."]), expr: "angry", dur: 1.8 },
+      ];
+    },
+
+    // town level 2: a picnic
+    picnic() {
+      const food = pick(["sandwiches", "rice balls", "strawberries", "cookies", "lemonade"]);
+      return [
+        { who: "A", say: "I packed a picnic! Want some " + food + "?", arms: "out", dur: 2.4 },
+        { who: "B", say: pick(["Yes please!", "You're the best!", "Yum!"]), dur: 1.6 },
+        { who: "both", arms: "eat", emote: "🧺", dur: 3.0 },
+        { who: "B", say: pick(["Delicious!", "Best picnic ever!", "*munch munch*"]), expr: "laugh", dur: 1.8 },
+      ];
+    },
+
+    // town level 4: karaoke (using songs the Miis learned)
+    karaoke(A, B, scene, points, ctx) {
+      const songs = (ctx && ctx.songs && ctx.songs.length) ? ctx.songs : [{ title: "Happy Birthday", lines: ["♪ Happy birthday to youuu ♪", "♪ Happy birthday dear somebody ♪", "♪ Happy birthday to youuu! ♪"] }];
+      const song = pick(songs);
+      return [
+        { who: "A", say: "Karaoke time! Let's sing \"" + song.title + "\"!", arms: "cheer", emote: "🎤", dur: 2.4 },
+        { who: "A", say: song.lines[0], arms: "out", emote: "🎵", dur: 2.4 },
+        { who: "B", say: song.lines[1], arms: "out", emote: "🎵", dur: 2.4 },
+        { who: "both", say: song.lines[2], dance: true, emote: "🎶", dur: 2.6 },
+        { who: "B", say: pick(["We're stars!", "Encore!", "That was amazing!"]), expr: "laugh", dur: 1.8 },
+      ];
+    },
+
+    // town level 7: telling stories
+    story() {
+      const tale = pick([
+        ["Once, I saw a duck wearing a hat.", "No way!", "It was a very fancy duck."],
+        ["Did you know there's a cat that runs the mail room?", "Really?!", "It only delivers fish."],
+        ["I once ate 12 pancakes in a row.", "Wow!", "...I didn't eat lunch."],
+        ["Last night I dreamed I was the moon.", "Was it nice?", "It was very round."],
+      ]);
+      return [
+        { who: "A", say: "Want to hear a story?", dur: 1.6 },
+        { who: "B", say: "Ooh, yes!", emote: "📚", dur: 1.4 },
+        { who: "A", say: tale[0], arms: "out", dur: 2.6 },
+        { who: "B", say: tale[1], expr: "surprised", dur: 1.6 },
+        { who: "A", say: tale[2], dur: 2.2 },
+        { who: "B", say: pick(["Hahaha!", "Tell me another!", "What a story!"]), expr: "laugh", dur: 1.6 },
+      ];
+    },
     sleepy() {
       return [
         { who: "A", say: "*yawwwn*", sleep: true, emote: "💤", dur: 2 },
@@ -279,12 +403,19 @@
   // Chooses what two Miis will do. Their personalities change the odds:
   // silly Miis tell more jokes, energetic ones dance, grumpy ones argue...
   // opts.remote = "shout" or "phone" when they're far apart (then only talking things).
+  // opts.ctx (from progress.js) = what's going on between them: a fight, a couple,
+  // rivals, a confession to make, which fun things the town has unlocked...
   function buildInteraction(A, B, scene, points, opts) {
     const a = traits(A), b = traits(B);
     const avg = (k) => (a[k] + b[k]) / 2;
     const remote = opts && opts.remote;
+    const ctx = (opts && opts.ctx) || {};
+    const un = ctx.unlocked || {};
     let type;
-    if (remote) {
+    if (!remote && ctx.confess) type = "confess";
+    else if (ctx.makeUp) type = "makeUp";
+    else if (ctx.fight) type = "cold";
+    else if (remote) {
       type = points === 0 ? "chat" : weighted([
         ["chat", 3],
         ["joke", 0.5 + avg("humor") / 30],
@@ -302,10 +433,18 @@
         ["sleepy", points >= 4 ? 0.4 + (100 - a.energy) / 70 : 0],
         ["disagree", points >= 1 ? 0.2 + (100 - avg("kindness")) / 30 : 0],
         ["spaceBounce", scene.id === "space" ? 1.5 + avg("energy") / 50 : 0],
+        ["date", ctx.couple ? 3 : 0],
+        ["rivalry", ctx.rival ? 2.5 : 0],
+        ["picnic", un.picnic && points >= 1 ? 0.8 : 0],
+        ["karaoke", un.karaoke && points >= 2 ? 0.6 + avg("humor") / 100 + (ctx.songs && ctx.songs.length ? 0.8 : 0) : 0],
+        ["story", un.stories && points >= 1 ? 0.7 + avg("chatty") / 80 : 0],
       ]);
     }
-    const hello = remote ? remoteGreeting(A, B, points, remote) : greeting(A, B, points);
-    let steps = hello.concat(interactions[type](A, B, scene, points));
+    const hello = remote ? remoteGreeting(A, B, points, remote) : type === "cold" || type === "makeUp" || type === "confess" ? [] : greeting(A, B, points);
+    let body = interactions[type](A, B, scene, points, ctx);
+    let fight = false;
+    if (body && body.steps) { fight = !!body.fight; body = body.steps; }
+    let steps = hello.concat(body);
     if (remote) {
       // far apart: no looking at each other's clothes, no high fives
       steps = steps.map((s) => Object.assign({}, s, { arms: remote === "phone" ? undefined : s.arms === "wave" ? "wave" : undefined, hop: remote === "phone" ? false : s.hop }));
@@ -315,14 +454,15 @@
     }
     // sometimes finish with a catchphrase
     const cp = a.catchphrase && a.catchphrase.trim();
-    if (cp && Math.random() < 0.35) steps.push({ who: "A", say: cp, dur: 2.0 });
-    return { type, steps };
+    if (cp && Math.random() < 0.35 && !fight && type !== "cold") steps.push({ who: "A", say: cp, dur: 2.0 });
+    return { type, steps, fight, success: type === "confess" ? !!(ctx.confess && ctx.confess.success) : undefined };
   }
 
   // What happens to the friendship after an interaction (some are more fun than others!)
   const FRIENDSHIP_GAIN = {
     chat: 1, compliment: 2, joke: 2, dance: 2, highFive: 1,
     rockPaperScissors: 1, disagree: 1, sleepy: 1, spaceBounce: 2,
+    cold: 0, makeUp: 3, confess: 3, date: 3, rivalry: 1, picnic: 2, karaoke: 2, story: 2,
   };
 
   // Short descriptions for the activity feed.
@@ -336,6 +476,14 @@
     disagree: "{A} and {B} argued... then made up.",
     sleepy: "{B} woke up a sleepy {A}.",
     spaceBounce: "{A} and {B} had a moon jump contest!",
+    cold: "{A} and {B} are still not talking.",
+    makeUp: "{A} and {B} made up. 🩹",
+    confess: "{A} told {B} how they feel... 💌",
+    date: "{A} and {B} went on a date. 💕",
+    rivalry: "Rivals {A} and {B} had a contest! ⚡",
+    picnic: "{A} and {B} had a picnic. 🧺",
+    karaoke: "{A} and {B} sang karaoke! 🎤",
+    story: "{A} told {B} a story. 📚",
   };
 
   // Things a Mii says to nobody in particular.

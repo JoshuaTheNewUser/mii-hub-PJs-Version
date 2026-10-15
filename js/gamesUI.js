@@ -101,6 +101,7 @@
       if (result === "you") stats.losses += 1;
       opts.onSave();
       hub.endGame(w, result);
+      if (opts.onFinish) opts.onFinish(result);
       say(G.talk(result === "mii" ? "winMatch" : result === "you" ? "loseMatch" : "draw", p));
       board.classList.add("done");
       const gained = stats.skill - startSkill;

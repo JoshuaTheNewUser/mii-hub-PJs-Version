@@ -897,7 +897,7 @@
       const u = units[i];
       if (!u.home || !u.spot) return null;
       const s = u.spot;
-      return { x: u.winX + s.x, y: u.y + s.y, z: roomZ + s.z, yaw: s.yaw, pose: s.pose, arms: s.arms, lookUp: s.lookUp };
+      return { x: u.winX + s.x, y: u.y + s.y, z: roomZ + s.z, yaw: s.yaw, pose: s.pose, arms: s.arms, lookUp: s.lookUp, legs: s.legs };
     }
 
     // The courtyard spot in front of someone's door. Upper floors are reached by
@@ -1302,7 +1302,7 @@
 
     // ===== seats (facing +z) =====
     "sofa-basic": {
-      obs: [{ cx: 0, cz: 0, w: 1.4, d: 1.2 }], spot: { lx: 0, lz: 1.3, yaw: 0 }, seat: { lx: 0, lz: 0.02, h: 0.56 },
+      obs: [{ cx: 0, cz: 0, w: 1.4, d: 1.2 }], spot: { lx: 0, lz: 1.3, yaw: 0 }, seat: { lx: 0, lz: 0.02, h: 0.56, legs: "out" },
       build(g) {
         const c = toon(0xffb84a);
         block(g, c, 0, 0.3, 0, 1.3, 0.4, 1.1, 0.12);
@@ -1314,7 +1314,7 @@
       },
     },
     "sofa-comfy": {
-      obs: [{ cx: 0, cz: 0, w: 2.75, d: 1.25 }], spot: { lx: 0, lz: 1.35, yaw: 0 }, seat: { lx: 0, lz: 0.05, h: 0.6 },
+      obs: [{ cx: 0, cz: 0, w: 2.75, d: 1.25 }], spot: { lx: 0, lz: 1.35, yaw: 0 }, seat: { lx: 0, lz: 0.05, h: 0.6, legs: "out" },
       build(g) {
         const c = toon(0x4fb8b0), c2 = toon(0x7fd6cc);
         block(g, c, 0, 0.3, 0, 2.6, 0.42, 1.2, 0.14);
@@ -1328,7 +1328,7 @@
       },
     },
     "sofa-beanbag": {
-      obs: [{ cx: 0, cz: -0.05, r: 0.85 }], spot: { lx: 0, lz: 1.45, yaw: 0 }, seat: { lx: 0, lz: 0.0, h: 0.45 },
+      obs: [{ cx: 0, cz: -0.05, r: 0.85 }], spot: { lx: 0, lz: 1.45, yaw: 0 }, seat: { lx: 0, lz: 0.0, h: 0.45, legs: "out" },
       build(g) {
         ball(g, 0xb58cff, 0, 0.36, -0.05, 0.8, { sy: 0.48 });
         ball(g, 0xb58cff, 0, 0.62, -0.42, 0.55, { sy: 0.65, sz: 0.6 });
@@ -1338,7 +1338,7 @@
       },
     },
     "sofa-throne": {
-      obs: [{ cx: 0, cz: -0.05, w: 1.9, d: 1.7 }], spot: { lx: 0, lz: 1.6, yaw: 0 }, seat: { lx: 0, lz: 0.05, h: 0.81 },
+      obs: [{ cx: 0, cz: -0.05, w: 1.9, d: 1.7 }], spot: { lx: 0, lz: 1.6, yaw: 0 }, seat: { lx: 0, lz: 0.05, h: 0.81, legs: "out" },
       build(g) {
         const gold = toon(0xffcf3a), red = toon(0xd8344a);
         block(g, red, 0, 0.12, -0.05, 1.8, 0.24, 1.6, 0.06);
@@ -2070,7 +2070,7 @@
     const tw = (lx, lz) => ({ x: L.x + (lx * c + lz * s) * k, z: L.z + (-lx * s + lz * c) * k });
     const spot = { pose: "stand", y: 0, arms: (act && act.arms) || undefined, lookUp: (act && act.lookUp) || 0 };
     if (act && act.lie && def.lie) return Object.assign(spot, tw(def.lie.lx, def.lie.lz), { y: def.lie.h * k, yaw: (L.ry || 0) + def.lie.yaw, pose: "lie" });
-    if (act && act.sit && def.seat) return Object.assign(spot, tw(def.seat.lx, def.seat.lz), { y: def.seat.h * k - 0.56, yaw: L.ry || 0, pose: "sit" });
+    if (act && act.sit && def.seat) return Object.assign(spot, tw(def.seat.lx, def.seat.lz), { y: def.seat.h * k - 0.56, yaw: L.ry || 0, pose: "sit", legs: def.seat.legs });
     if (act && act.run && def.stand) return Object.assign(spot, tw(def.stand.lx, def.stand.lz), { y: def.stand.h * k, yaw: (L.ry || 0) + ((def.spot && def.spot.yaw) || 0), pose: "run" });
     const st = L.stand || def.spot || { lx: 0, lz: 1, yaw: PI };
     const at = st.x !== undefined ? { x: st.x, z: st.z } : tw(st.lx, st.lz);
@@ -2504,7 +2504,8 @@
       if (u.lookUp) spot.lookUp = u.lookUp;
       if (u.sit && def.seat) {
         const s = toWorld(place, def.seat.lx, def.seat.lz);
-        spot.seat = { x: s.x, z: s.z, y: def.seat.h - 0.56 };
+        // deep seats (sofas, bean bags): short Mii legs stick out over the cushion
+        spot.seat = { x: s.x, z: s.z, y: def.seat.h - 0.56, legs: def.seat.legs };
         spot.yaw = place.ry; // sit facing the way the seat faces
       }
       if (u.lie && def.lie) {

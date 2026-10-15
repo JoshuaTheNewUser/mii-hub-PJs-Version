@@ -522,10 +522,12 @@
       if (p.sit) {
         legL = legR = -1.45;
         kneeL = kneeR = 1.45;
+        // on a deep sofa, short Mii legs stick straight out instead of hanging down
+        if (p.legsOut) { legL = legR = -1.5; kneeL = kneeR = 0.15; }
         // fidgety Miis swing their legs while sitting
         const f = st.fidget * 0.35;
-        kneeL += Math.sin(t * 3.2 * tempo) * f;
-        kneeR += Math.sin(t * 3.2 * tempo + 2.2) * f;
+        kneeL += (p.legsOut ? 0.3 : 1) * Math.sin(t * 3.2 * tempo) * f;
+        kneeR += (p.legsOut ? 0.3 : 1) * Math.sin(t * 3.2 * tempo + 2.2) * f;
         this.drop = 0;
       }
       if (p.lie) { legL = legR = 0; kneeL = kneeR = 0.05; this.drop = 0; }
@@ -639,6 +641,10 @@
           aL = { x: Math.sin(t * 8) * 0.3, z: 1.0 + Math.sin(t * 8) * 0.3 };
           aR = { x: -Math.sin(t * 8) * 0.3, z: -1.0 - Math.sin(t * 8 + 1) * 0.3 };
           break;
+        case "flex": // showing off muscles
+          aL = { x: -0.1, z: 1.45 }; aR = { x: -0.1, z: -1.45 };
+          elbowLz = 1.5 + Math.sin(t * 6) * 0.15; elbowRz = -1.5 - Math.sin(t * 6) * 0.15;
+          break;
         case "phone": // holding a phone to the side of the head
           aR = { x: -0.2, z: -1.45 };
           elbowR = -0.3; elbowRz = -1.4;
@@ -685,7 +691,7 @@
 
       // body: hips turn with the legs and the shoulders turn the other way when walking;
       // goofy Miis waddle from side to side
-      const lean = st.lean * w + run * 0.12;
+      const lean = st.lean * w + run * 0.12 + (p.bow ? 0.75 : 0);
       this.set("Spine_1", lean, s * 0.07 * w + spineY, s * (0.03 + st.wobble) * w + spineZ);
       this.set("Spine_2", 0, -s * 0.09 * w, 0);
       // head: look around, nod, laugh (and stay steady while walking)
@@ -694,6 +700,28 @@
         (p.lookYaw || 0) + headY - s * 0.02 * w,
         headZ + (p.dance ? 0 : Math.sin(t * 0.7) * 0.03) - s * (0.03 + st.wobble) * w * 0.5);
     }
+  }
+
+  // When a Mii lies on its back, how far below its spine does its body reach?
+  // (its big head sticks out further than its back). Measured once per model, in
+  // the model's own size; multiply by the Mii's scale.
+  function lieDepth(inst) {
+    if (inst.lieDepth !== undefined) return inst.lieDepth;
+    const h = inst.holder;
+    const keep = { p: h.position.clone(), r: h.rotation.clone(), s: h.scale.clone(), parent: h.parent };
+    if (keep.parent) keep.parent.remove(h);
+    h.position.set(0, 0, 0); h.scale.setScalar(1);
+    h.rotation.order = "YXZ"; h.rotation.set(-Math.PI / 2, 0, 0);
+    h.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    // measure the body (its clothes); the big head can sink into the pillow
+    const add = (o) => { o.geometry.computeBoundingBox(); box.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld)); };
+    inst.inner.traverse((o) => { if (o.isMesh && /clothes/i.test(o.name + " " + (o.parent ? o.parent.name : ""))) add(o); });
+    if (!isFinite(box.min.y)) inst.inner.traverse((o) => { if (o.isMesh) add(o); });
+    inst.lieDepth = isFinite(box.min.y) ? -box.min.y : 0.25;
+    h.position.copy(keep.p); h.rotation.copy(keep.r); h.scale.copy(keep.s);
+    if (keep.parent) keep.parent.add(h);
+    return inst.lieDepth;
   }
 
   // ---- small portrait pictures for the side panel ----
@@ -737,5 +765,5 @@
     });
   }
 
-  root.MiiModel = Object.assign(api, { loadTemplate, createInstance, applyLook, portrait, disposeObject, srgbColor, rgbToHex, DEFAULT_STYLE });
+  root.MiiModel = Object.assign(api, { loadTemplate, createInstance, applyLook, portrait, disposeObject, srgbColor, rgbToHex, DEFAULT_STYLE, lieDepth });
 })(typeof self !== "undefined" ? self : this);

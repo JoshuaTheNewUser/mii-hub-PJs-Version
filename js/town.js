@@ -22,8 +22,14 @@
     { id: "office", name: "the office", icon: "🏢" },
     { id: "space", name: "the moon base", icon: "🚀" },
     { id: "apartments", name: "the courtyard", icon: "🏘️" },
+    { id: "beach", name: "the beach", icon: "🏖️" },
+    { id: "cafe", name: "Café Street", icon: "☕" },
+    { id: "school", name: "school", icon: "🏫" },
+    { id: "stage", name: "the concert stage", icon: "🎤" },
     { id: "home", name: "home", icon: "🏠" },
   ];
+  // only places that exist in this version of the game (and home)
+  const available = () => PLACES.filter((p) => p.id === "home" || !root.World3D || root.World3D.list.some((l) => l.id === p.id));
   const placeInfo = (id) => PLACES.find((p) => p.id === id) || PLACES[0];
 
   const rnd = (a, b) => a + Math.random() * (b - a);
@@ -38,6 +44,10 @@
       space: 0.4 + e * 0.7 + h * 0.4 + (1 - s) * 0.2, // adventurous, curious
       apartments: 0.5 + s * 0.8 + k * 0.6,        // friendly neighbours
       home: 0.3 + (1 - e) * 1.2 + (1 - s) * 0.4,  // lazy homebodies
+      beach: 0.5 + e * 0.8 + h * 0.4,               // fun in the sun
+      cafe: 0.4 + s * 0.7 + p.chatty / 100 * 0.6,   // chatty socialisers
+      school: 0.3 + (1 - h) * 0.8 + k * 0.3,        // curious, studious
+      stage: 0.3 + h * 0.7 + e * 0.5 + s * 0.3,     // performers
     };
   }
 
@@ -46,6 +56,7 @@
     const likes = placeLikes(p);
     let best = "park", bestV = -1;
     for (const [id, v] of Object.entries(likes)) {
+      if (!available().some((p) => p.id === id)) continue;
       const score = v * rnd(0.85, 1.15);
       if (score > bestV) { bestV = score; best = id; }
     }
@@ -86,10 +97,13 @@
       const p = D.traits(rec);
       const likes = placeLikes(p);
       const options = [];
-      for (const pl of PLACES) {
+      const sweetheart = rec.sweetheart && records.get(rec.sweetheart);
+      for (const pl of available()) {
         if (pl.id === exclude) continue;
         let w = likes[pl.id];
         if (pl.id === rec.favPlace) w *= 3;
+        if (opts.placeMood) w *= opts.placeMood(pl.id); // rain keeps Miis indoors...
+        if (sweetheart && sweetheart.place === pl.id) w *= 2.5; // couples like to be together
         options.push([pl.id, w]);
       }
       return D.weighted(options);
@@ -204,7 +218,7 @@
       socialIn -= dt * hub.chattiness;
       if (socialIn <= 0) {
         socialIn = rnd(8, 14);
-        for (const pl of PLACES) {
+        for (const pl of available()) {
           if (pl.id === view || pl.id === "home") continue;
           const here = Array.from(records.values()).filter((r) => r.place === pl.id && !info(r).travel);
           if (here.length < 2 || Math.random() > 0.1 * Math.min(2, here.length / 3)) continue;
@@ -271,5 +285,5 @@
     return { tick, go, sendTo, populate, choosePlace, whereText, isTravelling, homeActivity, forget, info };
   }
 
-  root.MiiTown = { create, PLACES, placeInfo, placeLikes, guessFavorite };
+  root.MiiTown = { create, PLACES, placeInfo, placeLikes, guessFavorite, available };
 })(typeof self !== "undefined" ? self : this);

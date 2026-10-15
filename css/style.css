@@ -1100,3 +1100,113 @@ body {
 /* what the other Mii says, coming out of the phone */
 .bubble.phone-voice { background: #e3f3ff; font-style: italic; }
 .bubble.phone-voice::after { border-top-color: #e3f3ff; }
+
+/* ---------- progression: town bar, wishes, toasts, goals, stickers ---------- */
+.town-bar { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+.town-level { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; }
+.xp { width: 90px; height: 8px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.xp-fill { height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, #5cc84a, #2fa4e7); transition: width 0.4s; }
+.weather { font-size: 0.8rem; font-weight: 700; color: var(--muted); }
+.tb-btn {
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 4px 9px;
+  cursor: pointer;
+}
+.tb-btn:hover:not(:disabled) { border-color: var(--accent); }
+.tb-btn:disabled { opacity: 0.5; cursor: default; }
+.tb-btn.ready { border-color: #ffcf3a; background: #fff3b8; color: #7a5a00; animation: bob 1.2s ease-in-out infinite; }
+
+.wishes { list-style: none; margin: 0; padding: 0; }
+.wishes li { display: flex; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); }
+.wishes li:first-child { border-top: none; }
+.wishes li.empty { display: block; }
+.wishes img { width: 40px; height: 40px; border-radius: 50%; background: #dff0ff; flex-shrink: 0; }
+.wish-body { flex: 1; min-width: 0; }
+.wish-text { font-size: 0.85rem; }
+.wish-time { height: 4px; margin: 4px 0; border-radius: 999px; background: var(--border); overflow: hidden; }
+.wish-time div { height: 100%; background: #ffb84a; }
+.wish-acts { display: flex; flex-wrap: wrap; gap: 4px; }
+.wish-acts button {
+  border: 2px solid var(--accent);
+  border-radius: 999px;
+  background: rgba(47, 164, 231, 0.1);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 2px 9px;
+  cursor: pointer;
+}
+
+/* the 💭 over a Mii with a wish */
+.wish-mark {
+  position: absolute;
+  left: -46px;
+  top: -10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #fff;
+  font-size: 1.05rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  opacity: 0;
+  transform: scale(0.5);
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+}
+.wish-mark.show { opacity: 1; transform: scale(1); animation: bob 1.4s ease-in-out infinite; }
+
+.toasts {
+  position: absolute;
+  top: 54px;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 35;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  pointer-events: none;
+}
+.toast {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(36, 40, 59, 0.88);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.85rem;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  animation: menuPop 0.2s ease-out;
+  transition: opacity 0.5s, transform 0.5s;
+}
+.toast.bye { opacity: 0; transform: translateY(-10px); }
+
+.choice-card.big { width: min(460px, 100%); }
+.choice-card.book { width: min(620px, 100%); }
+.choice-card h3 small, .goal small { color: var(--muted); font-weight: 700; }
+.hp-grid.wide { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.hp-item.deal { border-color: #ffcf3a; }
+.hp-item.locked { filter: grayscale(1); }
+
+.goal { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 12px; background: var(--bg); }
+.goal.claimed { opacity: 0.6; }
+.goal-icon { font-size: 1.5rem; }
+.goal-body { flex: 1; font-weight: 700; font-size: 0.9rem; }
+.goal .xp { width: 100%; margin-top: 4px; }
+
+.book-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.book-tabs button { border: 2px solid var(--border); border-radius: 10px; background: transparent; color: var(--text); font: inherit; font-size: 0.78rem; font-weight: 700; padding: 3px 8px; cursor: pointer; }
+.book-tabs button[aria-pressed="true"] { border-color: var(--accent); background: rgba(47, 164, 231, 0.12); }
+.stickers { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; max-height: 50vh; overflow-y: auto; }
+.sticker { display: grid; justify-items: center; gap: 2px; padding: 8px 4px; border-radius: 14px; background: var(--bg); text-align: center; opacity: 0.45; }
+.sticker span { font-size: 1.8rem; filter: grayscale(1); }
+.sticker small { font-size: 0.68rem; font-weight: 700; line-height: 1.1; }
+.sticker.got { opacity: 1; background: #fff6cf; box-shadow: inset 0 0 0 2px #ffd966; }
+.sticker.got span { filter: none; }
+@media (prefers-color-scheme: dark) { .sticker.got { background: #4a4220; } }
+
+.mm-level { padding-left: 6px; font-size: 0.75rem; letter-spacing: 1px; }

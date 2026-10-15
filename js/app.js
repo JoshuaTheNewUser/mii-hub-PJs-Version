@@ -116,6 +116,7 @@
   }
   function goToScene(id) {
     hub.setScene(id);
+    if (progress) progress.event({ type: "view", place: id });
     saveSettings();
     updateTabs();
   }
@@ -318,8 +319,10 @@
     hub, records, D, templateFor, lookFor, nameOf, save,
     // light = just the numbers and "where is everyone" changed
     changed: (light) => { if (light) refreshLight(); else refreshAll(true); },
+    placeMood: (place) => (progress ? progress.placeMood(place) : 1),
   });
-  hub.onTick = (dt) => town.tick(dt);
+  let progress = null; // wishes, levels, goals... (made below)
+  hub.onTick = (dt) => { town.tick(dt); if (progress) progress.tick(dt); };
   hub.onSceneChange = (id) => town.populate(id);
 
   function sendHome(rec, then, quick) {
@@ -329,6 +332,7 @@
   function sendTo(rec, place) {
     if (hub.visiting && hub.visiting.record.id === rec.id && place !== "home") leaveHome();
     town.sendTo(rec, place);
+    progress.event({ type: "sent", id: rec.id, place });
   }
 
   // Invite a Mii out of its home to the place you're looking at.
@@ -345,6 +349,7 @@
       hub.visitHome(rec, template, lookFor(rec, template));
       openHomePanel(rec);
       updateTabs();
+      progress.event({ type: "visit", id: rec.id });
     };
     if (isHome(rec) && !town.isTravelling(rec)) go();
     else town.sendTo(rec, "home", { quick: true, then: go });
@@ -364,6 +369,7 @@
     else hub.moveAway(rec.id, nameOf(rec));
     records.delete(rec.id);
     town.forget(rec.id);
+    progress.forget(rec.id);
     loaded.delete(rec.id);
     templates.delete(rec.id);
     portraits.delete(rec.id);
@@ -658,7 +664,14 @@
     const label = document.createElement("div");
     label.className = "mm-label";
     label.innerHTML = escapeHtml(D.personalityLabel(p)) + ' · <span data-coins="' + rec.id + '">🪙 ' + (rec.coins || 0) + "</span>";
-    titles.append(nameInput, label);
+    // level and happiness (granting wishes fills it up)
+    progress.ensure(rec);
+    const lvl = document.createElement("div");
+    lvl.className = "mm-level";
+    const need = progress.happyNeeded(rec);
+    lvl.innerHTML = "<b>⭐ Lv " + rec.level + "</b> " + "❤️".repeat(rec.happy) + "🤍".repeat(Math.max(0, need - rec.happy));
+    lvl.title = "Grant " + nameOf(rec) + "'s wishes and give it things it loves to fill its hearts and level it up";
+    titles.append(nameInput, label, lvl);
     const close = document.createElement("button");
     close.className = "mm-close";
     close.textContent = "✕";
@@ -669,12 +682,22 @@
     // quick actions
     const acts = document.createElement("div");
     acts.className = "mm-actions";
-    for (const [icon, text, kind] of [["👋", "Wave", "wave"], ["💃", "Dance", "dance"], ["🦘", "Jump", "jump"], ["😴", "Nap", "nap"], ["💬", "Catchphrase", "catchphrase"]]) {
+    const actList = [["👋", "Wave", "wave"], ["💃", "Dance", "dance"], ["🦘", "Jump", "jump"], ["😴", "Nap", "nap"], ["💬", "Catchphrase", "catchphrase"]];
+    // special moves it learned when levelling up
+    for (const id of rec.moves || []) {
+      const mv = progress.MOVES.find((m) => m.id === id);
+      if (mv) actList.push([mv.icon, mv.name, mv.id]);
+    }
+    for (const [icon, text, kind] of actList) {
       const b = document.createElement("button");
       b.innerHTML = "<span>" + icon + "</span>" + text;
       b.addEventListener("click", () => hub.perform(w, kind));
       acts.appendChild(b);
     }
+    const snack = document.createElement("button");
+    snack.innerHTML = "<span>🍙</span>Give food";
+    snack.addEventListener("click", () => { closeMiiMenu(); openFoodPicker(rec); });
+    acts.appendChild(snack);
 
     // personality sliders
     const pers = document.createElement("div");
@@ -705,6 +728,7 @@
     cp.placeholder = "e.g. Let's gooo!";
     cp.value = p.catchphrase || "";
     cp.addEventListener("input", () => { p.catchphrase = cp.value; saveSoon(rec); });
+    cp.addEventListener("change", () => { if (cp.value.trim()) progress.event({ type: "catchphrase", id: rec.id }); });
     cpRow.appendChild(cp);
     pers.appendChild(cpRow);
 
@@ -735,14 +759,7 @@
       play.className = "mm-play";
       play.textContent = "Play";
       play.title = g.name + " (" + g.format + ")";
-      play.addEventListener("click", () => {
-        closeMiiMenu();
-        window.MiiGamesUI.open({
-          walker: w, game: g.id, hub, stage: $("stage"),
-          portrait: portraitFor(rec), stats: gameStats(rec, g.id),
-          onSave: () => saveSoon(rec),
-        });
-      });
+      play.addEventListener("click", () => openGame(w, g.id));
       row.append(glabel, meterWrap, play);
       games.appendChild(row);
     }
@@ -756,6 +773,16 @@
       .sort((a, b) => b.pts - a.pts).slice(0, 3);
     fr.innerHTML = "<h3>Best friends</h3>";
     const ul = document.createElement("ul");
+    // sweethearts, rivals and fights
+    const love = progress.partnerOf(rec);
+    if (love) { const li = document.createElement("li"); li.textContent = "💑 Dating " + nameOf(love); ul.appendChild(li); }
+    for (const o of sortedRecords()) {
+      if (o === rec) continue;
+      const pr = progress.state.pairs[rec.id < o.id ? rec.id + "|" + o.id : o.id + "|" + rec.id];
+      if (!pr) continue;
+      if (pr.fight) { const li = document.createElement("li"); li.textContent = "💢 Not talking to " + nameOf(o); ul.appendChild(li); }
+      else if (pr.rival) { const li = document.createElement("li"); li.textContent = "⚡ Rivals with " + nameOf(o); ul.appendChild(li); }
+    }
     if (!pals.length) ul.innerHTML = '<li class="empty">No friends yet!</li>';
     for (const { o, pts } of pals) {
       const li = document.createElement("li");
@@ -771,7 +798,7 @@
     places.innerHTML = "<h3>Go to…</h3>";
     const goRow = document.createElement("div");
     goRow.className = "mm-places";
-    for (const pl of T.PLACES) {
+    for (const pl of T.available()) {
       const b = document.createElement("button");
       b.innerHTML = "<span>" + pl.icon + "</span>" + (pl.id === "apartments" ? "Courtyard" : pl.id === "space" ? "Moon" : pl.name.replace(/^the /, "").replace(/^./, (c) => c.toUpperCase()));
       b.title = "Send " + nameOf(rec) + " to " + pl.name;
@@ -783,7 +810,7 @@
     favRow.className = "mm-fav";
     favRow.textContent = "Favourite place ";
     const fav = document.createElement("select");
-    for (const pl of T.PLACES) {
+    for (const pl of T.available()) {
       const o = document.createElement("option");
       o.value = pl.id;
       o.textContent = pl.icon + " " + pl.name.replace(/^./, (c) => c.toUpperCase());
@@ -924,15 +951,24 @@
       slotName.textContent = H.SLOTS.find((s) => s.id === panelSlot).name;
       const grid = document.createElement("div");
       grid.className = "hp-grid";
-      for (const it of H.ITEMS.filter((i) => i.slot === panelSlot)) {
+      // today's stock (it changes every day), plus everything the Mii already owns,
+      // plus a peek at fancier things that a higher town level unlocks
+      const forSale = progress.shopItems(panelSlot);
+      const deals = progress.deals();
+      const list = H.ITEMS.filter((i) => i.slot === panelSlot && (forSale.includes(i) || rec.home.owned.includes(i.id) || progress.lockedTier(i)));
+      for (const it of list) {
         const owned = rec.home.owned.includes(it.id);
         const placed = rec.home.items[it.slot] === it.id;
+        const locked = !owned && progress.lockedTier(it);
+        const price = progress.priceOf(it);
+        const deal = !owned && deals.includes(it.id);
         const b = document.createElement("button");
-        b.className = "hp-item" + (placed ? " placed" : "");
-        b.innerHTML = "<span class=\"hp-icon\">" + it.icon + "</span><span class=\"hp-name\">" + escapeHtml(it.name) + "</span><span class=\"hp-price\">" +
-          (placed ? "✓ In use" : owned ? "Owned" : "🪙 " + it.price) + "</span>";
-        b.disabled = placed || (!owned && (rec.coins || 0) < it.price);
-        if (!owned && (rec.coins || 0) < it.price) b.title = nameOf(rec) + " needs " + (it.price - (rec.coins || 0)) + " more coins";
+        b.className = "hp-item" + (placed ? " placed" : "") + (deal ? " deal" : "") + (locked ? " locked" : "");
+        b.innerHTML = "<span class=\"hp-icon\">" + (locked ? "🔒" : it.icon) + "</span><span class=\"hp-name\">" + escapeHtml(it.name) + "</span><span class=\"hp-price\">" +
+          (placed ? "✓ In use" : owned ? "Owned" : locked ? "Town Lv " + progress.unlockLevelForTier(progress.tierOf(it)) : (deal ? "⭐ " : "") + "🪙 " + price) + "</span>";
+        b.disabled = placed || locked || (!owned && (rec.coins || 0) < price);
+        if (!owned && !locked && (rec.coins || 0) < price) b.title = nameOf(rec) + " needs " + (price - (rec.coins || 0)) + " more coins";
+        if (deal) b.title = "Today's deal: 30% off!";
         b.addEventListener("click", () => placeItem(rec, it));
         grid.appendChild(b);
       }
@@ -940,17 +976,10 @@
     } else if (panelTab === "food") {
       const grid = document.createElement("div");
       grid.className = "hp-grid";
-      for (const f of H.FOODS) {
-        const b = document.createElement("button");
-        b.className = "hp-item";
-        b.innerHTML = "<span class=\"hp-icon\">" + f.icon + "</span><span class=\"hp-name\">" + escapeHtml(f.name) + "</span><span class=\"hp-price\">🪙 " + f.price + "</span>";
-        b.disabled = (rec.coins || 0) < f.price;
-        b.addEventListener("click", () => giveFood(rec, f));
-        grid.appendChild(b);
-      }
+      foodButtons(rec, grid);
       const tip = document.createElement("p");
       tip.className = "hp-tip";
-      tip.textContent = "Every Mii has a favourite food (and one they can't stand). Find out by trying!";
+      tip.textContent = "Every Mii has a favourite food (and one they can't stand). The menu changes every day!";
       body.append(tip, grid);
     } else {
       const tip = document.createElement("p");
@@ -973,8 +1002,9 @@
   function placeItem(rec, it) {
     const owned = rec.home.owned.includes(it.id);
     if (!owned) {
-      if ((rec.coins || 0) < it.price) return;
-      rec.coins -= it.price;
+      const price = progress.priceOf(it);
+      if ((rec.coins || 0) < price || progress.lockedTier(it)) return;
+      rec.coins -= price;
       rec.home.owned.push(it.id);
     }
     rec.home.items[it.slot] = it.id;
@@ -986,24 +1016,396 @@
       if (!owned) rec.mood = Math.max(0, Math.min(100, (rec.mood || 60) + H.MOOD_CHANGE[op]));
       if (op !== "dislike") rec.home.lastGift = it.name;
       hub.homeReact(H.reaction("item", op, it, p), EMOTE[op], it.id);
+      if (!owned) progress.event({ type: "furniture", id: rec.id, item: it, opinion: op });
     }
     save(rec);
     renderHomePanel();
     renderCoins();
   }
 
+  // The foods on today's menu, as buttons that feed this Mii.
+  function foodButtons(rec, grid, after) {
+    for (const f of progress.shopFoods()) {
+      const b = document.createElement("button");
+      b.className = "hp-item";
+      b.innerHTML = "<span class=\"hp-icon\">" + f.icon + "</span><span class=\"hp-name\">" + escapeHtml(f.name) + "</span><span class=\"hp-price\">🪙 " + f.price + "</span>";
+      b.disabled = (rec.coins || 0) < f.price;
+      b.addEventListener("click", () => { giveFood(rec, f); if (after) after(); });
+      grid.appendChild(b);
+    }
+  }
+
+  // Feeds a Mii (paid with its own coins). It eats on screen if you can see it.
   function giveFood(rec, f) {
     if ((rec.coins || 0) < f.price) return;
     rec.coins -= f.price;
     const p = D.traits(rec);
     const op = H.opinion(p, rec, f);
     rec.mood = Math.max(0, Math.min(100, (rec.mood || 60) + H.MOOD_CHANGE[op] * 0.6));
-    hub.giveFood(f, H.reaction("food", op, f, p), op === "dislike" ? "🤢" : EMOTE[op]);
+    const text = H.reaction("food", op, f, p), emote = op === "dislike" ? "🤢" : EMOTE[op];
+    const w = walkerOf(rec.id);
+    if (w) hub.giveFood(f, text, emote, w);
+    else toast(f.icon + " " + nameOf(rec) + ": \u201c" + text + "\u201d");
+    progress.event({ type: "food", id: rec.id, food: f, opinion: op });
     save(rec);
-    renderHomePanel();
+    if (!panel.hidden) renderHomePanel();
     renderCoins();
   }
 
+
+  // =====================================================================
+  // Progression: wishes, Mii levels, town level, daily goals, sticker book
+  // =====================================================================
+  const PROGRESS_KEY = "mii-hub-3d-progress";
+  let savedProgress = null;
+  try { savedProgress = JSON.parse(localStorage.getItem(PROGRESS_KEY)); } catch (e) { /* none yet */ }
+  let saveProgressTimer = null;
+  const meetUps = []; // Miis you brought together, waiting to meet: { a, b, until }
+
+  progress = window.MiiProgress.create({
+    records, D, H, hub, saved: savedProgress,
+    saveState: (st) => { clearTimeout(saveProgressTimer); saveProgressTimer = setTimeout(() => { try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(st)); } catch (e) { /* ignore */ } }, 500); },
+    saveMii: (rec) => saveSoon(rec),
+    town: () => town,
+    meetUp: (a, b) => meetUps.push({ a: a.id, b: b.id, until: Date.now() + 120000 }),
+    // makes two Miis hang out right now (on screen if they're here, otherwise off screen)
+    offscreen: (fromId, toId) => {
+      const A = records.get(fromId), B = records.get(toId);
+      if (!A || !B) return true;
+      const wa = walkerOf(A.id), wb = walkerOf(B.id);
+      if (wa && wb && !hub.visiting) {
+        if (hub.isBusy(wa) || hub.isBusy(wb)) return false;
+        hub.startInteraction(wa, wb);
+        return true;
+      }
+      if (wa || wb) return false; // one of them is on screen: wait until they meet properly
+      hub.offscreenHangout(A, B, A.place === "home" ? "apartments" : A.place);
+      return true;
+    },
+  });
+  for (const r of records.values()) progress.ensure(r);
+  hub.relation = (a, b) => progress.context(a, b);
+  hub.onHangout = (e) => progress.event(Object.assign({ type: "hangout" }, e));
+  hub.onPerform = (w, kind) => progress.event({ type: "perform", id: w.id, kind });
+  hub.onPoke = (w) => progress.event({ type: "poke", id: w.id });
+  hub.wishIconFor = (rec) => (rec.wish ? rec.wish.icon : null);
+  hub.weatherLine = () => progress.weatherLine();
+  progress.event({ type: "view", place: hub.world.id });
+
+  // Brought-together Miis meet as soon as they're in the same place.
+  setInterval(() => {
+    for (let i = meetUps.length - 1; i >= 0; i--) {
+      const m = meetUps[i];
+      const A = records.get(m.a), B = records.get(m.b);
+      if (!A || !B || Date.now() > m.until) { meetUps.splice(i, 1); continue; }
+      if (A.place !== B.place || town.isTravelling(A) || town.isTravelling(B)) continue;
+      const wa = walkerOf(A.id), wb = walkerOf(B.id);
+      if (wa && wb) {
+        if (hub.isBusy(wa) || hub.isBusy(wb) || wa.appear < 1 || wb.appear < 1) continue;
+        hub.startInteraction(wa, wb);
+      } else if (!wa && !wb) {
+        hub.offscreenHangout(A, B, A.place === "home" ? "apartments" : A.place);
+      } else continue;
+      meetUps.splice(i, 1);
+    }
+  }, 1000);
+
+  // ---------- little messages at the top of the scene ----------
+  const toasts = document.createElement("div");
+  toasts.className = "toasts";
+  $("stage").appendChild(toasts);
+  function toast(text) {
+    const t = document.createElement("div");
+    t.className = "toast";
+    t.textContent = text;
+    toasts.appendChild(t);
+    while (toasts.children.length > 4) toasts.firstChild.remove();
+    setTimeout(() => t.classList.add("bye"), 3800);
+    setTimeout(() => t.remove(), 4400);
+  }
+  progress.on("toast", toast);
+  progress.on("event", (e) => {
+    const w = walkerOf(e.rec.id);
+    if (e.type === "wishGranted") {
+      if (w) { w.say(D.pick(["Thank you!!", "You're the best!", "Yay! My wish came true!", "I'm so happy!"]), 2.4); w.showEmote("🎉", 2.5); w.hop(4.5); }
+      renderCoins();
+    }
+    if (e.type === "newWish" && w) { w.say(e.wish.text, 3.2); }
+    if (e.type === "wishExpired" && w) { w.say(D.pick(["Oh well... never mind.", "Nobody listens to me...", "*sigh*"]), 2.4); w.showEmote("😔", 2.5); }
+    renderWishes(true);
+  });
+  progress.on("sticker", (st) => toast("🏷️ New sticker: " + st.icon + " " + st.name + "!"));
+
+  // ---------- town level, weather and buttons in the top bar ----------
+  const townBar = document.createElement("div");
+  townBar.className = "town-bar";
+  townBar.innerHTML = '<div class="town-level" title="Town level: grant wishes to make the town grow"><b>🏙️ Lv <span id="townLv"></span></b><div class="xp"><div class="xp-fill" id="townXp"></div></div></div>' +
+    '<div class="weather" id="weatherText"></div>' +
+    '<button class="tb-btn" id="dailyBtn">📅 Daily <span id="dailyCount"></span></button>' +
+    '<button class="tb-btn" id="bookBtn">📖 Book</button>';
+  document.querySelector(".topbar").appendChild(townBar);
+  $("dailyBtn").addEventListener("click", openDaily);
+  $("bookBtn").addEventListener("click", openBook);
+
+  function renderTownBar() {
+    const st = progress.state;
+    $("townLv").textContent = st.level;
+    $("townXp").style.width = Math.min(100, (st.xp / progress.xpNeeded(st.level)) * 100) + "%";
+    $("townXp").parentElement.title = st.xp + " / " + progress.xpNeeded(st.level) + " XP to town level " + (st.level + 1);
+    $("weatherText").textContent = progress.weatherText();
+    const d = st.daily;
+    if (d) {
+      const done = d.goals.filter((g) => g.count >= g.n).length;
+      const ready = d.goals.some((g) => g.count >= g.n && !g.claimed);
+      $("dailyCount").textContent = done + "/" + d.goals.length;
+      $("dailyBtn").classList.toggle("ready", ready);
+    }
+  }
+
+  // ---------- weather effects (rain, snow, festivals...) ----------
+  let weatherFx = null;
+  let lastWeatherKey = "";
+  function applyWeather() {
+    if (!window.Weather3D) return;
+    if (!weatherFx) {
+      weatherFx = window.Weather3D.create(hub);
+      const update = hub.update.bind(hub);
+      hub.update = (dt) => { update(dt); weatherFx.update(dt, hub.time); };
+      const useWorld = hub.useWorld.bind(hub);
+      hub.useWorld = (world) => { useWorld(world); weatherFx.setWorld(world); weatherFx.set(stateNow()); };
+      weatherFx.setWorld(hub.world);
+    }
+    const s = stateNow();
+    const key = JSON.stringify(s);
+    if (key !== lastWeatherKey) { lastWeatherKey = key; weatherFx.set(s); }
+  }
+  const stateNow = () => { const w = progress.weather(); return { weather: w.weather, season: w.season, festival: w.festival, night: !!w.night }; };
+
+  // ---------- wishes panel ----------
+  const wishPanel = document.createElement("div");
+  wishPanel.className = "panel wishes-panel";
+  wishPanel.innerHTML = '<h2>Wishes <span class="count" id="wishCount">0</span></h2><ul class="wishes" id="wishes"></ul>';
+  document.querySelector(".sidebar").prepend(wishPanel);
+  let wishKey = "";
+
+  function renderWishes(force) {
+    const list = sortedRecords().filter((r) => r.wish);
+    const key = list.map((r) => r.id + r.wish.type + r.wish.at + (r.wish.target || "")).join(",");
+    $("wishCount").textContent = list.length;
+    // just update the timers if nothing else changed
+    if (!force && key === wishKey) {
+      for (const el of document.querySelectorAll("[data-wish-time]")) {
+        const r = records.get(el.dataset.wishTime);
+        if (r && r.wish) el.style.width = Math.max(0, Math.min(100, (r.wish.left / 480) * 100)) + "%";
+      }
+      return;
+    }
+    wishKey = key;
+    const ul = $("wishes");
+    ul.innerHTML = "";
+    if (!list.length) { ul.innerHTML = '<li class="empty">No wishes right now. Check back soon!</li>'; return; }
+    for (const rec of list) {
+      const w = rec.wish;
+      const li = document.createElement("li");
+      const img = document.createElement("img");
+      img.alt = ""; img.dataset.portrait = rec.id; img.src = portraitFor(rec);
+      const body = document.createElement("div");
+      body.className = "wish-body";
+      body.innerHTML = "<div class=\"wish-text\"><b>" + escapeHtml(nameOf(rec)) + "</b> " + w.icon + " " + escapeHtml(w.text) + "</div>" +
+        '<div class="wish-time"><div data-wish-time="' + rec.id + '"></div></div>';
+      const acts = document.createElement("div");
+      acts.className = "wish-acts";
+      for (const a of progress.wishActions(rec)) {
+        const b = document.createElement("button");
+        b.textContent = a.text;
+        b.addEventListener("click", (e) => wishAction(rec, a.id, e));
+        acts.appendChild(b);
+      }
+      body.appendChild(acts);
+      li.append(img, body);
+      ul.appendChild(li);
+    }
+    renderWishes(false);
+  }
+
+  // Runs fn with the Mii on screen: goes to where it is (or visits it at home) first.
+  function withWalker(rec, fn) {
+    let w = walkerOf(rec.id);
+    if (w) { fn(w); return; }
+    if (town.isTravelling(rec)) { toast(nameOf(rec) + " is on the way somewhere. Try again in a moment!"); return; }
+    if (rec.place === "home") visit(rec);
+    else goToScene(rec.place);
+    let tries = 0;
+    const iv = setInterval(() => {
+      w = walkerOf(rec.id);
+      if (w || ++tries > 40) { clearInterval(iv); if (w) fn(w); }
+    }, 200);
+  }
+
+  function wishAction(rec, id, e) {
+    const w = rec.wish;
+    if (!w) return;
+    switch (id) {
+      case "food": openFoodPicker(rec); break;
+      case "visit":
+        if (w.slot) { panelTab = "decorate"; panelSlot = w.slot; }
+        visit(rec);
+        break;
+      case "game":
+        withWalker(rec, (ww) => openGame(ww, w.game));
+        break;
+      case "send": sendTo(rec, w.place); break;
+      case "menu": withWalker(rec, (ww) => { openMiiMenu(ww, innerWidth / 2, innerHeight / 2); const cp = menu.querySelector(".mm-catch input"); if (cp) cp.focus(); }); break;
+      case "see":
+        withWalker(rec, () => toast(w.type === "highFive" ? "Click " + nameOf(rec) + " to say hi! 👋" : "Right-click " + nameOf(rec) + " and pick the trick from the menu!"));
+        break;
+      case "together": { const o = records.get(w.target); if (o) { progress.bringTogether(rec, o); toast("🤝 " + nameOf(rec) + " and " + nameOf(o) + " are heading to the same place!"); } break; }
+      case "makeUp": progress.startMakeUp(rec); toast("🩹 " + nameOf(rec) + " is going to apologise..."); break;
+      case "confess": progress.startConfession(rec); toast("💌 " + nameOf(rec) + " is working up the courage..."); break;
+      case "notYet": progress.dismiss(rec); break;
+    }
+  }
+
+  // ---------- giving food from anywhere ----------
+  function openFoodPicker(rec) {
+    const back = document.createElement("div");
+    back.className = "choice-modal";
+    const card = document.createElement("div");
+    card.className = "choice-card big";
+    card.innerHTML = "<h3>🍙 Food for " + escapeHtml(nameOf(rec)) + "</h3><p>Paid with " + escapeHtml(nameOf(rec)) + "'s coins: <b>🪙 " + (rec.coins || 0) + "</b>. Today's menu:</p>";
+    const grid = document.createElement("div");
+    grid.className = "hp-grid wide";
+    const close = () => back.remove();
+    foodButtons(rec, grid, close);
+    const cancel = document.createElement("button");
+    cancel.className = "choice-btn plain";
+    cancel.textContent = "Close";
+    cancel.addEventListener("click", close);
+    card.append(grid, cancel);
+    back.appendChild(card);
+    back.addEventListener("pointerdown", (e) => { if (e.target === back) close(); });
+    $("stage").appendChild(back);
+  }
+
+  // ---------- mini-games (also counts for wishes and goals) ----------
+  function openGame(w, gameId) {
+    const rec = w.record;
+    const g = window.MiniGames.GAMES[gameId];
+    closeMiiMenu();
+    window.MiiGamesUI.open({
+      walker: w, game: gameId, hub, stage: $("stage"),
+      portrait: portraitFor(rec), stats: gameStats(rec, gameId),
+      onSave: () => saveSoon(rec),
+      onFinish: (result) => progress.event({ type: "game", id: rec.id, game: gameId, result }),
+    });
+    return g;
+  }
+
+  // ---------- level ups ----------
+  const levelQueue = [];
+  let levelOpen = false;
+  progress.on("levelup", (rec, choices) => { levelQueue.push({ rec, choices }); nextLevelUp(); });
+  async function nextLevelUp() {
+    if (levelOpen || !levelQueue.length) return;
+    levelOpen = true;
+    const { rec, choices } = levelQueue.shift();
+    const w = walkerOf(rec.id);
+    if (w) { w.showEmote("⭐", 3); w.hop(5); w.arms = "cheer"; hub.later(w, 2, () => { if (w.arms === "cheer") w.arms = "down"; }); }
+    const pickd = await ask("⭐ " + nameOf(rec) + " is now level " + rec.level + "!", "Pick a present for " + nameOf(rec) + ":",
+      choices.map((c) => ({ label: c.icon + " <b>" + escapeHtml(c.title) + "</b><small>" + escapeHtml(c.desc) + "</small>", value: c, kind: "primary" })));
+    progress.applyGift(rec, pickd || choices[choices.length - 1]);
+    const g = pickd || choices[choices.length - 1];
+    toast("🎁 " + nameOf(rec) + " got: " + g.title);
+    levelOpen = false;
+    nextLevelUp();
+  }
+  progress.on("townlevel", async (level, news) => {
+    toast("🏙️ The town reached level " + level + "!");
+    await ask("🏙️ Town level " + level + "!", "Your town is growing! Every Mii got 10 coins." + (news.length ? " New:" : ""),
+      news.map((u) => ({ label: u.icon + " " + escapeHtml(u.text), value: true, kind: "plain" })).concat([{ label: "<b>Yay!</b>", value: true, kind: "primary" }]));
+  });
+
+  // ---------- daily goals ----------
+  function openDaily() {
+    progress.rollDaily();
+    const back = document.createElement("div");
+    back.className = "choice-modal";
+    const card = document.createElement("div");
+    card.className = "choice-card big";
+    const close = () => back.remove();
+    function draw() {
+      const d = progress.state.daily;
+      card.innerHTML = "<h3>📅 Today's goals</h3><p>New goals every day. Each one gives 40 town XP and 8 coins to every Mii; finish all three for a bonus!</p>";
+      d.goals.forEach((g, i) => {
+        const row = document.createElement("div");
+        row.className = "goal" + (g.claimed ? " claimed" : "");
+        const pct = Math.min(100, (g.count / g.n) * 100);
+        row.innerHTML = '<span class="goal-icon">' + g.icon + '</span><div class="goal-body"><div>' + escapeHtml(g.text) + ' <small>' + Math.min(g.count, g.n) + "/" + g.n + '</small></div><div class="xp"><div class="xp-fill" style="width:' + pct + '%"></div></div></div>';
+        const b = document.createElement("button");
+        b.className = "tb-btn";
+        b.textContent = g.claimed ? "✓" : "Claim";
+        b.disabled = g.claimed || g.count < g.n;
+        b.addEventListener("click", () => { progress.claim(i); draw(); renderTownBar(); });
+        row.appendChild(b);
+        card.appendChild(row);
+      });
+      const ok = document.createElement("button");
+      ok.className = "choice-btn plain";
+      ok.textContent = "Close";
+      ok.addEventListener("click", close);
+      card.appendChild(ok);
+    }
+    draw();
+    back.appendChild(card);
+    back.addEventListener("pointerdown", (e) => { if (e.target === back) close(); });
+    $("stage").appendChild(back);
+  }
+
+  // ---------- sticker book ----------
+  function openBook() {
+    const pages = progress.stickerPages();
+    let page = 0;
+    const back = document.createElement("div");
+    back.className = "choice-modal";
+    const card = document.createElement("div");
+    card.className = "choice-card book";
+    const close = () => back.remove();
+    function draw() {
+      const all = pages.flatMap((p) => p.stickers);
+      card.innerHTML = "<h3>📖 Sticker book <small>" + all.filter((s) => s.got).length + " / " + all.length + "</small></h3>";
+      const tabsEl = document.createElement("div");
+      tabsEl.className = "book-tabs";
+      pages.forEach((p, i) => {
+        const b = document.createElement("button");
+        b.textContent = p.icon + " " + p.name;
+        b.setAttribute("aria-pressed", String(i === page));
+        b.addEventListener("click", () => { page = i; draw(); });
+        tabsEl.appendChild(b);
+      });
+      const grid = document.createElement("div");
+      grid.className = "stickers";
+      for (const st of pages[page].stickers) {
+        const d = document.createElement("div");
+        d.className = "sticker" + (st.got ? " got" : "");
+        d.title = st.got ? st.desc : "??? — " + st.desc;
+        d.innerHTML = "<span>" + (st.got ? st.icon : "❔") + "</span><small>" + escapeHtml(st.got ? st.name : "???") + "</small>";
+        grid.appendChild(d);
+      }
+      const ok = document.createElement("button");
+      ok.className = "choice-btn plain";
+      ok.textContent = "Close";
+      ok.addEventListener("click", close);
+      card.append(tabsEl, grid, ok);
+    }
+    draw();
+    back.appendChild(card);
+    back.addEventListener("pointerdown", (e) => { if (e.target === back) close(); });
+    $("stage").appendChild(back);
+  }
+
+  progress.on("change", () => { renderWishes(false); renderTownBar(); });
+  setInterval(() => { renderWishes(false); renderTownBar(); applyWeather(); }, 1000);
+  renderWishes(true); renderTownBar(); applyWeather();
 
   // ---------- full screen (just the 3D scene) ----------
   const stageEl = $("stage");
@@ -1069,5 +1471,5 @@
   }
 
   window.hub = hub; // handy for poking around in the browser console
-  window.miiApp = { records, visit, sendHome, sendTo, inviteOut, moveAway, forgetMii, loadFiles, leaveHome, town }; // for tests
+  window.miiApp = { records, visit, sendHome, sendTo, inviteOut, moveAway, forgetMii, loadFiles, leaveHome, town, get prog() { return progress; } }; // for tests
 })();

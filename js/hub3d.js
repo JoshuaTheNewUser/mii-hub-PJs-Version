@@ -91,11 +91,12 @@
       // the bubble/emote/name tag that float above the Mii's head
       this.ui = document.createElement("div");
       this.ui.className = "mii-ui";
-      this.ui.innerHTML = '<div class="bubble"></div><div class="emote"></div><div class="nametag"></div><div class="phone-tag"></div>';
+      this.ui.innerHTML = '<div class="bubble"></div><div class="emote"></div><div class="nametag"></div><div class="phone-tag"></div><div class="wish-mark"></div>';
       this.uiBubble = this.ui.children[0];
       this.uiEmote = this.ui.children[1];
       this.uiName = this.ui.children[2];
       this.uiPhone = this.ui.children[3]; // "📱 Mia" while on the phone
+      this.uiWish = this.ui.children[4];  // 💭 when the Mii has a wish for you
       this.uiName.textContent = look.name;
       hub.overlay.appendChild(this.ui);
 
@@ -252,6 +253,12 @@
       this.batteries = new Map(); // id -> social energy (0..1)
       this.windowMiis = new Map(); // id -> Mii model shown inside its flat's window
       this.onTick = null;         // called every frame (town.js moves Miis between places)
+      this.relation = null;       // (A, B) -> what's going on between two Miis (progress.js)
+      this.onHangout = null;      // two Miis finished hanging out
+      this.onPerform = null;      // you asked a Mii to do something
+      this.onPoke = null;         // you clicked a Mii
+      this.wishIconFor = null;    // record -> the wish icon to show over its head (or null)
+      this.weatherLine = null;    // () -> something to say about the weather
       this.onSceneChange = null;  // you switched places: town.js fills the new one
       this.visiting = null; // { record, walker } while you're inside a Mii's home
       this.onChange = () => {};
@@ -393,14 +400,14 @@
         const lie = spot.pose === "lie", sit = spot.pose === "sit", run = spot.pose === "run";
         rig.pose({
           t, dt, style, arms: spot.arms || "down", lookUp: spot.lookUp || 0,
-          sit, lie, run, walk: run ? 1 : 0, phase: t * 8.5,
+          sit, lie, run, walk: run ? 1 : 0, phase: t * 8.5, legsOut: sit && spot.legs === "out",
           nod: lie ? 0 : 0, talking: false,
         });
         if (lie) {
           // on its back, head on the pillow
           const len = MII_HEIGHT * m.s * 0.5;
           h.rotation.set(-Math.PI / 2, (spot.yaw || 0) + Math.PI, 0);
-          h.position.set(spot.x - Math.sin(spot.yaw || 0) * len, spot.y + 0.32 * m.s, spot.z - Math.cos(spot.yaw || 0) * len);
+          h.position.set(spot.x - Math.sin(spot.yaw || 0) * len, spot.y + (M.lieDepth(m.inst) - 0.03) * m.s, spot.z - Math.cos(spot.yaw || 0) * len);
         } else {
           h.rotation.set(0, (spot.yaw || 0) + (sit || run ? 0 : Math.sin(t * 0.4) * 0.25), 0);
           h.position.set(spot.x, spot.y - (sit || lie ? 0 : rig.drop * m.s), spot.z);
@@ -746,9 +753,10 @@
     }
 
     // You gave the Mii some food: it eats it, then says what it thinks.
-    giveFood(food, text, emote) {
-      if (!this.visiting) return;
-      const v = this.visiting.walker;
+    giveFood(food, text, emote, who) {
+      const v = who || (this.visiting && this.visiting.walker);
+      if (!v) return;
+      this.endInteraction(v);
       v.spot = null; v.anchor = null; v.path = null;
       v.state = "perform"; v.performKind = "eat"; v.timer = 2.8;
       v.targetYaw = this.viewYaw(v);
@@ -888,7 +896,21 @@
       w.state = "perform";
       w.performKind = kind;
       w.targetYaw = this.viewYaw(w);
-      w.timer = { dance: 5, nap: 6, wave: 2, catchphrase: 2.5, jump: 1.5 }[kind] || 2;
+      w.timer = { dance: 5, nap: 6, wave: 2, catchphrase: 2.5, jump: 1.5, spin: 2.2, flip: 1.6, moonwalk: 3.2, flex: 2.4, bow: 2.2, sing: 5 }[kind] || 2;
+      w.performT = 0;
+      if (this.onPerform) this.onPerform(w, kind);
+      if (kind === "spin") { w.arms = "out"; w.say(D.pick(["Wheeee!", "Spinny spin!", "Look at me go!"]), 1.6); w.showEmote("🌀", 2); }
+      if (kind === "flip") { this.later(w, w.anchored ? 0.5 : 0, () => { w.hop(this.world.floaty ? 3.5 : 7.5); w.flipT = 0; }); w.say(D.pick(["Hup!", "Backflip!", "Ta-da!"]), 1.4); }
+      if (kind === "moonwalk") { w.say(D.pick(["Hee-hee!", "Smooth...", "Watch this!"]), 1.8); w.showEmote("🕺", 3); }
+      if (kind === "flex") { w.arms = "flex"; w.say(D.pick(["Check out these muscles!", "Strong like a mountain!", "Hnnng!"]), 2); w.showEmote("💪", 2.2); }
+      if (kind === "bow") { w.bow = true; w.say(D.pick(["Thank you, thank you.", "At your service!", "*bows*"]), 1.8); w.showEmote("🙇", 2); }
+      if (kind === "sing") {
+        const P = window.MiiProgress;
+        const songs = (w.record.songs || []).map((id) => P && P.SONGS.find((s) => s.id === id)).filter(Boolean);
+        const song = songs.length ? D.pick(songs) : { lines: ["♪ La la laaa ♪", "♪ Do re mi fa so ♪", "♪ Laaaaa! ♪"] };
+        w.arms = "out"; w.showEmote("🎤", 5);
+        song.lines.forEach((l, i) => this.later(w, i * 1.6, () => { if (w.performKind === "sing") w.say(l, 1.6); }));
+      }
       if (kind === "dance") { w.showEmote("🎵", 5); w.say(D.pick(["Let's dance!", "Watch my moves!", "Dance time!"]), 2); }
       if (kind === "nap") { w.showEmote("💤", 6); w.say("Zzz...", 3); }
       if (kind === "wave") { w.arms = "wave"; w.say(D.pick(D.CLICK_LINES), 1.8); }
@@ -903,7 +925,7 @@
     // A wants to talk to B: A walks over. If B is far away and A is the loud
     // type, A shouts for B to come over instead, and B walks to A.
     startInteraction(A, B) {
-      const plan = D.buildInteraction(A, B, this.world, this.points(A, B));
+      const plan = D.buildInteraction(A, B, this.world, this.points(A, B), { ctx: this.relation ? this.relation(A, B) : null });
       A.partner = B; B.partner = A;
       A.plan = plan; A.role = "A"; B.role = "B";
       for (const m of [A, B]) { m.spot = null; m.anchor = null; m.path = null; m.target = null; m.approachTries = 0; m.approachTime = 0; }
@@ -943,7 +965,7 @@
       const g = this.ghost(otherRec, A);
       const caller = role === "callee" ? g : A, callee = role === "callee" ? A : g;
       // (they're in different places, so no talk about "the fountain over there")
-      const plan = D.buildInteraction(caller, callee, { id: "phone" }, this.points(A, g), { remote: "phone" });
+      const plan = D.buildInteraction(caller, callee, { id: "phone" }, this.points(A, g), { remote: "phone", ctx: this.relation ? this.relation(caller, callee) : null });
       caller.plan = plan; caller.role = "A"; callee.role = "B";
       A.partner = g; g.partner = A;
       for (const m of [A, g]) { m.remote = "phone"; }
@@ -985,7 +1007,9 @@
       const A = this.ghost(recA, { partner: null }), B = this.ghost(recB, { partner: null });
       const phone = where === "phone";
       const points = this.points(A, B);
-      const plan = D.buildInteraction(A, B, { id: phone ? "phone" : where }, points, phone ? { remote: "phone" } : null);
+      const ctx = this.relation ? this.relation(A, B) : null;
+      if (ctx && phone) ctx.confess = null; // that's done face to face
+      const plan = D.buildInteraction(A, B, { id: phone ? "phone" : where }, points, { remote: phone ? "phone" : null, ctx });
       const type = plan.type;
       const key = this.pairKey(A, B);
       const after = points + (D.FRIENDSHIP_GAIN[type] || 1);
@@ -1001,6 +1025,7 @@
         m.battery = m.battery - (0.22 + (1 - m.trait("social") / 100) * 0.2) * (phone ? 0.6 : 1);
       }
       this.recent.push({ pair: key, type, a: A.id, b: B.id, t: this.time });
+      if (this.onHangout) this.onHangout({ a: A.id, b: B.id, kind: type, before: points, after, visible: false, where, fight: plan.fight, success: plan.success });
     }
 
     endInteraction(w) {
@@ -1029,7 +1054,8 @@
       const before = this.friendships[key] || 0;
       const after = before + (D.FRIENDSHIP_GAIN[type] || 1);
       this.friendships[key] = after;
-      let feed = D.FEED_TEXT[type].replace("{A}", A.look.name).replace("{B}", B.look.name);
+      const fight = A.plan.fight, success = A.plan.success;
+      let feed = (fight ? "{A} and {B} had a fight! 💢" : D.FEED_TEXT[type]).replace("{A}", A.look.name).replace("{B}", B.look.name);
       if (remote === "phone") feed = feed.replace(/\.$/, "") + " on the phone. 📱";
       this.addFeed(feed);
       const oldLevel = D.levelFor(before), newLevel = D.levelFor(after);
@@ -1047,6 +1073,7 @@
       }
       this.recent.push({ pair: key, type, a: A.id, b: B.id, t: this.time });
       this.endInteraction(A);
+      if (this.onHangout) this.onHangout({ a: A.id, b: B.id, kind: type, before, after, visible: !A.ghost || !B.ghost, where: this.world.id, fight, success });
       if (!remote) {
         // walk apart a little so they don't get stuck together
         for (const m of [A, B]) {
@@ -1124,6 +1151,7 @@
             const bf = this.bestFriendOf(w);
             if (w.spot && w.state === "activity" && Math.random() < 0.6) w.say(D.pick(w.spot.lines));
             else if (w.battery < 0.25 && Math.random() < 0.5) w.say(D.pick(["I need a little alone time...", "Phew, so much socialising!", "*recharging*"]));
+            else if (this.weatherLine && Math.random() < 0.25) w.say(this.weatherLine());
             else w.say(D.soloLine(w, this.world, bf && bf.look.name));
             w.talkIn = rnd(9, 20) * (1.5 - w.trait("chatty") / 100); // chatty Miis talk more
           }
@@ -1336,8 +1364,18 @@
             if (w.style.dance !== "sway" && w.lift <= this.baseLift(w) + 0.01) w.hop(this.world.floaty ? 1.4 : 2.4 + w.style.tempo);
           }
           if (w.performKind === "nap") { w.sleep = true; }
+          w.performT = (w.performT || 0) + dt;
+          if (w.performKind === "spin") { w.yaw += dt * 11; w.targetYaw = w.yaw; }
+          if (w.performKind === "moonwalk") {
+            // gliding backwards while the legs walk forwards
+            const back = w.yaw + Math.PI;
+            this.tryMove(w, Math.sin(back) * 0.9 * dt, Math.cos(back) * 0.9 * dt);
+            w.phase -= dt * 7;
+            w.targetYaw = w.yaw;
+          }
+          if (w.performKind === "sing") { w.targetYaw = this.viewYaw(w) + Math.sin(w.performT * 2) * 0.3; }
           if (w.timer <= 0) {
-            w.dance = false; w.sleep = false; w.arms = "down"; w.nod = 0;
+            w.dance = false; w.sleep = false; w.arms = "down"; w.nod = 0; w.bow = false;
             w.state = "idle";
             w.timer = rnd(1, 2);
           }
@@ -1585,7 +1623,8 @@
       const rig = w.inst.rig;
       const st = w.style;
       const moving = (w.state === "walk" || w.state === "approach") && !w.held;
-      const target = moving ? clamp(w.curSpeed / Math.max(0.3, w.speed * 0.55), 0, 1) : 0;
+      const moonwalk = w.state === "perform" && w.performKind === "moonwalk";
+      const target = moonwalk ? 0.8 : moving ? clamp(w.curSpeed / Math.max(0.3, w.speed * 0.55), 0, 1) : 0;
       w.walkAmt += (target - w.walkAmt) * Math.min(1, dt * 8);
       if (!moving) { w.curSpeed = 0; w.moveYaw = null; }
 
@@ -1613,7 +1652,8 @@
           ax -= Math.sin(at.yaw || 0) * len;
           az -= Math.cos(at.yaw || 0) * len;
           tip = -Math.PI / 2 * k;
-          py = ((at.y || 0) + 0.32 * w.sizeScale) * k + Math.sin(k * Math.PI) * 0.3;
+          // rest on the mattress (the big head sinks into the pillow a little)
+          py = ((at.y || 0) + (M.lieDepth(w.inst) - 0.03) * w.sizeScale) * k + Math.sin(k * Math.PI) * 0.3;
         } else {
           py = (at.y || 0) * k;
         }
@@ -1626,6 +1666,12 @@
       // models without leg bones (e.g. head-only exports) hop along instead of walking
       const hopY = !rig.hasLegs && !rig.mixer ? Math.abs(Math.sin(w.phase)) * 0.22 * w.walkAmt : 0;
       holder.rotation.y = w.yaw;
+      // a backflip: one full turn while in the air
+      if (w.flipT !== undefined && w.flipT !== null) {
+        w.flipT += dt / 0.75;
+        if (w.flipT >= 1) w.flipT = null;
+        else tip -= Math.PI * 2 * smooth(w.flipT);
+      }
       holder.rotation.x = tip;
       holder.rotation.z = !rig.hasLegs ? Math.sin(w.phase) * 0.08 * w.walkAmt : 0;
       const pop = w.appear < 1 ? 0.3 + 0.7 * (1 - Math.pow(1 - w.appear, 3)) : 1;
@@ -1647,10 +1693,12 @@
         laugh: w.laugh,
         style: st,
         talking: !!w.bubble,
-        nod: (w.sleep && !lying ? 0.45 + Math.sin(this.time * 2) * 0.05 : 0) + (w.nod || 0),
+        nod: (w.sleep && !lying ? 0.45 + Math.sin(this.time * 2) * 0.05 : 0) + (w.nod || 0) + (w.bow ? 0.35 : 0),
+        bow: !!w.bow,
         lookYaw: w.shake ? Math.sin(this.time * 14) * 0.4 : 0,
         lookUp: w.state === "activity" && w.spot && w.spot.lookUp ? w.spot.lookUp : 0,
         sit: sitting,
+        legsOut: sitting && anchor.at.legs === "out",
         lie: lying,
       });
       holder.position.set(px, w.lift + py + hopY - (anchor ? 0 : rig.drop * w.sizeScale), pz);
@@ -1691,6 +1739,12 @@
           w.uiBubble.style.left = bx - x + "px";
           w.uiBubble.style.top = by - y + "px";
           w.uiBubble.style.setProperty("--tail", clamp(x - bx, 14, bw - 14) + "px");
+        }
+        const wish = this.wishIconFor ? this.wishIconFor(w.record) : null;
+        if (w.uiWishIcon !== wish) {
+          w.uiWishIcon = wish;
+          w.uiWish.textContent = wish ? "💭" + wish : "";
+          w.uiWish.classList.toggle("show", !!wish);
         }
         w.ui.style.transform = "translate(" + x + "px," + y + "px)";
       }
@@ -1740,6 +1794,7 @@
 
     // You clicked a Mii (left button): it jumps and says hi. (Right-click opens its menu.)
     poke(w) {
+      if (this.onPoke) this.onPoke(w);
       if (!w.anchored && w.state !== "playing") {
         w.hop(this.world.floaty ? 1.6 : 4);
         w.targetYaw = this.viewYaw(w);

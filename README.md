@@ -57,7 +57,7 @@ Your Miis always look exactly like they do in Mii Creator. To change how a Mii l
 
 ## What you can do
 
-- **Look at a place:** use the **🌳 Park**, **🏢 Office**, **🚀 Outer Space** and **🏘️ Apartments** buttons at the top. The number on each button is how many Miis are there right now. Switching places only moves *you*: the Miis stay where they are (see *Miis live their own lives* below).
+- **Look at a place:** use the **🌳 Park**, **🏢 Office**, **🚀 Outer Space**, **🏘️ Apartments**, **🏖️ Beach**, **☕ Café Street**, **🏫 School** and **🎤 Concert Stage** buttons at the top. The number on each button is how many Miis are there right now. Switching places only moves *you*: the Miis stay where they are (see *Miis live their own lives* below).
 - **Full screen:** click **⛶** in the corner of the scene (or press **F**) to make the scene fill your screen. Small place buttons stay in the corner. Press **F** or **Esc**, or click **✕**, to go back. In the desktop app, **F11** makes the whole window full screen.
 - **Move the camera:** drag the background to spin all the way around, and scroll (or pinch) to zoom. Every place has scenery all the way round. In the office and in homes, the wall between you and the room hides itself, like a dollhouse.
 - **Click a Mii** (left button) to make it jump and say hi. **Drag a Mii** to pick it up and carry it. Let go and it drops back down.
@@ -92,6 +92,20 @@ Every Mii has its own apartment in the **🏘️ Apartments**. You can see its n
 - Hanging out uses up a Mii's **social energy**, which comes back with some alone time. So turning *How chatty?* all the way up doesn't make coins pour in.
 - **Playing a mini-game with you** earns 3 coins.
 
+## Wishes, levels and your town
+
+Miis need you! This is what keeps the game going:
+
+- **💭 Wishes:** every few minutes a Mii asks you for something: food (maybe a particular dish), new furniture or wallpaper, a mini-game, a visit, a trip somewhere, a high five or a trick, a new catchphrase, meeting another Mii, help making up after a fight, or advice about a crush. Wishes show up in the **Wishes** panel (with buttons that take you straight there) and as a 💭 over the Mii's head. Grant them before the timer runs out!
+- **⭐ Mii levels:** granting wishes (and giving things a Mii loves) fills its hearts ❤️. When they're full the Mii **levels up** and you pick a present: a **special move** (spin, backflip, moonwalk, flex, bow, sing), a **song** it can sing (and use for karaoke), a **free piece of furniture**, or **coins**.
+- **🏙️ Town level:** every wish you grant gives the town XP (shown in the top bar). Each new town level gives every Mii 10 coins and unlocks something: picnics, crushes and couples, karaoke, more festivals, rivalries, storytelling, and fancier things in the shop. Every place is open from the start.
+- **📅 Daily goals:** three new goals every day (like "grant 3 wishes" or "visit 2 homes"). Each one gives town XP and coins for every Mii, with a bonus for finishing all three.
+- **📖 Sticker book:** collect stickers for foods tried, furniture bought, places visited, weather and festivals seen, friendships, couples, games and town milestones.
+- **💕 Relationships:** arguments can turn into real fights (the two stop talking until you help them make up). Good friends can get a **crush**; you decide whether they should confess, and it might work... or not. Couples go on dates and like to be in the same place. Miis who keep fighting become **rivals** and have contests.
+- **🌦️ Weather, seasons and festivals:** the season follows the real calendar, the weather changes every few minutes (rain, storms, snow, wind, sunshine), and some days have a festival (fireworks, lanterns, cherry blossoms, a spooky night, shooting stars, winter lights). Miis talk about it, and stay indoors more when it rains.
+- **🛍️ A shop that changes daily:** each day the furniture and food on sale change, with two ⭐ deals at 30% off. Fancier things unlock as your town grows. Things a Mii already owns can always be used.
+- **🍙 Give food anywhere:** right-click a Mii and pick **Give food**: you don't have to visit its home.
+
 ## Miis live their own lives
 
 Each Mii decides for itself where to be. It stays somewhere for a few minutes, then says bye, walks out (or to its front door) and heads somewhere else. Where it goes depends on its **favourite place** and its **personality**:
@@ -100,6 +114,11 @@ Each Mii decides for itself where to be. It stays somewhere for a few minutes, t
 - **Moon base:** energetic, adventurous Miis visit space.
 - **Park:** active, outdoorsy Miis love the park.
 - **Apartment courtyard:** friendly neighbours hang out in front of the building.
+- **Beach:** fun-loving, energetic Miis (especially on sunny days).
+- **Café Street:** chatty, sociable Miis.
+- **School:** curious, studious Miis.
+- **Concert Stage:** silly, energetic performers.
+- **Couples** like to be in the same place, and **bad weather** keeps Miis indoors.
 
 The *Residents* list shows where everyone is ("At the office 🏢", "On the way to the park 🌳"...). Miis in places you're not looking at still chat, become friends and earn coins, and you'll see it in *What's happening*. Click a Mii in the list to go and see it (or visit it, if it's home).
 
@@ -201,6 +220,10 @@ js/gamesUI.js         the window where you play a mini-game with a Mii
 js/hub3d.js           moves the Miis around, camera, clicking & dragging, home visits, coins
 js/homes.js           furniture, food, and what each Mii likes
 js/town.js            where each Mii is, and where it wants to go next
+js/progress.js        wishes, Mii levels, town level, daily goals, stickers, relationships, weather, the shop
+js/weather3d.js       rain, snow, falling leaves, fireworks and other festival effects
+js/places-seaside.js  the beach and Café Street
+js/places-town.js     the school and the concert stage
 js/homes3d.js         the apartment building and the inside of each home
 js/storage.js         saves Miis in the browser
 electron/main.js      runs Mii Hub as a desktop app (Electron)
@@ -215,6 +238,8 @@ samples/Joe.glb       the sample Mii
 tests/glb.test.js     checks that .glb files are read correctly
 tests/nav.test.js     checks that routes go around obstacles and water
 tests/minigames.test.js  checks the game rules and that skill really changes how Miis play
+tests/homes.test.js   checks the shop items, tastes and far-away conversations
+tests/progress.test.js   checks wishes, levels, town level, goals, relationships and the shop
 ```
 
 ## Running the tests
