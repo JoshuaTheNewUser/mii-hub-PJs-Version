@@ -20,9 +20,10 @@
   const VERSION = 1;          // must match the server's VERSION
   const DEFAULT_PORT = 8787;
   // Where everyone meets to find lobbies (the Mii Hub Paintball server, see server/README.md).
-  const DEFAULT_SERVER = "";
+  // It's built into the app from a secret when it's built (pb-config.js), so it's not in the code.
+  const DEFAULT_SERVER = (root.PB_CONFIG && root.PB_CONFIG.server) || "";
 
-  // "desktopjmserver" -> "ws://desktopjmserver:8787", "https://x.example" -> "wss://x.example"
+  // "my-pc" -> "ws://my-pc:8787", "https://x.example" -> "wss://x.example"
   function normalizeUrl(s) {
     s = String(s || "").trim();
     if (!s) return "";

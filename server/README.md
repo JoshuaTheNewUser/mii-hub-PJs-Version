@@ -78,7 +78,7 @@ touch your router.
 3. It prints your public address, something like:
 
    ```
-   https://desktopjmserver.tail1234.ts.net
+   https://your-computer.your-tailnet.ts.net
    ```
 
    Check it: open that address in a browser on **any** device (your phone on mobile data is a good
@@ -89,9 +89,19 @@ Your friends **don't** need Tailscale.
 
 ## 5. Tell Mii Hub where it is
 
-Send the address (the `https://….ts.net` one) to whoever builds Mii Hub, so it can be built in for
-everyone. Until then, anyone can paste it in themselves: **🎯 Paintball → 🌐 Online → Server** →
-paste → **Connect** (Mii Hub turns `https://` into the right `wss://` address for you).
+So that everyone's Mii Hub finds the server by itself, the address is built into the app **from a
+private GitHub secret**: it's never written in the code, so it doesn't show up on GitHub.
+
+1. On GitHub, open the Mii Hub repository → **Settings** → **Secrets and variables** → **Actions**.
+2. Click **New repository secret**. Name: `PAINTBALL_SERVER`. Secret: your address
+   (e.g. `https://your-computer.your-tailnet.ts.net`). Click **Add secret**.
+3. The next Mii Hub update has it built in.
+
+(Anyone who has the app could still dig the address out of it: every player's game has to know where
+to connect. It's just not posted in the repository.)
+
+Until then, or to use a different server: **🎯 Paintball → 🌐 Online → Server** → paste the
+address → **Connect** (Mii Hub turns `https://` into the right `wss://` address for you).
 
 ## Settings
 
@@ -130,8 +140,8 @@ way as before (`git pull`, or download the ZIP again) and restart it.
 1. Make a free account at <https://render.com> (sign in with GitHub).
 2. **New → Blueprint**, pick the `mii-hub` repository (and the branch with the latest Mii Hub). Render
    reads `render.yaml` from the repository and sets the server up by itself. Click **Apply**.
-3. When it's live, Render shows its address, like `https://mii-hub-paintball.onrender.com`. That's the
-   address for step 5 above.
+3. When it's live, Render shows its address (`https://….onrender.com`). That's the address for
+   step 5 above.
 
 The free plan sleeps after 15 minutes with nobody connected; Mii Hub shows *"Waking up the Paintball
 server…"* while it starts again (up to a minute).

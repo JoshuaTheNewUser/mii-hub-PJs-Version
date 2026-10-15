@@ -33,6 +33,11 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Built-in online Paintball server (from the PAINTBALL_SERVER secret, if there is one)
+        run: node scripts/write-pb-config.js
+        env:
+          PAINTBALL_SERVER: ${{ secrets.PAINTBALL_SERVER }}
+
       - name: Set version number
         run: npm version 1.0.${{ github.run_number }} --no-git-tag-version --allow-same-version
 

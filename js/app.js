@@ -1310,13 +1310,20 @@
     if (window.Paintball) return Promise.resolve();
     if (pbLoading) return pbLoading;
     const files = ["pb-engine.js", "pb-map.js", "pb-models.js", "pb-audio.js", "pb-game.js", "pb-online.js"];
+    // pb-config.js (the online server's address) only exists in built apps: it's fine if it's missing
+    const optional = new Promise((resolve) => {
+      const sc = document.createElement("script");
+      sc.src = "js/paintball/pb-config.js";
+      sc.onload = sc.onerror = () => resolve();
+      document.head.appendChild(sc);
+    });
     pbLoading = files.reduce((p, f) => p.then(() => new Promise((resolve, reject) => {
       const sc = document.createElement("script");
       sc.src = "js/paintball/" + f;
       sc.onload = resolve;
       sc.onerror = () => reject(new Error("couldn't load " + f));
       document.head.appendChild(sc);
-    })), Promise.resolve());
+    })), optional);
     pbLoading.catch(() => { pbLoading = null; });
     return pbLoading;
   }
