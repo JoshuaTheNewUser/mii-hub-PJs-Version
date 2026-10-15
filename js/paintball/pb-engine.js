@@ -588,15 +588,18 @@
       s = clamp(s, 0, 1);
       const t = traits || {};
       this.s = s;
-      this.reaction = 0.62 - 0.4 * s;                // seconds before the first shot after spotting you
+      this.reaction = 0.85 - 0.6 * s;                 // seconds before the first shot after spotting you
       this.turnK = 5 + 15 * s;                        // how snappy the aim is
-      this.aimErr0 = 0.18 + 0.9 * (1 - s);            // metres of aim error when it first sees you
-      this.settle = 1.4 + 4.2 * s;                    // how fast that error shrinks
-      this.headPref = 0.15 + 0.65 * s;
+      this.aimErr0 = 0.25 + 1.2 * (1 - s);            // metres of aim error when it first sees you
+      this.settle = 0.9 + 4.4 * s;                    // how fast that error shrinks
+      this.wobble = 0.04 + 0.35 * Math.pow(1 - s, 1.5); // shaky hands that never quite settle
+      this.headPref = 0.1 + 0.6 * s;
       this.comp = 0.15 + 0.8 * s;                     // spray control
       this.stopFirst = 0.2 + 0.8 * s;                 // counter-strafes before shooting
       this.strafe = 0.2 + 0.7 * s;                    // dodges between bursts
-      this.aggro = clamp(0.5 + (t.energy || 0) * 0.3 - (t.shy || 0) * 0.3, 0.15, 0.9);
+      // personality (0-100): energetic, outgoing Miis push forward; quiet ones play it careful
+      const e = (t.energy !== undefined ? t.energy : 50) / 100, so = (t.social !== undefined ? t.social : 50) / 100;
+      this.aggro = clamp(0.25 + e * 0.45 + so * 0.2, 0.15, 0.9);
     }
     resetRound() {
       this.state = "hunt";
@@ -653,7 +656,12 @@
         this.state = "fight";
         this.err.x *= Math.exp(-dt * this.settle); this.err.y *= Math.exp(-dt * this.settle); this.err.z *= Math.exp(-dt * this.settle);
         const tp = this.aimZone === "head" ? target.head : target.chest;
-        const aim = { x: tp.x + this.err.x, y: tp.y + this.err.y, z: tp.z + this.err.z };
+        const wob = this.wobble, tt = now * 1.7;
+        const aim = {
+          x: tp.x + this.err.x + Math.sin(tt * 1.3 + 1) * wob,
+          y: tp.y + this.err.y + Math.sin(tt * 1.7 + 2) * wob * 0.8,
+          z: tp.z + this.err.z + Math.sin(tt * 1.1 + 4) * wob,
+        };
         const a = anglesTo(eye, aim);
         // pull the gun down against the recoil
         wantYaw = a.yaw + f.arms.recX * DEG * this.comp;

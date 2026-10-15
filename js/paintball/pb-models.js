@@ -339,10 +339,12 @@
     hs.add(new THREE.TorusGeometry(1, 0.075, 6, 32), pal.dark, mtx(hx, cy, hz, PI / 2, 0, 0, 0.066, 0.102, 0.07)); // rim
     var top = new THREE.SphereGeometry(1, 28, 10, 0, TAU, 0, PI / 2);
     shellB.add(top, pal.accentL, mtx(hx, cy, hz, 0, 0, 0, 0.062, 0.058, 0.098));
-    // top ridge / lid + rear vents
-    hs.add(rbox(0.024, 0.014, 0.17, 0.006, 0.004), pal.accent, mtx(hx, cy + 0.052, hz - 0.004, 0.0));
-    hs.add(rbox(0.03, 0.01, 0.04, 0.004, 0.002), pal.dark, mtx(hx, cy + 0.048, hz + 0.075, -0.75));
-    hs.add(rbox(0.03, 0.01, 0.04, 0.004, 0.002), pal.dark, mtx(hx, cy + 0.048, hz - 0.083, 0.75));
+    // solid lid cap over the top of the dome (the sides stay a translucent window) + lid latch
+    var capG = new THREE.SphereGeometry(1, 28, 6, 0, TAU, 0, PI * 0.2);
+    hs.add(capG, pal.accent, mtx(hx, cy, hz, 0, 0, 0, 0.0645, 0.061, 0.1005));
+    hs.add(new THREE.TorusGeometry(1, 0.05, 5, 28), pal.dark, mtx(hx, cy + 0.061 * Math.cos(PI * 0.2), hz, PI / 2, 0, 0, 0.0645 * Math.sin(PI * 0.2), 0.1005 * Math.sin(PI * 0.2), 0.06));
+    hs.add(rbox(0.022, 0.008, 0.03, 0.004, 0.002), pal.dark, mtx(hx, cy + 0.06, hz - 0.012));
+    hs.add(rbox(0.014, 0.016, 0.01, 0.003, 0.002), pal.dark, mtx(hx, cy + 0.035, hz - 0.095, -0.5)); // latch
     for (i = 0; i < 3; i++) {
       hs.add(rbox(0.004, 0.006, 0.05, 0.002, 0.001), pal.dark, mtx(hx - 0.064, cy - 0.012 - i * 0.012, hz, 0, 0, 0.2 + i * 0.25));
       hs.add(rbox(0.004, 0.006, 0.05, 0.002, 0.001), pal.dark, mtx(hx + 0.064, cy - 0.012 - i * 0.012, hz, 0, 0, -0.2 - i * 0.25));
@@ -597,8 +599,11 @@
     return t;
   }
 
-  function paintBallMaterial(color) {
-    return new THREE.MeshPhongMaterial({ color: lin(color || "#ff3fa4"), shininess: 120, specular: new THREE.Color(0.55, 0.55, 0.55), emissive: lin(color || "#ff3fa4").multiplyScalar(0.12) });
+  var _ballMats = {};
+  function paintBallMaterial(color) { // cached per colour (shared instance: do not dispose per ball)
+    var key = String(color || "#ff3fa4");
+    if (_ballMats[key]) return _ballMats[key];
+    return (_ballMats[key] = new THREE.MeshPhongMaterial({ color: lin(color || "#ff3fa4"), shininess: 120, specular: new THREE.Color(0.55, 0.55, 0.55), emissive: lin(color || "#ff3fa4").multiplyScalar(0.12) }));
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -609,13 +614,13 @@
     var poly = new Builder(), metal = new Builder(), shell = new Builder();
     buildAK({ poly: poly, metal: metal, mag: poly, bolt: metal, hopper: poly, shell: shell, balls: poly }, pal);
     var g = new THREE.Group();
-    var inner = new THREE.Group(); inner.rotation.y = PI; g.add(inner); // barrel -> +Z
+    var inner = new THREE.Group(); inner.rotation.y = PI; inner.scale.setScalar(0.9); g.add(inner); // barrel -> +Z, ~0.88 m long
     inner.add(poly.mesh(stdMat({ rough: 0.55, metal: 0.05, envI: 0.6 })));
     inner.add(metal.mesh(stdMat({ rough: 0.32, metal: 0.65 })));
     var sm = stdMat({ rough: 0.08, metal: 0, transparent: true, opacity: 0.42, envI: 1.4 });
     inner.add(shell.mesh(sm));
     g.name = "PBWorldGun";
-    g.userData.muzzle = new THREE.Vector3(-AK.muzzle.x, AK.muzzle.y, -AK.muzzle.z);
+    g.userData.muzzle = new THREE.Vector3(-AK.muzzle.x, AK.muzzle.y, -AK.muzzle.z).multiplyScalar(0.9); // local muzzle point (tracer start)
     return g;
   }
 
@@ -742,10 +747,10 @@
     var KN_CH = ["px", "py", "pz", "rx", "ry", "rz", "a", "b", "kx", "ky", "kz", "krx", "kry", "krz"];
 
     function akReloadAction(empty) {
-      var f = empty ? 0.72 : 1.0; // magazine part time scale
+      var f = 1.0; // magazine part time scale (mag out ~0.4 s, mag seated ~1.45 s, bolt slam ~2.1 s when empty)
       var ch = {
         rx: K(KS([[0, 0], [0.22, 0.12], [0.5, 0.18], [0.95, 0.1], [1.35, 0.16], [1.47, 0.24, "o"], [1.62, 0.1], [2.0, 0.04], [2.43 / f, 0]], f)),
-        rz: K(KS([[0, 0], [0.25, 0.55], [1.3, 0.5], [1.48, 0.6, "o"], [1.75, 0.35], [2.2, 0.05], [2.43 / f, 0]], f)),
+        rz: K(KS([[0, 0], [0.25, -0.42], [1.3, -0.38], [1.48, -0.48, "o"], [1.75, -0.25], [2.2, -0.03], [2.43 / f, 0]], f)),
         ry: K(KS([[0, 0], [0.25, 0.12], [1.3, 0.12], [1.9, 0.02], [2.43 / f, 0]], f)),
         py: K(KS([[0, 0], [0.25, 0.02], [0.5, 0.035], [0.9, 0.04], [1.46, 0.03], [1.5, 0.042, "o"], [1.7, 0.02], [2.43 / f, 0]], f)),
         px: K(KS([[0, 0], [0.25, -0.03], [1.5, -0.035], [2.1, -0.005], [2.43 / f, 0]], f)),
@@ -761,7 +766,7 @@
         var b0 = 1.66;
         ch.lbW = K([[0, 0], [b0, 0], [b0 + 0.2, 1, "o"], [b0 + 0.5, 1], [b0 + 0.68, 0]]);
         ch.bolt = K([[0, 0], [b0 + 0.22, 0], [b0 + 0.34, 1, "o"], [b0 + 0.4, 1], [b0 + 0.44, 0, "i"]]);
-        ch.rz = K(KS([[0, 0], [0.25, 0.55], [1.3, 0.5], [1.48, 0.6, "o"], [1.62, 0.3]], f).concat([[b0 + 0.15, -0.35], [b0 + 0.45, -0.4], [b0 + 0.5, -0.32, "o"], [2.43, 0]]));
+        ch.rz = K(KS([[0, 0], [0.25, -0.42], [1.3, -0.38], [1.48, -0.48, "o"], [1.62, -0.2]], f).concat([[b0 + 0.15, 0.32], [b0 + 0.45, 0.36], [b0 + 0.5, 0.3, "o"], [2.43, 0]]));
         ch.py = K(KS([[0, 0], [0.25, 0.02], [0.5, 0.035], [0.9, 0.04], [1.46, 0.03], [1.5, 0.042, "o"], [1.7, 0.02]], f).concat([[b0 + 0.3, 0.03], [b0 + 0.44, 0.04, "o"], [2.43, 0]]));
         ch.px = K(KS([[0, 0], [0.25, -0.03], [1.5, -0.035]], f).concat([[b0 + 0.3, -0.05], [2.43, 0]]));
         ch.rx = K(KS([[0, 0], [0.22, 0.12], [0.5, 0.18], [0.95, 0.1], [1.35, 0.16], [1.47, 0.24, "o"], [1.62, 0.1]], f).concat([[b0 + 0.3, 0.12], [b0 + 0.45, 0.16, "o"], [2.43, 0]]));
@@ -776,7 +781,7 @@
           pz: K([[0, 0.05], [0.42, 0, "o"]]),
           rx: K([[0, -0.9], [0.42, 0.04, "o"], [0.55, 0], [0.7, 0.03], [0.82, 0.07, "o"], [1.0, 0]]),
           ry: K([[0, 0.3], [0.45, 0, "o"]]),
-          rz: K([[0, 0.6], [0.45, 0, "o"], [0.6, -0.32], [0.84, -0.36], [1.0, 0]]),
+          rz: K([[0, 0.6], [0.45, 0, "o"], [0.6, 0.32], [0.84, 0.36], [1.0, 0]]),
           lbW: K([[0, 0], [0.45, 0], [0.62, 1, "o"], [0.84, 1], [1.0, 0]]),
           bolt: K([[0, 0], [0.64, 0], [0.74, 1, "o"], [0.8, 1], [0.84, 0, "i"]]),
           px: K([[0, 0.03], [0.45, 0, "o"], [0.62, -0.02], [1.0, 0]])
@@ -788,12 +793,12 @@
       var D = 4.6;
       return {
         name: "inspect", dur: D, ch: {
-          px: K([[0, 0], [0.6, -0.07], [1.9, -0.075], [2.5, -0.04], [3.7, -0.05], [D, 0]]),
-          py: K([[0, 0], [0.6, 0.045], [1.9, 0.05], [2.5, 0.03], [3.7, 0.035], [D, 0]]),
-          pz: K([[0, 0], [0.6, 0.02], [1.9, 0.02], [2.5, -0.02], [3.7, -0.02], [D, 0]]),
-          ry: K([[0, 0], [0.6, 0.85], [1.9, 0.95], [2.5, -0.25], [3.7, -0.32], [D, 0]]),
-          rz: K([[0, 0], [0.6, 0.25], [1.9, 0.35], [2.5, -0.95], [3.7, -1.05], [D, 0]]),
-          rx: K([[0, 0], [0.6, 0.1], [1.9, 0.05], [2.5, 0.25], [3.7, 0.2], [D, 0]])
+          px: K([[0, 0], [0.6, -0.07], [1.9, -0.075], [2.6, -0.13], [3.7, -0.135], [D, 0]]),
+          py: K([[0, 0], [0.6, 0.045], [1.9, 0.05], [2.6, 0.05], [3.7, 0.055], [D, 0]]),
+          pz: K([[0, 0], [0.6, 0.02], [1.9, 0.02], [2.6, -0.02], [3.7, -0.03], [D, 0]]),
+          ry: K([[0, 0], [0.6, 0.85], [1.9, 0.95], [2.6, -0.55], [3.7, -0.62], [D, 0]]),
+          rz: K([[0, 0], [0.6, 0.25], [1.9, 0.35], [2.6, 0.2], [3.7, 0.28], [D, 0]]),
+          rx: K([[0, 0], [0.6, 0.1], [1.9, 0.05], [2.6, 0.12], [3.7, 0.08], [D, 0]])
         }
       };
     }
@@ -829,8 +834,8 @@
           px: K([[0, 0], [0.07, -0.1], [0.19, 0.06, "o"], [0.4, 0]]),
           py: K([[0, 0], [0.07, 0.06], [0.19, -0.06, "o"], [0.4, 0]]),
           pz: K([[0, 0], [0.07, -0.02], [0.19, -0.05, "o"], [0.4, 0]]),
-          ry: K([[0, 0], [0.07, 0.55], [0.19, -0.6, "o"], [0.4, 0]]),
-          rz: K([[0, 0], [0.07, 1.1], [0.19, -0.75, "o"], [0.4, 0]]),
+          ry: K([[0, 0], [0.07, 0.45], [0.19, -0.35, "o"], [0.4, 0]]),
+          rz: K([[0, 0], [0.07, 0.9], [0.19, -0.4, "o"], [0.4, 0]]),
           rx: K([[0, 0], [0.07, 0.25], [0.19, -0.45, "o"], [0.4, 0]])
         }
       };
@@ -839,12 +844,12 @@
     function knStabAction() {
       return {
         name: "stab", dur: 1.0, ch: {
-          pz: K([[0, 0], [0.28, 0.06], [0.42, -0.2, "o"], [0.58, -0.19], [1.0, 0]]),
-          px: K([[0, 0], [0.28, 0.02], [0.42, -0.1, "o"], [0.58, -0.1], [1.0, 0]]),
-          py: K([[0, 0], [0.28, 0.05], [0.42, 0.05, "o"], [0.58, 0.04], [1.0, 0]]),
-          rx: K([[0, 0], [0.28, 0.45], [0.42, -0.12, "o"], [0.58, -0.1], [1.0, 0]]),
-          ry: K([[0, 0], [0.28, 0.1], [0.42, -0.32, "o"], [0.58, -0.3], [1.0, 0]]),
-          rz: K([[0, 0], [0.28, -0.9], [0.42, -1.25, "o"], [0.58, -1.2], [1.0, 0]])
+          pz: K([[0, 0], [0.28, 0.05], [0.42, -0.15, "o"], [0.58, -0.14], [1.0, 0]]),
+          px: K([[0, 0], [0.28, 0.03], [0.42, -0.09, "o"], [0.58, -0.09], [1.0, 0]]),
+          py: K([[0, 0], [0.28, 0.02], [0.42, 0.045, "o"], [0.58, 0.04], [1.0, 0]]),
+          rx: K([[0, 0], [0.28, 0.2], [0.42, -0.5, "o"], [0.58, -0.48], [1.0, 0]]),
+          ry: K([[0, 0], [0.28, 0.25], [0.42, -0.2, "o"], [0.58, -0.18], [1.0, 0]]),
+          rz: K([[0, 0], [0.28, -0.35], [0.42, -0.55, "o"], [0.58, -0.5], [1.0, 0]])
         }
       };
     }
@@ -964,13 +969,13 @@
       lHandAK.quaternion.copy(q);
       // muzzle puff
       if (puffT < 1) {
-        puffT += dt / 0.075;
+        puffT += dt / 0.09;
         puff.visible = puffT < 1;
         var u = Math.min(puffT, 1);
-        puffMat.opacity = (1 - u) * (1 - u);
-        var sc = 0.05 + u * 0.09;
+        puffMat.opacity = Math.pow(1 - u, 1.4);
+        var sc = 0.09 + Math.sqrt(u) * 0.13;
         puff.scale.set(sc, sc, sc);
-        puff.position.z = AK.muzzle.z - 0.03 - u * 0.05;
+        puff.position.z = AK.muzzle.z - 0.05 - u * 0.08;
       }
     }
 

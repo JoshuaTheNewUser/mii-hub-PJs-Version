@@ -138,7 +138,7 @@
 .pb-hp b.low{color:#ff5a4a}
 .pb-hp .bar{width:120px;height:6px;background:#ffffff22;border-radius:3px;align-self:center}
 .pb-hp .bar i{display:block;height:100%;background:#e8eef5;border-radius:3px;transition:width .2s}
-.pb-ammo{right:16px;background:linear-gradient(270deg,#0b0e12d0,#0b0e1200);flex-direction:row-reverse}
+.pb-ammo{right:16px;background:linear-gradient(270deg,#0b0e12d0,#0b0e1200)}
 .pb-ammo .mag{font-size:38px;font-variant-numeric:tabular-nums}
 .pb-ammo .mag.low{color:#ff5a4a}
 .pb-ammo .res{font-size:20px;opacity:.75}
@@ -254,7 +254,8 @@
             const st = opts.statsFor(r);
             b.appendChild(el("span", null, root.MiniGames.skillLevel(st.skill) + " · " + Math.round(st.skill)));
           } else {
-            b.appendChild(el("span", null, "You"));
+            const st = opts.statsFor(r);
+            b.appendChild(el("span", null, st.played ? st.played + " match" + (st.played === 1 ? "" : "es") : "\u00a0"));
           }
           const sel = isOpp ? r === opp : r === you;
           if (sel) b.classList.add("sel");
@@ -418,10 +419,7 @@
       // first-person hands + gun, drawn on top with their own camera (like CS's viewmodel)
       this.vmScene = new THREE.Scene();
       this.vmCamera = new THREE.PerspectiveCamera(68, 16 / 9, 0.01, 10);
-      this.vmScene.add(new THREE.HemisphereLight(0xdfe8f2, 0x3a3530, 0.75));
-      const sun = new THREE.DirectionalLight(0xfff1dc, 0.9);
-      sun.position.set(-0.6, 1, 0.4);
-      this.vmScene.add(sun);
+      // (the hands and gun bring their own lights)
 
       const lookYou = this.opts.lookFor(o.you, o.tYou) || {};
       const lookOpp = this.opts.lookFor(o.opp, o.tOpp) || {};
@@ -431,7 +429,8 @@
       this.vm = root.PBModels.createViewmodel({
         accent: youPaint,
         sleeve: hexOf(lookYou.shirt, hexOf(o.tYou.source && o.tYou.source.shirt, "#2b7cff")),
-        skin: hexOf(lookYou.skin, hexOf(o.tYou.source && o.tYou.source.skin, "#f2c7a5")),
+        // (softened a little: under the bright first-person lights Mii skin looks too red)
+        skin: "#" + new THREE.Color(hexOf(lookYou.skin, hexOf(o.tYou.source && o.tYou.source.skin, "#f2c7a5"))).lerp(new THREE.Color("#f1d3c0"), 0.35).getHexString(),
       });
       this.vmScene.add(this.vm.group);
 
@@ -450,7 +449,11 @@
       inst.holder.traverse((n) => { if (n.isMesh) { n.castShadow = true; n.receiveShadow = false; } });
       this.scene.add(inst.holder);
       this.bot.inst = inst;
-      this.bot.style = root.MiiHub3D && root.MiiHub3D.animStyle ? root.MiiHub3D.animStyle(o.opp) : null;
+      this.bot.style = null;
+      try {
+        const st = root.MiiHub3D.animStyle(root.Dialogue.traits(o.opp));
+        if (st && isFinite(st.stride)) this.bot.style = st;
+      } catch (e) { /* use the default way of moving */ }
       const find = (prefix) => { let f = null; inst.object.traverse((n) => { if (!f && n.isBone && n.name.replace(/_\d+$/, "") === prefix) f = n; }); return f; };
       const B = inst.rig.bones;
       const bone = (k) => (B[k] ? B[k].bone : null);
@@ -539,7 +542,7 @@
       const ammo = el("div", "pb-ammo");
       this.hudMag = el("b", "mag", "30"); this.hudRes = el("span", "res", "/ 90"); this.hudWpn = el("span", "wn", "Paint AK");
       this.hudReload = el("span", "rl", "");
-      ammo.append(this.hudMag, this.hudRes, this.hudWpn, this.hudReload);
+      ammo.append(this.hudReload, this.hudWpn, this.hudMag, this.hudRes);
       this.hudSlots = el("div", "pb-slots");
       this.hudSlotAK = el("span", null, "1 · PAINT AK"); this.hudSlotKnife = el("span", null, "3 · BUTTERFLY KNIFE");
       this.hudSlots.append(this.hudSlotAK, this.hudSlotKnife);
@@ -1270,39 +1273,7 @@
         cam.rotation.set(y.pitch + a.recY * DEG * 0.45 + y.flinch * 0.012, y.yaw - a.recX * DEG * 0.45, 0);
       }
 
-      // ---- the Mii ----
-      const inst = b.inst, m = b.mover;
-      const spd = m.speed2d();
-      const walk = clamp(spd / (CFG.speedAK * 0.75), 0, 1);
-      const stepLen = inst.rig.stepLength(b.style) * MII_SCALE;
-      b.walkPhase += (spd * dt) / Math.max(0.3, stepLen) * Math.PI;
-      const knife = b.arms.weapon === "knife";
-      inst.rig.pose({
-        t, dt, walk, phase: b.walkPhase, style: b.style, arms: b.dead ? "down" : knife ? "knife" : "aim",
-        crouch: m.duck, aimPitch: b.pitch, lookUp: b.pitch * 0.5,
-      });
-      const h = inst.holder;
-      h.position.set(m.pos.x, m.pos.y - inst.rig.drop * MII_SCALE, m.pos.z);
-      if (b.dead) {
-        // falls over backwards, covered in paint
-        b.dead = Math.min(1, b.dead + dt * 2.4);
-        const e = 1 - Math.pow(1 - b.dead, 3);
-        h.rotation.set(-e * 1.45, b.yaw + Math.PI, 0, "YXZ");
-      } else {
-        h.rotation.set(0, b.yaw + Math.PI, 0, "YXZ");
-      }
-      h.updateMatrixWorld(true);
-      if (b.alive) this.botHitboxes();
-      // the gun sits in the right hand, pointing where the Mii aims
-      if (b.gun.visible) {
-        const wr = b.bones.wr || b.bones.a2r;
-        const v = new THREE.Vector3();
-        if (wr) wr.getWorldPosition(v); else v.set(m.pos.x, m.pos.y + 1.1, m.pos.z);
-        b.gun.position.copy(v);
-        b.gun.rotation.set(-b.pitch, b.yaw + Math.PI, 0, "YXZ");
-        const fw = E.forward(b.yaw, b.pitch);
-        b.gun.position.x += fw.x * 0.05; b.gun.position.z += fw.z * 0.05;
-      }
+      this.poseBot(dt, t);
 
       // ---- flying paintballs ----
       for (const ball of this.balls) {
@@ -1339,6 +1310,53 @@
       this.updateHUD();
     }
 
+    // moves the Mii's body to match its movement and aim (and its hit boxes with it)
+    poseBot(dt, t) {
+      const b = this.bot;
+      const inst = b.inst, m = b.mover;
+      const spd = m.speed2d();
+      const walk = clamp(spd / (CFG.speedAK * 0.75), 0, 1);
+      const stepLen = inst.rig.stepLength(b.style) * MII_SCALE;
+      b.walkPhase += (spd * dt) / Math.max(0.3, stepLen) * Math.PI;
+      const knife = b.arms.weapon === "knife";
+      inst.rig.pose({
+        t, dt, walk, phase: b.walkPhase, style: b.style, arms: b.dead ? "down" : knife ? "knife" : "aim",
+        crouch: m.duck, aimPitch: b.pitch, lookUp: b.pitch * 0.5,
+      });
+      const h = inst.holder;
+      h.position.set(m.pos.x, m.pos.y - inst.rig.drop * MII_SCALE, m.pos.z);
+      if (b.dead) {
+        // falls over backwards, covered in paint
+        b.dead = Math.min(1, b.dead + dt * 2.4);
+        const e = 1 - Math.pow(1 - b.dead, 3);
+        h.rotation.set(-e * 1.45, b.yaw + Math.PI, 0, "YXZ");
+      } else {
+        h.rotation.set(0, b.yaw + Math.PI, 0, "YXZ");
+      }
+      h.updateMatrixWorld(true);
+      if (b.alive) this.botHitboxes();
+      // the gun sits in the right hand, pointing where the Mii aims
+      if (b.gun.visible) {
+        const wr = b.bones.wr || b.bones.a2r;
+        const v = new THREE.Vector3();
+        if (wr) wr.getWorldPosition(v); else v.set(m.pos.x, m.pos.y + 1.1, m.pos.z);
+        b.gun.position.copy(v);
+        b.gun.rotation.set(-b.pitch, b.yaw + Math.PI, 0, "YXZ");
+        const fw = E.forward(b.yaw, b.pitch);
+        b.gun.position.x += fw.x * 0.05; b.gun.position.z += fw.z * 0.05;
+      }
+
+    }
+
+    // run the game faster than real time without drawing (for tests)
+    advance(secs) {
+      const n = Math.round(secs / TICK);
+      for (let i = 0; i < n && !this.disposed && !this.over; i++) {
+        this.tick(TICK);
+        if (i % 4 === 0) this.poseBot(TICK * 4, this.now);
+      }
+    }
+
     // the Mii's hit boxes follow its bones (crouching, leaning...)
     botHitboxes() {
       const b = this.bot, B = b.bones, out = b.boxes;
@@ -1371,7 +1389,9 @@
       const y = this.you, a = y.arms;
       const now = this.now;
       // clock
-      let secs = this.phase === "freeze" ? this.phaseEnd - now : this.phase === "live" ? this.roundEnd - now : 0;
+      // (when the round ends the clock stops where it was)
+      if (this.phase !== "end") this.clockLeft = this.phase === "freeze" ? this.phaseEnd - now : this.roundEnd - now;
+      let secs = this.clockLeft || 0;
       secs = Math.max(0, Math.ceil(secs));
       const txt = Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0");
       if (this.hudClock.textContent !== txt) {
