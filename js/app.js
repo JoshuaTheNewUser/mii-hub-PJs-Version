@@ -1519,6 +1519,21 @@
     desktop.onUpdateStatus(show);
     desktop.getStatus().then(show);
     btn.addEventListener("click", () => desktop.checkForUpdates());
+    // patch notes: what's new in this update + every update before it
+    const notesBtn = $("patchNotesBtn"), notesNew = $("patchNotesNew");
+    let version = null;
+    if (window.PatchNotes) {
+      notesNew.hidden = !PatchNotes.unseen();
+      notesBtn.addEventListener("click", () => { PatchNotes.open(version); notesNew.hidden = true; });
+    } else notesBtn.hidden = true;
+    desktop.getStatus().then((st) => {
+      if (!st || !st.version) return;
+      version = st.version;
+      // the first time Mii Hub opens after an update, show what's new
+      let seen = null;
+      try { seen = localStorage.getItem("mii-hub-notes-version"); localStorage.setItem("mii-hub-notes-version", version); } catch (e) { return; }
+      if (seen !== version && window.PatchNotes) setTimeout(() => { PatchNotes.open(version); notesNew.hidden = true; }, 800);
+    });
   }
 
   window.hub = hub; // handy for poking around in the browser console

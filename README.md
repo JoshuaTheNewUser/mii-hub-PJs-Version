@@ -19,7 +19,7 @@ The warnings appear because the app isn't signed with a paid developer certifica
 - **Windows and Linux:** click **Update now**. It downloads in the background, then offers to restart into the new version. If you pick **Later**, it updates the next time you close Mii Hub.
 - **Mac:** it tells you about the update and opens the download page. Apple only lets apps install their own updates if they're signed with a paid Apple developer certificate.
 
-Your Miis and friendships are kept when you update. You can also check yourself with **Check for updates** at the bottom of the side panel.
+Your Miis and friendships are kept when you update. You can also check yourself with **Check for updates** at the bottom of the side panel. **📜 Patch notes** next to it shows what's new in your version and the history of every update. They also pop up by themselves the first time you open Mii Hub after an update.
 
 ### Option 2: Open it in a web browser
 
@@ -278,6 +278,7 @@ js/storage.js         saves Miis in the browser
 electron/main.js      runs Mii Hub as a desktop app (Electron)
 electron/updater.js   checks GitHub for new versions and installs them
 electron/preload.js   lets the page show the version and "Check for updates"
+js/patchNotes.js      the patch notes (newest first) and the patch notes window
 build/icon.png        the app icon
 fonts/                the Nunito font (works offline)
 package.json          desktop app settings (version, installers)
