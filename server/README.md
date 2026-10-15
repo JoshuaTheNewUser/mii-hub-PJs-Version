@@ -1,5 +1,9 @@
 # Mii Hub Paintball server
 
+> **You probably don't need this.** The easiest way to play online is **Host a game** in the
+> Mii Hub desktop app (🎯 Paintball → 🌐 Online → HOST): the host's own Mii Hub runs this server for
+> you. This page is for running it on a separate, always-on computer instead (so nobody has to host).
+
 This is the little program that lets people play **Paintball online** with each other.
 Everyone's Mii Hub connects to it. It keeps a list of rooms, passes everyone's
 movement and shots on to the other players, and is the referee: it keeps track of HP

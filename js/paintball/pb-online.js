@@ -3,9 +3,11 @@
  * Online Paintball: talking to the server (server/paintball-server.js) and
  * the "Online" tab of the Paintball lobby.
  *
- *   1. Type the server's address and connect. Your chosen Mii (its .glb file,
- *      or its colours for a random Mii) is sent so the others can see it.
- *   2. Make a room, or join one.
+ *   1. Host a game from your own computer (desktop app: the server runs inside
+ *      Mii Hub, see electron/paintball-host.js), or join one by typing the
+ *      host's address. Your chosen Mii (its .glb file, or its colours for a
+ *      random Mii) is sent so the others can see it.
+ *   2. Make a room, or join one (when there's only one room you join it straight away).
  *   3. The room's host presses Start. Everyone plays Respawn mode: first to
  *      20 eliminations (or the most after 10 minutes).
  *
@@ -106,6 +108,8 @@
       net: null, status: "", statusCls: "", connecting: false,
       rooms: [], room: null, roster: new Map(), loading: new Map(), starting: false,
       spawned: new Map(), // who's alive in the match and where they came in (for joining late)
+      hosting: null,      // { port, lan, publicIp, upnp, why } while you host a game
+      autoJoin: false,
     };
     let container = null;
     const rerender = () => { if (container && !ctx.inMatch()) render(container); };
@@ -139,12 +143,12 @@
       return p;
     }
 
-    async function connect(address) {
+    async function connect(address, hosting) {
       const url = normalizeUrl(address);
-      if (!url) return setStatus("Type the server's address first.", "err");
-      settings.server = address.trim();
-      ctx.save();
-      disconnect(true);
+      if (!url) return setStatus("Type the host's address first.", "err");
+      if (!hosting) { settings.server = address.trim(); ctx.save(); }
+      disconnect(true, hosting);
+      st.autoJoin = !hosting;
       st.connecting = true;
       setStatus("Connecting to " + url + "…");
       const net = new Net(url);
@@ -158,7 +162,12 @@
       st.connecting = false;
       net.handle({
         welcome: () => setStatus("Connected!", "ok"),
-        rooms: (m) => { st.rooms = m.rooms; rerender(); },
+        rooms: (m) => {
+          st.rooms = m.rooms;
+          // joining a friend's game: there's usually just their room, so go straight in
+          if (st.autoJoin && !st.room && m.rooms.length === 1 && m.rooms[0].players < m.rooms[0].max) { st.autoJoin = false; net.send({ t: "join", room: m.rooms[0].id }); }
+          rerender();
+        },
         room: (m) => { st.room = m.room; rerender(); },
         err: (m) => setStatus(m.msg, "err"),
         mii: (m) => {
@@ -173,7 +182,8 @@
         kill: (m) => st.spawned.delete(m.v),
         close: () => {
           st.net = null; st.room = null; st.rooms = []; st.roster.clear(); st.loading.clear();
-          setStatus("Disconnected from the server.", "err");
+          setStatus(st.hosting ? "Your game stopped." : "Disconnected (the host may have stopped the game).", "err");
+          if (st.hosting) stopHosting();
         },
       });
       await sendHello();
@@ -186,10 +196,35 @@
       st.net.send({ t: "hello", v: VERSION, name: you.name || "Mii", color: ctx.paintFor(tpl), mii });
     }
 
-    function disconnect(quiet) {
+    function disconnect(quiet, keepHosting) {
       if (st.net) st.net.close();
       st.net = null; st.room = null; st.rooms = []; st.roster.clear(); st.loading.clear();
+      if (st.hosting && !keepHosting) stopHosting();
       if (!quiet) setStatus("");
+    }
+
+    // ---- hosting a game from this computer (desktop app only) ----
+    const hostApi = () => root.miiHubDesktop && root.miiHubDesktop.paintballHost;
+    async function host() {
+      const H = hostApi();
+      if (!H) return;
+      setStatus("Starting your game…");
+      let r;
+      try { r = await H.start(); } catch (err) { return setStatus("Couldn't start your game: " + (err.message || err), "err"); }
+      st.hosting = r;
+      await connect("localhost:" + r.port, true);
+      if (!st.net) { stopHosting(); return; }
+      const off = st.net.on("welcome", () => { off(); st.net.send({ t: "create", name: (ctx.you.name || "My") + "'s game" }); });
+      // the router check takes a few seconds
+      H.details().then((d) => { if (st.hosting) { st.hosting = d; rerender(); } });
+    }
+    function stopHosting() {
+      const H = hostApi();
+      st.hosting = null;
+      if (H) H.stop();
+    }
+    function copy(text, btn) {
+      try { navigator.clipboard.writeText(text); btn.textContent = "Copied!"; setTimeout(() => { btn.textContent = "Copy"; }, 1500); } catch (e) { /* ignore */ }
     }
 
     async function startMatch(m) {
@@ -240,11 +275,24 @@
       // right: server, rooms, the room you're in
       const right = el("div", "pb-box");
       if (!st.net) {
-        right.appendChild(el("h3", null, "Server"));
+        right.appendChild(el("h3", null, "Host a game"));
+        if (hostApi()) {
+          const hb = el("button", "pb-go", st.connecting && st.hosting ? "STARTING…" : "HOST ▶");
+          hb.disabled = st.connecting;
+          hb.addEventListener("click", host);
+          hb.style.marginBottom = "14px";
+          right.appendChild(hb);
+          right.appendChild(el("div", "pb-help", "Your computer runs the game and your friends join you. Keep Mii Hub open while you play."));
+        } else {
+          right.appendChild(el("div", "pb-help", "Hosting works in the Mii Hub desktop app. You can still join a friend's game below."));
+        }
+        const h3 = el("h3", null, "Join a friend's game");
+        h3.style.marginTop = "18px";
+        right.appendChild(h3);
         const row = el("div", "pb-row");
-        const inp = el("input"); inp.type = "text"; inp.placeholder = "e.g. desktopjmserver:8787 or 192.168.1.20"; inp.value = settings.server || "";
+        const inp = el("input"); inp.type = "text"; inp.placeholder = "The host's address, e.g. 192.168.1.20:8787"; inp.value = settings.server || "";
         inp.spellcheck = false;
-        const go = el("button", "pb-btn primary", st.connecting ? "Connecting…" : "Connect");
+        const go = el("button", "pb-btn primary", st.connecting && !st.hosting ? "Joining…" : "Join");
         go.disabled = st.connecting;
         const doIt = () => connect(inp.value);
         go.addEventListener("click", doIt);
@@ -252,9 +300,7 @@
         row.append(inp, go);
         right.appendChild(row);
         if (st.status) right.appendChild(el("div", "pb-status " + st.statusCls, st.status));
-        const help = el("div", "pb-help");
-        help.innerHTML = "Everyone connects to the same Paintball server. Type the address the person running it gave you (for example <b>desktopjmserver:8787</b> on your home network, or a <b>wss://…</b> address over the internet).<br>Your Mii is sent to the other players so they can see you.";
-        right.appendChild(help);
+        right.appendChild(el("div", "pb-help", "Ask whoever is hosting for their address (they see it after pressing Host). It also works with a Paintball server (see server/README.md)."));
       } else if (!st.room) {
         right.appendChild(el("h3", null, "Rooms"));
         const st2 = el("div", "pb-status ok", "Connected to " + settings.server + (st.net.ping != null ? " · " + st.net.ping + " ms" : ""));
@@ -317,19 +363,52 @@
         } else {
           row.appendChild(el("div", "pb-help", room.state === "live" ? "A match is on: you'll jump in…" : "Waiting for the host to start…"));
         }
-        const leave = el("button", "pb-btn", "Leave room");
-        leave.addEventListener("click", () => { st.net.send({ t: "leave" }); st.room = null; st.net.send({ t: "list" }); rerender(); });
+        const leave = el("button", "pb-btn", st.hosting ? "Stop hosting" : "Leave room");
+        leave.addEventListener("click", () => {
+          if (st.hosting) { disconnect(); return; } // (this ends the game for everyone)
+          st.net.send({ t: "leave" }); st.room = null; st.net.send({ t: "list" }); rerender();
+        });
         row.appendChild(leave);
         right.appendChild(row);
         if (room.players.length < 2) right.appendChild(el("div", "pb-help", "Waiting for at least one more player to join."));
+        if (st.hosting) right.appendChild(hostingPanel());
       }
       wrap.append(left, right);
       c.appendChild(wrap);
     }
 
+    // "tell your friends to join with this address"
+    function hostingPanel() {
+      const h = st.hosting;
+      const box = el("div", "pb-hostbox");
+      box.appendChild(el("b", null, "🏠 You're hosting! Friends join with:"));
+      const line = (label, addr, note) => {
+        const row = el("div", "pb-addr");
+        row.append(el("span", "lbl", label), el("code", null, addr));
+        const c = el("button", "pb-btn", "Copy");
+        c.addEventListener("click", () => copy(addr, c));
+        row.appendChild(c);
+        box.appendChild(row);
+        if (note) box.appendChild(el("div", "pb-help", note));
+      };
+      const lan = (h.lan || [])[0];
+      if (lan) line("Same Wi‑Fi", lan + ":" + h.port);
+      if (h.upnp === "trying") box.appendChild(el("div", "pb-help", "Checking whether friends outside your home can join…"));
+      else if (h.upnp === "open" && h.publicIp) line("Internet", h.publicIp + ":" + h.port, "✅ Your router let them in.");
+      else {
+        if (h.publicIp) line("Internet", h.publicIp + ":" + h.port);
+        box.appendChild(el("div", "pb-help warn", "⚠️ Friends outside your home probably can't join yet. " + (h.why || "") +
+          " To fix it: in your router's settings, forward TCP port " + h.port + " to this computer (" + (lan || "its local address") +
+          "), or have everyone install Tailscale and join with your Tailscale address."));
+      }
+      if ((h.lan || []).length > 1) box.appendChild(el("div", "pb-help", "Other addresses for this computer: " + h.lan.slice(1).map((a) => a + ":" + h.port).join(", ")));
+      return box;
+    }
+
     return {
       render,
       dispose() { disconnect(true); container = null; },
+      host,
       get net() { return st.net; },
       get state() { return st; },
       connect,

@@ -18,8 +18,7 @@ function client(port) {
 }
 
 (async () => {
-  await new Promise((r) => S.server.listen(0, r));
-  const port = S.server.address().port;
+  const port = await S.start(18787);
   const a = await client(port), b = await client(port);
   a.send({ t: "hello", v: 1, name: "Ann", color: "#ff3fa4", mii: { kind: "demo", look: { shirt: "#ff0000" } } });
   b.send({ t: "hello", v: 1, name: "Bob<script>", color: "#ff3fa4", mii: { kind: "glb", b64: Buffer.from("glTF....").toString("base64"), fileName: "bob.glb" } });
@@ -125,7 +124,15 @@ function client(port) {
   a.ws.close();
   await wait(50);
   assert.strictEqual(S.rooms.size, 0, "empty room removed");
+  // the host can stop and start again
+  await S.stop();
+  assert(!S.running(), "stopped");
+  const port2 = await S.start(18787);
+  const e = await client(port2);
+  e.send({ t: "hello", v: 1, name: "Eve", mii: { kind: "demo" } });
+  await wait(50);
+  assert(e.last("welcome"), "works after a restart");
+  await S.stop();
   console.log("All Paintball server tests passed.");
-  S.wss.close(); S.server.close();
   process.exit(0);
 })().catch((e) => { console.error(e); process.exit(1); });

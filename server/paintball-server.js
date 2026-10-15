@@ -330,15 +330,51 @@ const beat = setInterval(() => {
     try { p.ws.ping(); } catch (e) { /* ignore */ }
   }
 }, 15000);
+if (beat.unref) beat.unref();
 wss.on("close", () => clearInterval(beat));
 
 function log(s) { console.log(new Date().toISOString().slice(11, 19) + "  " + s); }
 
-if (require.main === module) {
-  server.listen(PORT, () => {
-    log("Mii Hub Paintball server listening on port " + PORT + " (max " + MAX_PLAYERS + " players a room)");
-    log("Check it: open http://localhost:" + PORT + " in a browser on this computer.");
+// Start listening (tries the next ports if this one is taken). Resolves with the port.
+function start(port) {
+  port = port || PORT;
+  return new Promise((resolve, reject) => {
+    let tries = 0;
+    const attempt = (p) => {
+      const onErr = (err) => {
+        server.removeListener("listening", onOk);
+        if (err.code === "EADDRINUSE" && tries++ < 10) attempt(p + 1);
+        else reject(err);
+      };
+      const onOk = () => { server.removeListener("error", onErr); resolve(server.address().port); };
+      server.once("error", onErr);
+      server.once("listening", onOk);
+      server.listen(p);
+    };
+    attempt(port);
   });
 }
 
-module.exports = { server, wss, VERSION, PORT, rooms, players };
+// Stop: everyone is disconnected and all rooms are closed.
+function stop() {
+  return new Promise((resolve) => {
+    for (const p of players.values()) { try { p.ws.close(1001, "The host stopped the game"); } catch (e) { /* ignore */ } }
+    for (const r of rooms.values()) clearTimeout(r.timer);
+    rooms.clear();
+    setTimeout(() => {
+      for (const p of players.values()) { try { p.ws.terminate(); } catch (e) { /* ignore */ } }
+      players.clear();
+      if (server.listening) server.close(() => resolve()); else resolve();
+    }, 100);
+  });
+}
+const running = () => server.listening;
+
+if (require.main === module) {
+  start(PORT).then((port) => {
+    log("Mii Hub Paintball server listening on port " + port + " (max " + MAX_PLAYERS + " players a room)");
+    log("Check it: open http://localhost:" + port + " in a browser on this computer.");
+  }).catch((err) => { log("Couldn't start: " + err.message); process.exit(1); });
+}
+
+module.exports = { server, wss, VERSION, PORT, rooms, players, start, stop, running };

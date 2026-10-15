@@ -30,7 +30,8 @@
       "fonts/**/*",
       "build/icon.png",
       "electron/**/*",
-      "package.json"
+      "package.json",
+      "server/paintball-server.js"
     ],
     "win": {
       "target": [
@@ -85,6 +86,7 @@
     ]
   },
   "dependencies": {
-    "electron-updater": "6.3.9"
+    "electron-updater": "6.3.9",
+    "ws": "8.18.0"
   }
 }

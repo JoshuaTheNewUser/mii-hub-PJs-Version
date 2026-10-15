@@ -228,6 +228,12 @@
 .pb-player img{width:34px;height:34px;border-radius:50%;background:#ffffff14;border:2px solid var(--c)}
 .pb-player .host{font-size:11px;color:#ffb21e;margin-left:auto}
 .pb-help{font-size:13px;opacity:.75;line-height:1.5}
+.pb-help.warn{color:#ffcf6a;opacity:1}
+.pb-hostbox{margin-top:14px;background:#ffb21e14;border:1px solid #ffb21e55;border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.pb-addr{display:flex;align-items:center;gap:10px}
+.pb-addr .lbl{width:84px;font-size:12px;opacity:.75;font-weight:800}
+.pb-addr code{flex:1;font-size:17px;font-weight:800;letter-spacing:.5px;user-select:text}
+.pb-addr .pb-btn{padding:5px 12px}
 @media (max-width:820px){.pb-cols,.pb-bottom,.pb-online{grid-template-columns:1fr}.pb-board{min-width:0;width:94vw}}
 `;
     const s = document.createElement("style");

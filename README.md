@@ -173,7 +173,11 @@ A first-person shooter on **Shipment** (from Call of Duty 4), made to feel like 
 - **🤖 VS a Mii:** pick the Mii you play as and the Mii you play against.
   - **Respawn** (the default): 2 seconds after you're splattered you're back in. **First to 20 eliminations wins** (or whoever has the most after 10 minutes).
   - **Rounds:** first to 10 rounds. Each round has 3 seconds of freeze time, then 1:30 to splat the other Mii.
-- **🌐 Online:** play against other people. Everyone picks one of the Miis from their own Mii Hub. Connect to a Paintball server, make or join a room, and the host presses Start (Respawn, first to 20). Up to 8 players a room. The server is in the [`server`](server/README.md) folder: see **[server/README.md](server/README.md)** for how to run it.
+- **🌐 Online:** play against other people (up to 8). Everyone picks one of the Miis from their own Mii Hub, and the others see it.
+  - **Host a game:** one person presses **HOST** (in the desktop app). Their Mii Hub runs the game and shows the address to give friends: one for the same Wi‑Fi, and one for the internet. Mii Hub asks the home router to let friends in automatically (UPnP). If the router doesn't allow that, it says so: then forward TCP port 8787 to the host's computer in the router's settings, or have everyone use [Tailscale](https://tailscale.com).
+  - **Join:** type the host's address and press **Join**. You go straight into their game. The host presses **START** (Respawn, first to 20).
+  - The first time you host, Windows may ask whether Mii Hub can use the network: tick **Private networks** and click **Allow**.
+  - You can also run a Paintball server on an always-on computer instead: see **[server/README.md](server/README.md)**.
 - **You see the world through your Mii's eyes**, with its Mii hands and shirt colour holding the gun.
 - **The HUD** shows your HP, your paint (ammo), the clock and score, and a kill feed. Hold **Tab** for the scoreboard (score, kills, deaths, headshot %, damage, accuracy, and ping online).
 - **Weapons:** a paintball gun shaped like an **AK-47** and a **butterfly knife**.
@@ -262,8 +266,9 @@ js/paintball/         Paintball (only loaded when you open it):
   pb-models.js          the paint AK, the butterfly knife and your Mii hands
   pb-audio.js           sound effects
   pb-game.js            the lobby, the match, the HUD and the scoreboard
-  pb-online.js          online play: talking to the server, rooms
-server/               the online Paintball server (runs on its own computer: see server/README.md)
+  pb-online.js          online play: hosting, joining, rooms
+electron/paintball-host.js  "Host a game": runs the Paintball server inside the desktop app (+ asks the router to open the port)
+server/               the online Paintball server (used by Host a game, or run on its own: see server/README.md)
 js/storage.js         saves Miis in the browser
 electron/main.js      runs Mii Hub as a desktop app (Electron)
 electron/updater.js   checks GitHub for new versions and installs them
