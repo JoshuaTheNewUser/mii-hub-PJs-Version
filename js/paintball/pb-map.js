@@ -728,8 +728,12 @@
     [[-3.8, -4.35], [3.8, -4.35], [-3.8, 4.35], [3.8, 4.35]].forEach(function (b, bi) {
       var sx = b[0] < 0 ? -1 : 1, sz = b[1] < 0 ? -1 : 1;
       var inX = b[0] - sx * HW, outX = b[0] + sx * HW;
-      container({ x: inX, z: b[1], rot: 0, v: centreVar[bi][0], open: true, lane: -sx });
-      WALKTHROUGH.push({ x: inX, z: b[1] });
+      // two of them (diagonal from each other) are closed up, to cut the long sightlines through the middle
+      if (bi === 0 || bi === 3) container({ x: inX, z: b[1], rot: sz < 0 ? PI : 0, v: centreVar[bi][0], rods: true });
+      else {
+        container({ x: inX, z: b[1], rot: 0, v: centreVar[bi][0], open: true, lane: -sx });
+        WALKTHROUGH.push({ x: inX, z: b[1] });
+      }
       container({ x: outX, z: b[1], rot: sz < 0 ? PI : 0, v: centreVar[bi][1], rods: true });
     });
     // north / south blocks (long axis X, side by side in Z)
@@ -1197,16 +1201,16 @@
     var dust = new THREE.Points(dustGeo, dustMat); dust.name = 'dust'; dust.frustumCulled = false; group.add(dust); disposables.push(dustGeo, dustMat);
 
     // ---- lights ----------------------------------------------------------
-    var hemi = new THREE.HemisphereLight(hexLin('#a9b6c6'), hexLin('#4a4237'), 0.68); group.add(hemi);
-    var amb = new THREE.AmbientLight(hexLin('#5a6170'), 0.25); group.add(amb);
-    var key = new THREE.DirectionalLight(hexLin('#ffd6a3'), 1.25);
+    var hemi = new THREE.HemisphereLight(hexLin('#c3cedb'), hexLin('#6a6052'), 1.15); group.add(hemi);
+    var amb = new THREE.AmbientLight(hexLin('#7a8190'), 0.55); group.add(amb);
+    var key = new THREE.DirectionalLight(hexLin('#ffe2bb'), 1.7);
     key.position.set(17, 26, -11); key.target.position.set(0, 0, 0);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     var sc = key.shadow.camera; sc.left = -27; sc.right = 27; sc.top = 27; sc.bottom = -27; sc.near = 2; sc.far = 80;
     key.shadow.bias = -0.0006; key.shadow.normalBias = 0.03;
     group.add(key); group.add(key.target);
-    var fill = new THREE.DirectionalLight(hexLin('#9fb2cc'), 0.35); fill.position.set(-14, 18, 16); fill.target.position.set(0, 0, 0);
+    var fill = new THREE.DirectionalLight(hexLin('#b3c4da'), 0.7); fill.position.set(-14, 18, 16); fill.target.position.set(0, 0, 0);
     group.add(fill); group.add(fill.target);
 
     PROF('sky+glow+lights');
@@ -1218,7 +1222,7 @@
     };
 
     // ---- fog / background ------------------------------------------------
-    var fog = new THREE.FogExp2(hexLin(FOG_HEX), 0.0155);
+    var fog = new THREE.FogExp2(hexLin(FOG_HEX), 0.0095);
     var background = new THREE.Color(FOG_HEX);
 
     // strip private keys

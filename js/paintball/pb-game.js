@@ -58,6 +58,31 @@
     return 2 * Math.atan(Math.tan(h / 2) / (4 / 3)) / DEG;
   }
 
+  // A soft glow around a player's outline (in their paint colour) and a minimum
+  // brightness, so nobody can hide in a dark corner. Done in the Mii's own materials.
+  function outlineGlow(obj, color) {
+    const rim = new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.45);
+    obj.traverse((n) => {
+      if (!n.isMesh) return;
+      for (const m of Array.isArray(n.material) ? n.material : [n.material]) {
+        if (!(m.isMeshStandardMaterial || m.isMeshPhongMaterial || m.isMeshLambertMaterial || m.isMeshToonMaterial)) continue;
+        m.onBeforeCompile = (sh) => {
+          sh.uniforms.pbRim = { value: rim };
+          sh.fragmentShader = "uniform vec3 pbRim;\n" + sh.fragmentShader.replace("#include <dithering_fragment>", [
+            "{",
+            "  float pbF = 1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition)));",
+            "  gl_FragColor.rgb = max(gl_FragColor.rgb, diffuseColor.rgb * 0.32);",
+            "  gl_FragColor.rgb += pbRim * pow(pbF, 2.4) * 0.65;",
+            "}",
+            "#include <dithering_fragment>",
+          ].join("\n"));
+        };
+        m.customProgramCacheKey = () => "pb-rim";
+        m.needsUpdate = true;
+      }
+    });
+  }
+
   // ---------------------------------------------------------------------
   // Colours
   // ---------------------------------------------------------------------
@@ -638,6 +663,7 @@
       inst.holder.traverse((n) => { if (n.isMesh) { n.castShadow = true; n.receiveShadow = false; } });
       this.scene.add(inst.holder);
       f.inst = inst;
+      outlineGlow(inst.object, f.color);
       f.style = null;
       try {
         const st = root.MiiHub3D.animStyle(root.Dialogue.traits(rec));

@@ -678,8 +678,9 @@
         }
         case "aim": { // holding a paintball gun up to the shoulder (Paintball)
           const ap = p.aimPitch || 0;
-          aR = { x: -1.15 - ap, z: -0.32 }; elbowR = -0.55; elbowRz = 0.35;
-          aL = { x: -1.45 - ap, z: 0.5 }; elbowL = -0.25; elbowLz = -0.55;
+          // both arms reach forward and meet in front of the chest, hands together on the gun
+          aR = { x: -1.4 - ap, z: 0.45 }; elbowR = -0.3; elbowRz = 0.3;
+          aL = { x: -1.4 - ap, z: -0.65 }; elbowL = -0.3; elbowLz = -0.3;
           headX -= ap * 0.5;
           break;
         }
