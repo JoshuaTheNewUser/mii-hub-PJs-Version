@@ -168,18 +168,21 @@ While you play, the Mii stops what it's doing and faces you. It chats during the
 
 ## 🎯 Paintball
 
-A first-person 1v1 shooter against one of your Miis, made to feel like **CS:GO / Valorant**. Click **🎯 Paintball** in the top bar (or pick Paintball in a Mii's **Play a game** list). Paintball is its own part of the game: its files only load when you open it, so it doesn't slow down starting Mii Hub.
+A first-person shooter on **Shipment** (from Call of Duty 4), made to feel like **CS:GO / Valorant**. Click **🎯 Paintball** in the top bar (or pick Paintball in a Mii's **Play a game** list). Paintball is its own part of the game: its files only load when you open it, so it doesn't slow down starting Mii Hub.
 
-- **Pick who you play as and who you play against.** You see the world through your Mii's eyes, with its Mii hands and shirt colour holding the gun.
-- **The map is Shipment** (from Call of Duty 4), built to real size from its floor plan: a tiny shipping yard full of containers, crates and oil drums.
-- **First to 10 rounds wins.** Each round has 3 seconds of freeze time, then 1:30 to splat the other Mii. The HUD shows your HP, your paint (ammo), the round timer and score, and a kill feed. Hold **Tab** for the scoreboard (kills, deaths, headshot %, damage per round and accuracy).
+- **🤖 VS a Mii:** pick the Mii you play as and the Mii you play against.
+  - **Respawn** (the default): 2 seconds after you're splattered you're back in. **First to 20 eliminations wins** (or whoever has the most after 10 minutes).
+  - **Rounds:** first to 10 rounds. Each round has 3 seconds of freeze time, then 1:30 to splat the other Mii.
+- **🌐 Online:** play against other people. Everyone picks one of the Miis from their own Mii Hub. Connect to a Paintball server, make or join a room, and the host presses Start (Respawn, first to 20). Up to 8 players a room. The server is in the [`server`](server/README.md) folder: see **[server/README.md](server/README.md)** for how to run it.
+- **You see the world through your Mii's eyes**, with its Mii hands and shirt colour holding the gun.
+- **The HUD** shows your HP, your paint (ammo), the clock and score, and a kill feed. Hold **Tab** for the scoreboard (score, kills, deaths, headshot %, damage, accuracy, and ping online).
 - **Weapons:** a paintball gun shaped like an **AK-47** and a **butterfly knife**.
   - The gun works like CS:GO's AK: 600 shots a minute, a 30-round magazine, a 2.43-second reload. **One headshot splats a Mii.** It takes 3 chest shots or 4 leg shots.
   - Stand still and your first few shots go right where you aim. Running makes you very inaccurate, and holding the trigger follows the AK's spray pattern: up, then left, then right. Counter-strafe (tap the opposite key) to stop quickly before you shoot.
-  - The knife: left click slashes, right click stabs. Hitting a Mii in the back does a lot more damage. You run faster with the knife out.
-- **Movement is CS:GO's:** the same speeds, friction and jump height, Shift to walk quietly, Ctrl or C to crouch, and air strafing. Running makes footsteps the Mii can hear. Walking doesn't.
-- **The Mii plays by the same rules as you.** It hunts you down, follows your footsteps and gunshots, stops before it shoots, sprays and taps depending on how far away you are, and controls its recoil. **Its Paintball skill decides how good it is:** reaction time, aim, headshots and spray control. It gets better every round you play with it.
-- **Settings:** mouse sensitivity (the same numbers as CS), volume, and crosshair colour, size, gap and style. Press **Esc** to pause.
+  - The knife: left click slashes, right click stabs. Hitting someone in the back does a lot more damage. You run faster with the knife out.
+- **Movement is CS:GO's:** the same speeds, friction and jump height, Shift to walk quietly, Ctrl or C to crouch, and air strafing. Running makes footsteps others can hear. Walking doesn't.
+- **The Mii opponent plays by the same rules as you.** It hunts you down, follows your footsteps and gunshots, stops before it shoots, sprays and taps depending on how far away you are, and controls its recoil. **Its Paintball skill decides how good it is.** It gets better every time it wins or loses a fight with you.
+- **Settings:** mouse sensitivity (the same numbers as CS), **field of view** (60–150, like CS's: 90 is normal), volume, and crosshair colour, size, gap and style. Press **Esc** for the menu (offline it pauses; online the match keeps going).
 
 | Key | What it does |
 | --- | --- |
@@ -259,6 +262,8 @@ js/paintball/         Paintball (only loaded when you open it):
   pb-models.js          the paint AK, the butterfly knife and your Mii hands
   pb-audio.js           sound effects
   pb-game.js            the lobby, the match, the HUD and the scoreboard
+  pb-online.js          online play: talking to the server, rooms
+server/               the online Paintball server (runs on its own computer: see server/README.md)
 js/storage.js         saves Miis in the browser
 electron/main.js      runs Mii Hub as a desktop app (Electron)
 electron/updater.js   checks GitHub for new versions and installs them

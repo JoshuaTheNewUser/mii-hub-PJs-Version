@@ -1309,7 +1309,7 @@
   function loadPaintball() {
     if (window.Paintball) return Promise.resolve();
     if (pbLoading) return pbLoading;
-    const files = ["pb-engine.js", "pb-map.js", "pb-models.js", "pb-audio.js", "pb-game.js"];
+    const files = ["pb-engine.js", "pb-map.js", "pb-models.js", "pb-audio.js", "pb-game.js", "pb-online.js"];
     pbLoading = files.reduce((p, f) => p.then(() => new Promise((resolve, reject) => {
       const sc = document.createElement("script");
       sc.src = "js/paintball/" + f;
