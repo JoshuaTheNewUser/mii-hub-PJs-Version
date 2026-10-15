@@ -1142,10 +1142,12 @@
   townBar.innerHTML = '<div class="town-level" title="Town level: grant wishes to make the town grow"><b>🏙️ Lv <span id="townLv"></span></b><div class="xp"><div class="xp-fill" id="townXp"></div></div></div>' +
     '<div class="weather" id="weatherText"></div>' +
     '<button class="tb-btn" id="dailyBtn">📅 Daily <span id="dailyCount"></span></button>' +
-    '<button class="tb-btn" id="bookBtn">📖 Book</button>';
+    '<button class="tb-btn" id="bookBtn">📖 Book</button>' +
+    '<button class="tb-btn pb" id="paintballBtn" title="Paintball: a first-person 1v1 against one of your Miis">🎯 Paintball</button>';
   document.querySelector(".topbar").appendChild(townBar);
   $("dailyBtn").addEventListener("click", openDaily);
   $("bookBtn").addEventListener("click", openBook);
+  $("paintballBtn").addEventListener("click", () => openPaintball());
 
   function renderTownBar() {
     const st = progress.state;
@@ -1292,6 +1294,7 @@
     const rec = w.record;
     const g = window.MiniGames.GAMES[gameId];
     closeMiiMenu();
+    if (gameId === "paintball") { openPaintball({ opponent: rec }); return g; }
     window.MiiGamesUI.open({
       walker: w, game: gameId, hub, stage: $("stage"),
       portrait: portraitFor(rec), stats: gameStats(rec, gameId),
@@ -1299,6 +1302,47 @@
       onFinish: (result) => progress.event({ type: "game", id: rec.id, game: gameId, result }),
     });
     return g;
+  }
+
+  // ---------- Paintball (its files only load when you open it) ----------
+  let pbLoading = null;
+  function loadPaintball() {
+    if (window.Paintball) return Promise.resolve();
+    if (pbLoading) return pbLoading;
+    const files = ["pb-engine.js", "pb-map.js", "pb-models.js", "pb-audio.js", "pb-game.js"];
+    pbLoading = files.reduce((p, f) => p.then(() => new Promise((resolve, reject) => {
+      const sc = document.createElement("script");
+      sc.src = "js/paintball/" + f;
+      sc.onload = resolve;
+      sc.onerror = () => reject(new Error("couldn't load " + f));
+      document.head.appendChild(sc);
+    })), Promise.resolve());
+    pbLoading.catch(() => { pbLoading = null; });
+    return pbLoading;
+  }
+  async function openPaintball(o) {
+    o = o || {};
+    closeMiiMenu();
+    if (records.size < 2) { toast("🎯 Paintball needs at least 2 Miis"); return; }
+    const btn = $("paintballBtn");
+    btn.disabled = true; btn.textContent = "🎯 Loading…";
+    try { await loadPaintball(); } catch (err) { toast("Couldn't load Paintball: " + err.message); btn.disabled = false; btn.textContent = "🎯 Paintball"; return; }
+    btn.disabled = false; btn.textContent = "🎯 Paintball";
+    hub.paused = true; // the hub stops drawing while you play
+    window.Paintball.open({
+      records: sortedRecords(),
+      templateFor, lookFor, portraitFor,
+      statsFor: (r) => gameStats(r, "paintball"),
+      onSave: (r) => saveSoon(r),
+      onFinish: ({ result, opp }) => {
+        opp.coins = (opp.coins || 0) + (result === "mii" ? 5 : 3); // playing with you is time well spent
+        saveSoon(opp);
+        progress.event({ type: "game", id: opp.id, game: "paintball", result });
+        renderCoins();
+      },
+      onClose: () => { hub.paused = false; },
+      opponent: o.opponent, player: o.player,
+    });
   }
 
   // ---------- level ups ----------
@@ -1471,5 +1515,5 @@
   }
 
   window.hub = hub; // handy for poking around in the browser console
-  window.miiApp = { records, visit, sendHome, sendTo, inviteOut, moveAway, forgetMii, loadFiles, leaveHome, town, get prog() { return progress; } }; // for tests
+  window.miiApp = { records, openPaintball, visit, sendHome, sendTo, inviteOut, moveAway, forgetMii, loadFiles, leaveHome, town, get prog() { return progress; } }; // for tests
 })();

@@ -531,6 +531,13 @@
         this.drop = 0;
       }
       if (p.lie) { legL = legR = 0; kneeL = kneeR = 0.05; this.drop = 0; }
+      // crouching (Paintball): thighs forward, knees bent, hips lower
+      const crouch = p.crouch || 0;
+      if (crouch > 0) {
+        legL -= 1.1 * crouch; legR -= 1.1 * crouch;
+        kneeL += 2.0 * crouch; kneeR += 2.0 * crouch;
+        this.drop += this.legLen * 0.46 * crouch;
+      }
 
       // ---- arms: left arm raises outward with +Z, right arm with -Z ----
       const out = st.armsOut + w * 0.04;
@@ -669,6 +676,19 @@
           headX += Math.sin(t * 14) * 0.05;
           break;
         }
+        case "aim": { // holding a paintball gun up to the shoulder (Paintball)
+          const ap = p.aimPitch || 0;
+          aR = { x: -1.15 - ap, z: -0.32 }; elbowR = -0.55; elbowRz = 0.35;
+          aL = { x: -1.45 - ap, z: 0.5 }; elbowL = -0.25; elbowLz = -0.55;
+          headX -= ap * 0.5;
+          break;
+        }
+        case "knife": { // butterfly knife held ready, slashing when p.swing goes 0..1
+          const sw = p.swing || 0;
+          aR = { x: -0.95 - Math.sin(sw * Math.PI) * 0.6, z: -0.3 + Math.sin(sw * Math.PI) * 0.6 }; elbowR = -0.7 + sw * 0.5;
+          aL = { x: -0.5, z: 0.25 }; elbowL = -0.9;
+          break;
+        }
         case "punch": { // left, right, left, right...
           const b = Math.sin(t * 6);
           aL = { x: -0.6 - Math.max(0, b) * 0.9, z: 0.2 }; aR = { x: -0.6 - Math.max(0, -b) * 0.9, z: -0.2 };
@@ -691,7 +711,7 @@
 
       // body: hips turn with the legs and the shoulders turn the other way when walking;
       // goofy Miis waddle from side to side
-      const lean = st.lean * w + run * 0.12 + (p.bow ? 0.75 : 0);
+      const lean = st.lean * w + run * 0.12 + (p.bow ? 0.75 : 0) + crouch * 0.25;
       this.set("Spine_1", lean, s * 0.07 * w + spineY, s * (0.03 + st.wobble) * w + spineZ);
       this.set("Spine_2", 0, -s * 0.09 * w, 0);
       // head: look around, nod, laugh (and stay steady while walking)

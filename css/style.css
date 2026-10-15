@@ -1210,3 +1210,6 @@ body {
 @media (prefers-color-scheme: dark) { .sticker.got { background: #4a4220; } }
 
 .mm-level { padding-left: 6px; font-size: 0.75rem; letter-spacing: 1px; }
+
+/* Paintball button in the top bar (the game itself styles itself when it loads) */
+.tb-btn.pb { background: linear-gradient(#ffc23a, #ff8c1a); border-color: #e07a00; color: #2a1600; font-weight: 800; }

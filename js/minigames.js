@@ -4,6 +4,7 @@
  *   - Rock Paper Scissors (best of 5: first to 3 wins)
  *   - Tic-Tac-Toe (best of 3: first to 2 wins)
  *   - Connect 4 (one game, winner takes all)
+ *   - Paintball (a first-person 1v1, first to 10 rounds: see js/paintball/)
  *
  * Every Mii has a skill (0-100) for each game. Skill decides how cleverly the
  * Mii plays, and it goes up every time you play that game with them.
@@ -16,6 +17,7 @@
     rps: { id: "rps", name: "Rock Paper Scissors", short: "RPS", icon: "✊", format: "Best of 5", target: 3 },
     ttt: { id: "ttt", name: "Tic-Tac-Toe", short: "Tic-Tac-Toe", icon: "⭕", format: "Best of 3", target: 2 },
     c4: { id: "c4", name: "Connect 4", short: "Connect 4", icon: "🔴", format: "Winner takes all", target: 1 },
+    paintball: { id: "paintball", name: "Paintball", short: "Paintball", icon: "🎯", format: "First to 10 rounds", target: 10 },
   };
 
   // ---------------------------------------------------------------------
@@ -43,7 +45,7 @@
   // How much a Mii learns from one game (a round of RPS counts less than a
   // whole game of Connect 4). Learning slows down as they get better, and
   // they learn a bit more from losing.
-  const LEARN_RATE = { rps: 0.025, ttt: 0.07, c4: 0.12 };
+  const LEARN_RATE = { rps: 0.025, ttt: 0.07, c4: 0.12, paintball: 0.018 }; // (paintball: per round)
   function learn(stats, game, lostThisGame) {
     const rate = LEARN_RATE[game] * (lostThisGame ? 1.3 : 1);
     stats.skill = Math.min(100, stats.skill + (100 - stats.skill) * rate);

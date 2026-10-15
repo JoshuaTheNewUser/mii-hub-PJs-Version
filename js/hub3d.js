@@ -1899,10 +1899,12 @@
       const frame = (now) => {
         const dt = Math.min(0.05, (now - last) / 1000);
         last = now;
-        this.update(dt);
-        this.controls.update();
-        this.renderer.render(this.scene, this.camera);
-        this.updateOverlay();
+        if (!this.paused) { // (paused while you play Paintball)
+          this.update(dt);
+          this.controls.update();
+          this.renderer.render(this.scene, this.camera);
+          this.updateOverlay();
+        }
         requestAnimationFrame(frame);
       };
       requestAnimationFrame(frame);

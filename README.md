@@ -166,6 +166,34 @@ Every Mii has a **skill meter** for each game, from *Beginner* to *Master*. **Th
 
 While you play, the Mii stops what it's doing and faces you. It chats during the game in its own personality, and celebrates or sulks afterwards.
 
+## 🎯 Paintball
+
+A first-person 1v1 shooter against one of your Miis, made to feel like **CS:GO / Valorant**. Click **🎯 Paintball** in the top bar (or pick Paintball in a Mii's **Play a game** list). Paintball is its own part of the game: its files only load when you open it, so it doesn't slow down starting Mii Hub.
+
+- **Pick who you play as and who you play against.** You see the world through your Mii's eyes, with its Mii hands and shirt colour holding the gun.
+- **The map is Shipment** (from Call of Duty 4), built to real size from its floor plan: a tiny shipping yard full of containers, crates and oil drums.
+- **First to 10 rounds wins.** Each round has 3 seconds of freeze time, then 1:30 to splat the other Mii. The HUD shows your HP, your paint (ammo), the round timer and score, and a kill feed. Hold **Tab** for the scoreboard (kills, deaths, headshot %, damage per round and accuracy).
+- **Weapons:** a paintball gun shaped like an **AK-47** and a **butterfly knife**.
+  - The gun works like CS:GO's AK: 600 shots a minute, a 30-round magazine, a 2.43-second reload. **One headshot splats a Mii.** It takes 3 chest shots or 4 leg shots.
+  - Stand still and your first few shots go right where you aim. Running makes you very inaccurate, and holding the trigger follows the AK's spray pattern: up, then left, then right. Counter-strafe (tap the opposite key) to stop quickly before you shoot.
+  - The knife: left click slashes, right click stabs. Hitting a Mii in the back does a lot more damage. You run faster with the knife out.
+- **Movement is CS:GO's:** the same speeds, friction and jump height, Shift to walk quietly, Ctrl or C to crouch, and air strafing. Running makes footsteps the Mii can hear. Walking doesn't.
+- **The Mii plays by the same rules as you.** It hunts you down, follows your footsteps and gunshots, stops before it shoots, sprays and taps depending on how far away you are, and controls its recoil. **Its Paintball skill decides how good it is:** reaction time, aim, headshots and spray control. It gets better every round you play with it.
+- **Settings:** mouse sensitivity (the same numbers as CS), volume, and crosshair colour, size, gap and style. Press **Esc** to pause.
+
+| Key | What it does |
+| --- | --- |
+| W A S D | move |
+| Mouse | aim · left click shoot / slash · right click knife stab |
+| Space | jump |
+| Shift | walk (quiet) |
+| Ctrl or C | crouch |
+| R | reload |
+| 1 / 3, Q, mouse wheel | AK / knife, switch weapons |
+| F | inspect your weapon |
+| Tab | scoreboard |
+| Esc | pause |
+
 - **Apartments:** a courtyard in front of the apartment building, where every Mii has a home.
 
 ## About the random Miis
@@ -225,6 +253,12 @@ js/weather3d.js       rain, snow, falling leaves, fireworks and other festival e
 js/places-seaside.js  the beach and Café Street
 js/places-town.js     the school and the concert stage
 js/homes3d.js         the apartment building and the inside of each home
+js/paintball/         Paintball (only loaded when you open it):
+  pb-engine.js          movement, the AK and knife rules, hit boxes and the Mii's brain
+  pb-map.js             the Shipment map
+  pb-models.js          the paint AK, the butterfly knife and your Mii hands
+  pb-audio.js           sound effects
+  pb-game.js            the lobby, the match, the HUD and the scoreboard
 js/storage.js         saves Miis in the browser
 electron/main.js      runs Mii Hub as a desktop app (Electron)
 electron/updater.js   checks GitHub for new versions and installs them
@@ -240,6 +274,7 @@ tests/nav.test.js     checks that routes go around obstacles and water
 tests/minigames.test.js  checks the game rules and that skill really changes how Miis play
 tests/homes.test.js   checks the shop items, tastes and far-away conversations
 tests/progress.test.js   checks wishes, levels, town level, goals, relationships and the shop
+tests/paintball.test.js  checks Paintball movement (speeds, jump, walls, steps), damage, hit boxes and recoil
 ```
 
 ## Running the tests
