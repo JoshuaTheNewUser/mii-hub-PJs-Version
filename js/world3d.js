@@ -205,7 +205,9 @@
       tmp.scale.set(it.sx || it.s || 1, it.sy || it.s || 1, it.sz || it.s || 1);
       tmp.updateMatrix();
       m.setMatrixAt(i, tmp.matrix);
-      if (it.color !== undefined) m.setColorAt(i, col.set(it.color));
+      // every copy gets a colour (white = the material's own colour): if a material is
+      // shared by copies with and without colours, three.js draws the plain ones black
+      m.setColorAt(i, col.set(it.color !== undefined ? it.color : 0xffffff));
     });
     m.castShadow = !!castShadow;
     m.receiveShadow = true;
