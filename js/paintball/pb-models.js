@@ -4,7 +4,7 @@
  *   - "AK": an AK-47 silhouette dressed as a modern paintball marker (hopper, air-tank stock,
  *     ported barrel, anodised accent parts).
  *   - Butterfly knife (balisong) with two handles that really rotate around their own pivot pins.
- *   - Chunky Mii-style arms (coloured sleeves + mitten hands with a thumb).
+ *   - Mii arms: plain round sleeves with a ball for a hand (the grip goes through it).
  * Everything is built from merged, vertex-coloured BufferGeometry (few draw calls), no assets.
  * Classic script: uses the global THREE (r147) and exposes window.PBModels.
  *
@@ -455,38 +455,16 @@
   // Mii mitten hand. Hand space: gripped object axis = +Y through origin, palm/back of hand on
   // the +X side, fingers wrap around the front (-Z) to -X, thumb wraps around the back (+Z).
   // ---------------------------------------------------------------------------------------------
-  function buildHand(b, skin, R, mirror) {
-    var M = mirror ? new THREE.Matrix4().makeScale(-1, 1, 1) : new THREE.Matrix4();
-    var add = function (g, c, m) { b.add(g, c, new THREE.Matrix4().multiplyMatrices(M, m || new THREE.Matrix4())); };
-    var sk = skin, skD = shade(skin, 0.8);
-    var w = 2 * R + 0.024, d = 2 * R + 0.044, fz = -R - 0.006;
-    // fist body: the grip passes through it (back of the hand on +X, knuckles at the front -Z)
-    add(rbox(w, 0.07, d, 0.016, 0.011), sk, mtx(0.004, -0.006, fz + d / 2 + 0.002));
-    // finger rolls at the front, wrapping onto the -X (fingertip) side
-    for (var i = 0; i < 4; i++) {
-      var y = 0.022 - i * 0.0175, r = i === 0 ? 0.0102 : 0.0095 - i * 0.0004;
-      var cap = new THREE.CapsuleGeometry(r, w - 0.016, 4, 10);
-      add(cap, sk, mtx(0.002, y, fz + 0.002, 0, 0, PI / 2));
-      add(new THREE.CapsuleGeometry(r * 0.95, d * 0.42, 4, 10), sk, mtx(-w / 2 + 0.004, y, fz + d * 0.25, PI / 2, 0, 0));
-      if (i < 3) add(new THREE.CylinderGeometry(0.0016, 0.0016, w - 0.01, 6), skD, mtx(0.002, y - 0.0088, fz - r * 0.55, 0, 0, PI / 2));
-    }
-    // thumb: lies along the -X side at the top, tip pointing forward
-    var th = new THREE.CapsuleGeometry(0.0105, 0.03, 4, 10);
-    add(th, sk, mtx(-w / 2 - 0.002, 0.03, fz + d * 0.42, PI / 2 + 0.25, 0.25, 0));
-    add(sph(0.016, 12, 10), sk, mtx(-w / 2 + 0.008, 0.024, fz + d * 0.75, 0, 0, 0, 1, 0.9, 1.1)); // thumb base
-    // knuckle highlights on the back of the hand
-    for (var k = 0; k < 4; k++) add(sph(0.0062, 8, 6), shade(skin, 1.04), mtx(w / 2 - 0.003, 0.022 - k * 0.0175, fz + 0.01, 0, 0, 0, 0.7, 1, 1));
-    // wrist (towards +Z, slightly down) – the sleeve cuff covers its end
-    add(new THREE.CapsuleGeometry(0.022, 0.03, 4, 12), sk, mtx(0.004, -0.012, fz + d + 0.012, PI / 2, 0, 0, 1.05, 1, 0.9));
+  function buildHand(b, skin, R) {
+    // A Mii hand is just a ball on the end of the arm: the grip goes right through it.
+    b.add(sph(R, 20, 16), skin, mtx(0, 0, 0));
   }
-  var WRIST = function (R) { return new THREE.Vector3(0.004, -0.012, R + 0.06); };
+  // where the arm (sleeve) meets the ball: just inside it, behind the grip (+Z)
+  var WRIST = function () { return new THREE.Vector3(0, -0.006, 0.026); };
 
   function buildSleeve(b, col) {
-    // along +Y from 0 (wrist) to 0.6, cuff at the wrist end
-    b.add(cylY(0.031, 0.04, 0.6, 18), col, mtx(0, 0.31, 0));
-    b.add(cylY(0.034, 0.035, 0.04, 18), shade(col, 0.72), mtx(0, 0.022, 0));
-    b.add(new THREE.TorusGeometry(0.034, 0.0045, 6, 18), shade(col, 0.6), mtx(0, 0.002, 0, PI / 2));
-    b.add(cylY(0.03, 0.03, 0.004, 18), shade(col, 0.4), mtx(0, -0.0, 0));
+    // a plain round Mii arm along +Y from 0 (the hand) to 0.6
+    b.add(cylY(0.03, 0.033, 0.6, 20), col, mtx(0, 0.3, 0));
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -497,7 +475,9 @@
     l: function (u) { return u; },
     o: function (u) { return 1 - (1 - u) * (1 - u) * (1 - u); },
     i: function (u) { return u * u * u; },
-    b: function (u) { var c = 1.7; return 1 + (c + 1) * Math.pow(u - 1, 3) + c * Math.pow(u - 1, 2); } // back-out
+    b: function (u) { var c = 1.7; return 1 + (c + 1) * Math.pow(u - 1, 3) + c * Math.pow(u - 1, 2); }, // back-out
+    q: function (u) { return 1 - (1 - u) * (1 - u); }, // quad out (ballistic rise)
+    Q: function (u) { return u * u; } // quad in (ballistic fall)
   };
   // keys: [[t, v, ease?], ...]
   function K(keys) {
@@ -695,8 +675,8 @@
 
     // hands for the AK
     var HR = 0.02;
-    var bRH = new Builder(); buildHand(bRH, skinCol, HR, false);
-    var bLH = new Builder(); buildHand(bLH, skinCol, 0.026, true);
+    var bRH = new Builder(); buildHand(bRH, skinCol, 0.042);
+    var bLH = new Builder(); buildHand(bLH, skinCol, 0.042);
     var rHandAK = bRH.mesh(M.skin), lHandAK = bLH.mesh(M.skin);
     akGun.add(rHandAK, lHandAK);
     // right hand on the pistol grip
@@ -713,18 +693,23 @@
     var LH_BOLT = { p: new THREE.Vector3(0.05, 0.05, -0.15), q: new THREE.Quaternion().setFromEuler(new THREE.Euler(0.2, 0.6, 1.9)) };
 
     // ------------------------------------------------------------------ knife rig
-    var knRoot = new THREE.Group(); swayRoot.add(knRoot);
-    var knHandFrame = new THREE.Group(); knRoot.add(knHandFrame); // hand + knife
-    var bKH = new Builder(); buildHand(bKH, skinCol, 0.017, false);
+    // knAll holds everything knife-related. Each ball hand has its own frame whose axes are the
+    // knife axes when held (blade -Z, pins X, spine +Y) with the ball centre at the origin; the
+    // grip runs through the ball. The knife itself lives in knNode, placed every frame from the
+    // holding hand(s) (or the air, during tosses).
+    var knAll = new THREE.Group(); swayRoot.add(knAll);
+    var knRoot = new THREE.Group(); knAll.add(knRoot); // right hand frame
+    var bKH = new Builder(); buildHand(bKH, skinCol, 0.04);
     var kHand = bKH.mesh(M.skin);
-    // hand axis Y -> knife -Z, palm +X -> knife +X
-    kHand.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 1, 0)));
-    kHand.position.set(0, 0, 0.1);
-    knHandFrame.add(kHand);
-    var knFree = new THREE.Group(); knHandFrame.add(knFree); // knife relative to hand (tricks/aerials)
+    knRoot.add(kHand);
+    var knLRoot = new THREE.Group(); knAll.add(knLRoot); // left hand frame (inspect only)
+    var kHandL = new THREE.Mesh(kHand.geometry, M.skin); knLRoot.add(kHandL);
+    var knNode = new THREE.Group(); knAll.add(knNode); // knife root (tang)
+    var knFree = knNode; // (kept name for tuning)
     var bali = makeBalisong(accentHex, { metal: M.kmetal, steel: M.ksteel });
-    knFree.add(bali.root);
+    knNode.add(bali.root);
     bali.root.scale.setScalar(1.45);
+    var KN_GRIP = 0.1; // ball centre sits this far behind the pivot, on the closed handles
 
     // ------------------------------------------------------------------ sleeves
     var bS = new Builder(); buildSleeve(bS, sleeveCol);
@@ -734,17 +719,34 @@
     swayRoot.add(sleeveR, sleeveL);
     var wristR_AK = new THREE.Object3D(); wristR_AK.position.copy(WRIST(HR)); rHandAK.add(wristR_AK);
     var wristL_AK = new THREE.Object3D(); wristL_AK.position.copy(WRIST(0.026)).multiply(new THREE.Vector3(-1, 1, 1)); lHandAK.add(wristL_AK);
-    var wristR_K = new THREE.Object3D(); wristR_K.position.copy(WRIST(0.017)); kHand.add(wristR_K);
-    var SHOULDER_RK = new THREE.Vector3(0.55, -0.55, -0.12), SHOULDER_R = new THREE.Vector3(0.3, -0.7, -0.05), SHOULDER_L = new THREE.Vector3(-0.2, -0.4, 0.12);
+    // knife arms: the sleeve starts at the ball centre (hidden inside the ball), so it stays attached in any pose
+    var wristR_K = new THREE.Object3D(); kHand.add(wristR_K);
+    var wristL_K = new THREE.Object3D(); kHandL.add(wristL_K);
+    var SHOULDER_LK = new THREE.Vector3(-0.75, -0.35, 0.0);
+    var SHOULDER_RK = new THREE.Vector3(0.75, -0.32, 0.0), SHOULDER_R = new THREE.Vector3(0.3, -0.7, -0.05), SHOULDER_L = new THREE.Vector3(-0.2, -0.4, 0.12);
 
     // ------------------------------------------------------------------ poses
-    var AK_BASE = { p: new THREE.Vector3(0.2, -0.17, -0.43), r: new THREE.Euler(0.03, 0.2, 0.02) };
-    var KN_BASE = { p: new THREE.Vector3(0.235, -0.115, -0.45), r: new THREE.Euler(0.5, 0.48, PI * 0.75) };
+    // (the gun points almost straight ahead, CS-style, rather than angled in toward the middle)
+    var AK_BASE = { p: new THREE.Vector3(0.17, -0.155, -0.43), r: new THREE.Euler(0.03, -0.07, 0.0) };
+    // knife hand poses: position of the ball + orientation built from the blade direction and the flat's normal
+    function knQ(dir, xHint) {
+      var Z = new THREE.Vector3().copy(dir).normalize().negate();
+      var X = new THREE.Vector3().copy(xHint).addScaledVector(Z, -xHint.dot(Z)).normalize();
+      var Y = new THREE.Vector3().crossVectors(Z, X);
+      return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z));
+    }
+    var KN_BASE = { p: new THREE.Vector3(0.17, -0.15, -0.38), q: knQ(new THREE.Vector3(-0.3, 0.6, -0.7), new THREE.Vector3(0.2, -0.3, 1)) }; // hammer grip, blade up-left
+    // inspect poses: the pin axis is tilted so twirls sweep in front of the forearm, not behind it
+    var KN_SHOW = { p: new THREE.Vector3(0.13, -0.07, -0.42), q: knQ(new THREE.Vector3(-0.3, 0.9, -0.3), new THREE.Vector3(-0.75, 0, 0.63)) };
+    var KN_LEFT = { p: new THREE.Vector3(-0.15, -0.08, -0.42), q: knQ(new THREE.Vector3(0.3, 0.9, -0.3), new THREE.Vector3(0.75, 0, 0.63)) };
+    var KN_LOFF = new THREE.Vector3(-0.32, -0.36, 0.1); // left hand offscreen offset (slides in along the arm)
     akRoot.position.copy(AK_BASE.p); akRoot.rotation.copy(AK_BASE.r);
 
     // channel lists
     var AK_CH = ["px", "py", "pz", "rx", "ry", "rz", "magY", "magZ", "magRX", "lhW", "lbW", "bolt", "lhX", "lhY", "lhZ"];
-    var KN_CH = ["px", "py", "pz", "rx", "ry", "rz", "a", "b", "kx", "ky", "kz", "krx", "kry", "krz"];
+    var KN_CH = ["px", "py", "pz", "rx", "ry", "rz", "sw", "a", "b", "kx", "ky", "kz", "krx", "kry", "krz",
+      "lw", "lpx", "lpy", "lpz", "lrx", "lry", "lrz", "lkrx", "lkry", "hw", "kh", "ksp"];
+    var KN_ANG = { a: 1, b: 1, krx: 1, kry: 1, krz: 1, lkrx: 1, lkry: 1, ksp: 1 }; // blended the short way on cancel
 
     function akReloadAction(empty) {
       var f = 1.0; // magazine part time scale (mag out ~0.4 s, mag seated ~1.45 s, bolt slam ~2.1 s when empty)
@@ -803,74 +805,83 @@
       };
     }
 
+    // Knife actions. Channels: px..rz = right hand offset (camera space), sw = blend toward the
+    // inspect "show" pose, a/b = balisong handle angles, kx..krz = knife trick offset about the right
+    // ball, lw = left hand slide-in, lpx..lrz = left hand offset, lkrx/lkry = knife trick about the
+    // left ball, hw = knife carried right (0) -> left (1), kh = toss height, ksp = in-air spin.
     function knDrawAction() {
+      // comes up closed, flicks the bite handle out, then swings the blade open around the safe pin
       return {
         name: "draw", dur: 1.0, ch: {
-          py: K([[0, -0.2], [0.25, -0.02, "o"], [0.75, 0.01], [1.0, 0]]),
-          px: K([[0, 0.04], [0.25, 0], [0.5, -0.02], [1.0, 0]]),
-          rx: K([[0, -0.9], [0.25, 0.2, "o"], [0.45, -0.25], [0.75, 0.15], [1.0, 0]]),
-          rz: K([[0, -0.5], [0.25, 0.35], [0.5, -0.3], [0.75, 0.15], [1.0, 0]]),
-          ry: K([[0, 0.2], [0.3, -0.25], [0.75, 0.1], [1.0, 0]]),
-          a: K([[0, PI], [0.2, PI], [0.46, 0, "o"]]),
-          b: K([[0, PI], [0.42, PI], [0.74, TAU, "o"], [1.0, TAU]])
+          py: K([[0, -0.3], [0.36, 0.012, "o"], [0.56, -0.008], [0.8, 0.004], [1.0, 0]]),
+          px: K([[0, 0.09], [0.36, 0.0, "o"], [1.0, 0]]),
+          pz: K([[0, 0.04], [0.36, 0, "o"]]),
+          rx: K([[0, -0.9], [0.34, 0.06, "o"], [0.46, -0.1], [0.62, 0.12, "o"], [0.82, -0.03], [1.0, 0]]),
+          rz: K([[0, -0.7], [0.36, -0.12, "o"], [0.62, 0.1], [1.0, 0]]),
+          ry: K([[0, 0.35], [0.4, 0, "o"]]),
+          b: K([[0, PI], [0.22, PI], [0.44, 0, "o"]]),
+          a: K([[0, PI], [0.44, PI], [0.7, 0, "o"]])
         }
       };
     }
 
     function knSlashAction(alt) {
-      var s = alt ? -1 : 1;
-      if (!alt) return {
+      if (!alt) return { // right -> left
         name: "slash", dur: 0.4, ch: {
-          px: K([[0, 0], [0.06, 0.03], [0.18, -0.17, "o"], [0.4, 0]]),
-          py: K([[0, 0], [0.06, 0.035], [0.18, -0.03, "o"], [0.4, 0]]),
-          pz: K([[0, 0], [0.06, 0.02], [0.18, -0.07, "o"], [0.4, 0]]),
-          ry: K([[0, 0], [0.06, -0.35], [0.18, 0.75, "o"], [0.4, 0]]),
-          rz: K([[0, 0], [0.06, -0.5], [0.18, 0.95, "o"], [0.4, 0]]),
-          rx: K([[0, 0], [0.06, 0.15], [0.18, -0.35, "o"], [0.4, 0]])
+          px: K([[0, 0], [0.07, 0.05], [0.2, -0.24, "o"], [0.4, 0]]),
+          py: K([[0, 0], [0.07, 0.03], [0.2, 0.0, "o"], [0.4, 0]]),
+          pz: K([[0, 0], [0.07, 0.01], [0.2, -0.05, "o"], [0.4, 0]]),
+          ry: K([[0, 0], [0.07, -0.55], [0.2, 0.8, "o"], [0.4, 0]]),
+          rz: K([[0, 0], [0.07, -0.3], [0.2, 0.5, "o"], [0.4, 0]]),
+          rx: K([[0, 0], [0.07, 0.1], [0.2, -0.15, "o"], [0.4, 0]])
         }
       };
-      return {
+      return { // left -> right (backhand)
         name: "slash", dur: 0.4, ch: {
-          px: K([[0, 0], [0.07, -0.1], [0.19, 0.06, "o"], [0.4, 0]]),
-          py: K([[0, 0], [0.07, 0.06], [0.19, -0.06, "o"], [0.4, 0]]),
-          pz: K([[0, 0], [0.07, -0.02], [0.19, -0.05, "o"], [0.4, 0]]),
-          ry: K([[0, 0], [0.07, 0.45], [0.19, -0.35, "o"], [0.4, 0]]),
-          rz: K([[0, 0], [0.07, 0.9], [0.19, -0.4, "o"], [0.4, 0]]),
-          rx: K([[0, 0], [0.07, 0.25], [0.19, -0.45, "o"], [0.4, 0]])
+          px: K([[0, 0], [0.09, -0.2], [0.21, 0.08, "o"], [0.4, 0]]),
+          py: K([[0, 0], [0.09, 0.04], [0.21, 0.0, "o"], [0.4, 0]]),
+          pz: K([[0, 0], [0.09, -0.03], [0.21, -0.05, "o"], [0.4, 0]]),
+          ry: K([[0, 0], [0.09, 0.45], [0.21, -0.55, "o"], [0.4, 0]]),
+          rz: K([[0, 0], [0.09, 0.35], [0.22, -1.05, "o"], [0.4, 0]]),
+          rx: K([[0, 0], [0.09, 0.05], [0.21, -0.1, "o"], [0.4, 0]])
         }
       };
     }
 
     function knStabAction() {
+      // pull back with the tip raised, then drive it forward toward the crosshair and recover
       return {
         name: "stab", dur: 1.0, ch: {
-          pz: K([[0, 0], [0.28, 0.05], [0.42, -0.15, "o"], [0.58, -0.14], [1.0, 0]]),
-          px: K([[0, 0], [0.28, 0.03], [0.42, -0.09, "o"], [0.58, -0.09], [1.0, 0]]),
-          py: K([[0, 0], [0.28, 0.02], [0.42, 0.045, "o"], [0.58, 0.04], [1.0, 0]]),
-          rx: K([[0, 0], [0.28, 0.2], [0.42, -0.5, "o"], [0.58, -0.48], [1.0, 0]]),
-          ry: K([[0, 0], [0.28, 0.25], [0.42, -0.2, "o"], [0.58, -0.18], [1.0, 0]]),
-          rz: K([[0, 0], [0.28, -0.35], [0.42, -0.55, "o"], [0.58, -0.5], [1.0, 0]])
+          pz: K([[0, 0], [0.3, 0.04], [0.44, -0.14, "o"], [0.6, -0.13], [1.0, 0]]),
+          px: K([[0, 0], [0.3, 0.03], [0.44, -0.07, "o"], [0.6, -0.065], [1.0, 0]]),
+          py: K([[0, 0], [0.3, -0.015], [0.44, 0.05, "o"], [0.6, 0.045], [1.0, 0]]),
+          rx: K([[0, 0], [0.3, 0.3], [0.44, -0.12, "o"], [0.6, -0.1], [1.0, 0]]),
+          ry: K([[0, 0], [0.3, 0.12], [0.44, -0.15, "o"], [0.6, -0.14], [1.0, 0]]),
+          rz: K([[0, 0], [0.3, -0.15], [0.44, 0.2, "o"], [0.6, 0.18], [1.0, 0]])
         }
       };
     }
 
     function knInspectAction() {
-      var D = 3.6;
+      var D = 4.9;
+      var T1 = 1.8, T2 = 2.4, R1 = 3.62, R2 = 4.12; // toss (right -> left) and throw back (left -> right)
       return {
         name: "inspect", dur: D, ch: {
-          px: K([[0, 0], [0.35, -0.07], [2.2, -0.06], [2.95, -0.07], [3.25, -0.06], [D, 0]]),
-          py: K([[0, 0], [0.35, 0.05], [2.2, 0.05], [2.95, 0.03], [D, 0]]),
-          pz: K([[0, 0], [0.35, -0.01], [D, 0]]),
-          ry: K([[0, 0], [0.35, 0.65], [1.4, 0.75], [2.2, 0.5], [3.0, 0.6], [D, 0]]),
-          rz: K([[0, 0], [0.35, 0.65], [0.7, 0.45], [1.0, 0.7], [1.4, 0.55], [2.2, 0.75], [3.0, 0.5], [D, 0]]),
-          rx: K([[0, 0], [0.35, 0.25], [1.4, 0.3], [2.2, 0.15], [2.3, 0.35], [3.0, 0.1], [D, 0]]),
-          // fan: handle B spins twice around its pin, then rollover of blade + B around pin A
-          b: K([[0, 0], [0.35, 0], [0.95, -TAU, "l"], [1.45, -2 * TAU, "o"], [2.2, -2 * TAU], [2.45, -2 * TAU - PI, "o"], [2.75, -3 * TAU, "o"], [D, -3 * TAU]]),
-          a: K([[0, 0], [1.45, 0], [2.05, TAU, "s"], [D, TAU]]),
-          // aerial: knife leaves the hand and spins once in the air
-          ky: K([[0, 0], [2.2, 0], [2.48, 0.09, "o"], [2.75, 0, "i"], [D, 0]]),
-          kz: K([[0, 0], [2.2, 0], [2.48, -0.02, "o"], [2.75, 0, "i"]]),
-          krx: K([[0, 0], [2.2, 0], [2.75, -TAU, "l"], [D, -TAU]])
+          // right hand: up into the show pose, two twirls + a bite-handle fan, flick-toss, wait low, catch, settle
+          sw: K([[0, 0], [0.42, 1], [4.3, 1], [D, 0]]),
+          py: K([[0, 0], [1.55, 0], [1.7, -0.03], [1.84, 0.035, "o"], [2.05, 0], [2.4, -0.05], [3.4, -0.055], [3.85, 0], [R2, 0], [R2 + 0.08, -0.03, "o"], [4.4, 0]]),
+          rz: K([[0, 0], [0.42, 0], [0.8, 0.08], [1.25, -0.06], [1.55, 0], [1.7, 0.15], [1.84, -0.2, "o"], [2.1, 0], [R2, 0], [R2 + 0.08, -0.1, "o"], [4.4, 0]]),
+          krx: K([[0, 0], [0.45, 0], [1.15, 2 * TAU, "s"]]),
+          b: K([[0, 0], [1.05, 0], [1.5, -TAU, "s"], [3.02, -TAU], [3.45, -2 * TAU, "s"]]),
+          // the toss: carried in a ballistic arc while flipping end over end
+          hw: K([[0, 0], [T1, 0], [T2, 1, "l"], [R1, 1], [R2, 0, "l"]]),
+          kh: K([[0, 0], [T1, 0], [(T1 + T2) / 2, 0.13, "q"], [T2, 0, "Q"], [R1, 0], [(R1 + R2) / 2, 0.12, "q"], [R2, 0, "Q"]]),
+          ksp: K([[0, 0], [T1, 0], [T2, 2 * TAU, "l"], [R1, 2 * TAU], [R2, 0, "l"]]),
+          // left hand: slides in from the lower left, catches, twirls + fans, throws back, slides out
+          lw: K([[0, 0], [1.15, 0], [1.65, 1, "o"], [4.1, 1], [4.6, 0, "s"]]),
+          lpy: K([[0, 0], [T2, 0], [T2 + 0.08, -0.035, "o"], [2.68, 0], [3.45, 0], [3.56, -0.025], [3.66, 0.03, "o"], [3.85, 0]]),
+          lrz: K([[0, 0], [T2, 0], [T2 + 0.08, 0.08, "o"], [2.68, 0], [3.45, 0], [3.56, 0.15], [3.68, -0.18, "o"], [3.95, 0]]),
+          lkrx: K([[0, 0], [2.62, 0], [3.12, -TAU, "s"]])
         }
       };
     }
@@ -911,7 +922,7 @@
         for (var j = 0; j < chs.length; j++) {
           var cc = chs[j];
           var sv = snap[cc] || 0;
-          if (cc === "a" || cc === "b") { // angles: blend the short way
+          if (KN_ANG[cc] && weapon === "knife") { // angles: blend the short way
             var d = out[cc] - sv; d = Math.atan2(Math.sin(d), Math.cos(d)); out[cc] = sv + d * w;
             continue;
           }
@@ -936,7 +947,9 @@
       sleeve.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), _v);
     }
 
+    var leftBusy = false; // the left hand only shows up to swap the magazine / pull the bolt
     function updateAK(dt, c) {
+      leftBusy = c.lhW > 0.01 || c.lbW > 0.01;
       akRoot.position.set(AK_BASE.p.x + c.px, AK_BASE.p.y + c.py, AK_BASE.p.z + c.pz);
       akRoot.rotation.set(AK_BASE.r.x + c.rx, AK_BASE.r.y + c.ry, AK_BASE.r.z + c.rz);
       // recoil springs
@@ -979,12 +992,34 @@
       }
     }
 
+    var _kq = new THREE.Quaternion(), _kq2 = new THREE.Quaternion(), _ke = new THREE.Euler(), _kp = new THREE.Vector3();
+    var _kX = new THREE.Vector3(1, 0, 0);
+    var knPR = new THREE.Vector3(), knQR = new THREE.Quaternion(), knPL = new THREE.Vector3(), knQL = new THREE.Quaternion();
+    // knife root pose for a hand = hand * trick (offset + rotation about the ball centre) * grip offset
+    function knHeld(hand, ex, ey, ez, rx, ry, rz, outP, outQ) {
+      outQ.copy(hand.quaternion).multiply(_kq.setFromEuler(_ke.set(rx, ry, rz)));
+      outP.set(0, 0, -KN_GRIP).applyQuaternion(outQ).add(_kp.set(ex, ey, ez).applyQuaternion(hand.quaternion)).add(hand.position);
+    }
     function updateKnife(dt, c) {
-      knRoot.position.set(KN_BASE.p.x + c.px, KN_BASE.p.y + c.py, KN_BASE.p.z + c.pz);
-      knRoot.rotation.set(KN_BASE.r.x + c.rx, KN_BASE.r.y + c.ry, KN_BASE.r.z + c.rz);
+      // right hand: idle pose blended toward the inspect show pose, then camera-space offsets + breathing
+      knRoot.position.lerpVectors(KN_BASE.p, KN_SHOW.p, c.sw).add(_kp.set(c.px, c.py, c.pz));
+      _kq2.slerpQuaternions(KN_BASE.q, KN_SHOW.q, c.sw);
+      knRoot.quaternion.setFromEuler(_ke.set(c.rx + Math.sin(time * 1.3) * 0.012, c.ry + Math.sin(time * 0.8 + 0.7) * 0.01, c.rz)).multiply(_kq2);
+      // left hand (inspect only): slides in along its arm from the lower left
+      var lw = c.lw;
+      knLRoot.visible = lw > 0.002;
+      knLRoot.position.copy(KN_LEFT.p).addScaledVector(KN_LOFF, 1 - lw).add(_kp.set(c.lpx, c.lpy, c.lpz));
+      knLRoot.quaternion.setFromEuler(_ke.set(c.lrx + (1 - lw) * 0.5, c.lry, c.lrz - (1 - lw) * 0.4)).multiply(KN_LEFT.q);
+      // knife
       bali.set(c.a, c.b);
-      knFree.position.set(c.kx, c.ky, c.kz);
-      knFree.rotation.set(c.krx, c.kry, c.krz);
+      knHeld(knRoot, c.kx, c.ky, c.kz, c.krx, c.kry, c.krz, knPR, knQR);
+      if (c.hw > 0.0005) {
+        knHeld(knLRoot, 0, 0, 0, c.lkrx, c.lkry, 0, knPL, knQL);
+        knNode.position.lerpVectors(knPR, knPL, c.hw);
+        knNode.quaternion.slerpQuaternions(knQR, knQL, c.hw);
+      } else { knNode.position.copy(knPR); knNode.quaternion.copy(knQR); }
+      knNode.position.y += c.kh;
+      if (c.ksp) knNode.quaternion.multiply(_kq.setFromAxisAngle(_kX, c.ksp));
     }
 
     function update(dt, s) {
@@ -1020,17 +1055,18 @@
       );
       var c = evalChannels(dt);
       akRoot.visible = weapon === "ak";
-      knRoot.visible = weapon === "knife";
+      knAll.visible = weapon === "knife";
       if (weapon === "ak") updateAK(dt, c); else updateKnife(dt, c);
       // sleeves follow the wrists
       swayRoot.updateMatrixWorld(true);
       if (weapon === "ak") {
         placeSleeve(sleeveR, wristR_AK, SHOULDER_R);
         placeSleeve(sleeveL, wristL_AK, SHOULDER_L);
-        sleeveL.visible = true;
+        sleeveL.visible = lHandAK.visible = leftBusy;
       } else {
         placeSleeve(sleeveR, wristR_K, SHOULDER_RK);
-        sleeveL.visible = false;
+        sleeveL.visible = knLRoot.visible;
+        if (knLRoot.visible) placeSleeve(sleeveL, wristL_K, SHOULDER_LK);
       }
     }
 
@@ -1087,7 +1123,7 @@
         target.setFromMatrixPosition(tmpM).applyMatrix4(group.matrix);
         return target;
       },
-      _tune: { AK_BASE: AK_BASE, KN_BASE: KN_BASE, SHOULDER_R: SHOULDER_R, SHOULDER_RK: SHOULDER_RK, SHOULDER_L: SHOULDER_L, LH_GUARD: LH_GUARD, LH_MAG_LOCAL: LH_MAG_LOCAL, LH_BOLT: LH_BOLT, kHand: kHand, bali: bali, rHandAK: rHandAK, lHandAK: lHandAK },
+      _tune: { AK_BASE: AK_BASE, KN_BASE: KN_BASE, KN_SHOW: KN_SHOW, KN_LEFT: KN_LEFT, SHOULDER_LK: SHOULDER_LK, SHOULDER_R: SHOULDER_R, SHOULDER_RK: SHOULDER_RK, SHOULDER_L: SHOULDER_L, LH_GUARD: LH_GUARD, LH_MAG_LOCAL: LH_MAG_LOCAL, LH_BOLT: LH_BOLT, kHand: kHand, bali: bali, rHandAK: rHandAK, lHandAK: lHandAK },
       current: function () { return { weapon: weapon, action: action ? action.name : null, t: actT }; },
       dispose: function () {
         group.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
