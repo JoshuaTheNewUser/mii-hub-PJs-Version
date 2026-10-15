@@ -229,6 +229,17 @@
 .pb-player .host{font-size:11px;color:#ffb21e;margin-left:auto}
 .pb-help{font-size:13px;opacity:.75;line-height:1.5}
 .pb-help.warn{color:#ffcf6a;opacity:1}
+.pb-vote{margin-top:14px;text-align:left}
+.pb-vote-head{display:flex;justify-content:space-between;font-weight:900;font-size:18px;margin-bottom:6px}
+.pb-vote-head b{color:#ffb21e}
+.pb-vote-title{font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:.6;margin:8px 0 4px}
+.pb-vote-row{display:flex;gap:8px}
+.pb-vote-card{flex:1;background:#ffffff0d;border:2px solid #ffffff22;border-radius:12px;padding:10px;color:#fff;text-align:left;display:flex;flex-direction:column;gap:3px}
+.pb-vote-card.sel{border-color:#ffb21e;background:#ffb21e22}
+.pb-vote-card .desc{font-size:12px;opacity:.75}
+.pb-vote-card .pb-votes{font-size:12px;color:#ffb21e;font-weight:800;min-height:15px}
+.pb-vote-result{margin-top:8px;font-weight:900;color:#6cff8a}
+.pb-srv{font-size:12px;font-weight:800;opacity:.8;margin-left:auto;margin-right:10px}
 .pb-boxhead{display:flex;align-items:center;justify-content:space-between}
 .pb-btn.small{padding:3px 10px}
 .pb-room .lock{font-size:18px}
@@ -429,9 +440,9 @@
         try {
           const tYou = await opts.templateFor(you);
           match = new Match({
-            root: rootEl, opts, settings, you, tYou, net: cfg.net, roster: cfg.roster, startIn: cfg.startIn, youColor: cfg.youColor,
-            toWin: cfg.toWin, timeLimit: cfg.timeLimit, roomName: cfg.roomName,
-            onExit: (to) => { match && match.dispose(); match = null; if (to === "hub") close(); else { if (to === "leave") cfg.net.send({ t: "leave" }); showLobby(); } },
+            root: rootEl, opts, settings, you, tYou, net: cfg.net, roster: cfg.roster, youColor: cfg.youColor,
+            initial: cfg.initial, roomName: cfg.roomName,
+            onExit: (to) => { match && match.dispose(); match = null; root.__pb = null; if (cfg.onLeave) cfg.onLeave(); if (to === "hub") close(); else showLobby(); },
           });
           load.remove();
           current.match = match;
@@ -806,7 +817,7 @@
       const other = this.bot || this.leader();
       if (other && other !== this.you) set(this.hudRight, other);
       this.hudRight.t.style.visibility = other && other !== this.you ? "" : "hidden";
-      this.hudSub.textContent = this.mode === "rounds" ? "First to " + this.toWin + " rounds" : "First to " + this.toWin;
+      this.hudSub.textContent = this.phase === "warmup" ? "Waiting for players" : this.mode === "rounds" ? "First to " + this.toWin + " rounds" : "First to " + this.toWin;
     }
 
     banner(big, small, cls, secs) {
@@ -1025,10 +1036,17 @@
           for (const p of m.room.players) { const f = fOf(p.id); if (f) { f.score = p.score; f.stats.deaths = Math.max(f.stats.deaths, p.deaths); } }
           this.updateScore();
         },
+        warmup: () => this.netWarmup(),
+        start: (m) => this.netStart(m, 0),
+        round: (m) => this.netRound(m, 0),
+        roundEnd: (m) => this.netRoundEnd(m),
         over: (m) => {
           if (m.scores) for (const [id, sc] of Object.entries(m.scores)) { const f = fOf(id); if (f) f.score = sc; }
-          this.finish(fOf(m.winner) || null);
+          this.finish(fOf(m.winner) || null, m.late ? "You arrived just as a match ended" : null);
         },
+        intermission: (m) => this.showVote(m, 0),
+        votes: (m) => this.updateVotes(m),
+        voted: (m) => this.voteResult(m),
         close: () => {
           if (this.over) return;
           this.banner("DISCONNECTED", "Lost the connection to the server", "lose");
@@ -1044,6 +1062,17 @@
     // Starting, rounds and respawning
     // ------------------------------------------------------------------
     begin() {
+      if (this.online) {
+        // what the lobby was doing when we came in (the messages arrived while this was loading)
+        const I = this.o.initial || {};
+        const age = (m) => (m && m.at ? (performance.now() - m.at) / 1000 : 0);
+        if (I.phase && I.phase.t === "start") {
+          this.netStart(I.phase, age(I.phase));
+          if (I.round && I.round.at >= I.phase.at) this.netRound(I.round, age(I.round));
+        } else this.netWarmup();
+        if (I.over && I.inter) { this.finish(null, "You arrived just as a match ended"); this.showVote(I.inter, age(I.inter)); if (I.votes) this.updateVotes(I.votes); }
+        return;
+      }
       if (this.mode === "rounds") { this.startRound(); return; }
       const freeze = this.online ? Math.max(0, (this.o.startIn || 0) / 1000) : FREEZE;
       this.phase = "freeze";
@@ -1057,6 +1086,131 @@
       if (this.bot) this.respawn(this.bot, pick(flip ? this.map.spawns.b : this.map.spawns.a), true);
       this.banner(this.online ? "GET READY" : "RESPAWN", "First to " + this.toWin + " eliminations", "", Math.max(1.5, freeze));
       if (this.online && freeze <= 0) this.goLive();
+    }
+
+    // ---- online lobbies: warmup, matches, rounds, voting ----
+    resetStats() {
+      for (const f of this.fighters) {
+        f.score = 0;
+        f.stats = { kills: 0, deaths: 0, hs: 0, dmg: 0, shots: 0, hits: 0 };
+        f.taken = { dmg: 0, hits: 0 }; f.given = { dmg: 0, hits: 0 };
+      }
+    }
+    // back from the results/vote screen into the game
+    closeResults() {
+      clearInterval(this.voteTimer);
+      this.ovResult.classList.remove("show");
+      this.over = false;
+      if (!this.locked()) { this.ovClick.classList.add("show"); }
+    }
+    // nobody to play with: run around freely until someone joins
+    netWarmup() {
+      this.closeResults();
+      this.phase = "warmup";
+      this.mode = "respawn";
+      this.resetStats();
+      if (!this.you.alive || !this.warmed) { this.respawn(this.you, this.pickSpawn(this.you, true), true); this.sendSpawn(); }
+      this.warmed = true;
+      this.banner("WARMUP", "Run around! The match starts when another player joins", "", 4);
+      this.updateScore();
+    }
+    netStart(m, age) {
+      this.closeResults();
+      this.mode = m.mode === "rounds" ? "rounds" : "respawn";
+      this.toWin = m.toWin || (this.mode === "rounds" ? 7 : RESPAWN_TO_WIN);
+      this.timeLimit = (m.timeLimit || 0) / 1000;
+      this.resetStats();
+      const freeze = Math.max(0, (m.in || 0) / 1000 - (age || 0));
+      this.phase = "freeze";
+      this.phaseEnd = this.now + freeze;
+      this.matchEnd = this.phaseEnd + this.timeLimit;
+      if (!m.late) for (const f of this.fighters) if (f.kind === "remote") { f.alive = false; f.dead = 0; }
+      const name = this.mode === "rounds" ? "ROUNDS" : "RESPAWN";
+      const sub = this.mode === "rounds" ? "Last one standing wins the round · first to " + this.toWin : "First to " + this.toWin + " eliminations";
+      if (this.mode === "respawn") {
+        this.respawn(this.you, this.pickSpawn(this.you, true), true);
+        this.banner(name, sub, "", Math.max(1.5, freeze));
+        if (freeze <= 0) this.goLive();
+      } else {
+        // rounds: everyone comes in when the round starts (if you're late, you watch until the next one)
+        this.you.alive = false;
+        this.vm.group.visible = false;
+        this.banner(name, m.late ? "You'll join at the start of the next round" : sub, "", 3);
+      }
+      this.updateScore();
+    }
+    netRound(m, age) {
+      this.round = m.n;
+      if (m.scores) for (const [id, sc] of Object.entries(m.scores)) { const f = this.byNet.get(id); if (f) f.score = sc; }
+      const freeze = Math.max(0, (m.in || 0) / 1000 - (age || 0));
+      this.phase = "freeze";
+      this.phaseEnd = this.now + freeze;
+      this.roundEnd = this.phaseEnd + ROUND_TIME;
+      for (const f of this.fighters) if (f.kind === "remote") { f.alive = false; f.dead = 0; }
+      this.respawn(this.you, this.pickSpawn(this.you, true), true);
+      this.sendSpawn();
+      this.banner("ROUND " + m.n, "First to " + this.toWin, "", Math.max(1.2, freeze));
+      this.updateScore();
+    }
+    netRoundEnd(m) {
+      if (m.scores) for (const [id, sc] of Object.entries(m.scores)) { const f = this.byNet.get(id); if (f) f.score = sc; }
+      this.phase = "end";
+      const w = m.winner ? this.byNet.get(m.winner) : null;
+      if (w === this.you) { this.banner("ROUND WON", "", "win", 3); this.audio.play("roundWin"); }
+      else if (w) { this.banner(w.name.toUpperCase() + " WINS THE ROUND", "", "lose", 3); this.audio.play("roundLose"); }
+      else this.banner("DRAW", "Nobody won the round", "", 3);
+      this.updateScore();
+    }
+
+    // the 15 s vote for what to play next
+    showVote(m, age) {
+      if (!this.ovResult.classList.contains("show")) this.finish(null, null);
+      const box = this.voteBox;
+      if (!box) return;
+      box.innerHTML = "";
+      this.voteEnds = performance.now() + Math.max(0, (m.in || 0) - (age || 0) * 1000);
+      const head = el("div", "pb-vote-head");
+      const timer = el("b", null, "");
+      head.append(el("span", null, "Vote for the next match"), timer);
+      box.appendChild(head);
+      const row = (title, list, key) => {
+        box.appendChild(el("div", "pb-vote-title", title));
+        const r = el("div", "pb-vote-row");
+        for (const o of list) {
+          const c = el("button", "pb-vote-card" + (list.length === 1 ? " sel" : ""));
+          c.dataset.key = key; c.dataset.id = o.id;
+          c.append(el("b", null, o.name), el("span", "desc", o.desc || (list.length === 1 ? "More maps coming soon!" : "")), el("span", "pb-votes", ""));
+          c.addEventListener("click", () => {
+            this.myVote = Object.assign(this.myVote || {}, { [key]: o.id });
+            r.querySelectorAll(".pb-vote-card").forEach((n) => n.classList.toggle("sel", n === c));
+            this.net.send(Object.assign({ t: "vote" }, this.myVote));
+          });
+          r.appendChild(c);
+        }
+        box.appendChild(r);
+      };
+      this.myVote = null;
+      row("Mode", m.modes || [], "mode");
+      row("Map", m.maps || [], "map");
+      box.appendChild(el("div", "pb-help", "A tie is picked at random."));
+      clearInterval(this.voteTimer);
+      const tickVote = () => { timer.textContent = Math.max(0, Math.ceil((this.voteEnds - performance.now()) / 1000)) + "s"; };
+      tickVote();
+      this.voteTimer = setInterval(tickVote, 250);
+    }
+    updateVotes(m) {
+      if (!this.voteBox) return;
+      this.voteBox.querySelectorAll(".pb-vote-card").forEach((c) => {
+        const n = ((c.dataset.key === "mode" ? m.modes : m.maps) || {})[c.dataset.id] || 0;
+        c.querySelector(".pb-votes").textContent = n ? n + " vote" + (n === 1 ? "" : "s") : "";
+      });
+    }
+    voteResult(m) {
+      if (!this.voteBox) return;
+      clearInterval(this.voteTimer);
+      const names = { respawn: "Respawn", rounds: "Rounds", shipment: "Shipment" };
+      const res = el("div", "pb-vote-result", "Next: " + (names[m.mode] || m.mode) + " on " + (names[m.map] || m.map));
+      this.voteBox.appendChild(res);
     }
 
     goLive() {
@@ -1112,7 +1266,7 @@
         this.vm.group.visible = true;
         this.hudDeath.classList.remove("show");
         this.deathCam = null;
-        if (this.online && this.phase === "live") this.sendSpawn();
+        if (this.online && (this.phase === "live" || this.phase === "warmup") && this.mode === "respawn") this.sendSpawn();
       }
       if (f.brain) { f.brain.setSkill(this.botSkill(), root.Dialogue ? root.Dialogue.traits(this.o.opp) : null); f.brain.resetRound(); }
       if (f.inst) this.resetAvatar(f);
@@ -1192,7 +1346,7 @@
       if (this.phase === "freeze" && now >= this.phaseEnd) {
         if (this.mode === "rounds") { this.phase = "live"; this.banner("GO!", "", "", 0.8); this.audio.play("roundStart"); }
         else this.goLive();
-      } else if (this.mode === "rounds") {
+      } else if (this.mode === "rounds" && !this.online) {
         if (this.phase === "live" && now >= this.roundEnd) this.endRound(null, "Time's up");
         else if (this.phase === "end" && now >= this.phaseEnd) {
           if (this.you.score >= this.toWin || this.bot.score >= this.toWin) { this.finish(this.you.score > this.bot.score ? this.you : this.bot); return; }
@@ -1206,10 +1360,10 @@
         return;
       }
       // coming back after being splattered (respawn mode)
-      if (this.mode === "respawn" && this.phase === "live") {
+      if ((this.mode === "respawn" && this.phase === "live") || this.phase === "warmup") {
         for (const f of this.fighters) if (!f.alive && f.respawnAt && now >= f.respawnAt && f.kind !== "remote") this.respawn(f);
       }
-      const frozen = this.phase !== "live";
+      const frozen = this.phase !== "live" && this.phase !== "warmup";
       const playing = !this.over && (!this.online || this.locked() || !this.paused);
 
       // ---- you ----
@@ -1563,10 +1717,11 @@
           " · Damage given: <b>" + victim.given.dmg + "</b> in " + victim.given.hits + " hit" + (victim.given.hits === 1 ? "" : "s") +
           "<br>" + attacker.name + " has <b>" + attacker.hp + "</b> HP left";
         d.append(who, dm);
-        if (this.mode === "respawn") { this.hudRespawn = el("div", "again", "Respawning…"); d.appendChild(this.hudRespawn); }
+        if (this.mode === "respawn" || this.phase === "warmup") { this.hudRespawn = el("div", "again", "Respawning…"); d.appendChild(this.hudRespawn); }
+        else if (this.online) d.appendChild(el("div", "again", "Watching until the next round…"));
         d.classList.add("show");
       }
-      if (this.mode === "rounds") {
+      if (this.mode === "rounds" && !this.online) {
         const why = attacker === this.you
           ? (weapon === "knife" ? "You got " + victim.name + " with the knife!" : head ? "Headshot! 🎯" : victim.name + " got splattered")
           : (weapon === "knife" ? victim.name + " got knifed" : head ? attacker.name + " got you with a headshot" : attacker.name + " splattered you");
@@ -1864,7 +2019,7 @@
       else if (this.mode === "rounds") { if (this.phase !== "end") this.clockLeft = this.roundEnd - now; }
       else if (!this.over && this.phase === "live") this.clockLeft = this.matchEnd - now;
       let secs = Math.max(0, Math.ceil(this.clockLeft || 0));
-      const txt = Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0");
+      const txt = this.phase === "warmup" ? "WARMUP" : Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0");
       if (this.hudClock.textContent !== txt) {
         this.hudClock.textContent = txt;
         const low = this.phase === "live" && secs <= 10;
@@ -1946,11 +2101,11 @@
       }
       const btns = el("div", "btns");
       if (this.online) {
-        const back = el("button", "pb-btn primary", why === "disconnected" ? "OK" : "Back to the room");
-        back.addEventListener("click", () => this.o.onExit("room"));
-        const leave = el("button", "pb-btn", "Leave");
+        this.voteBox = null;
+        if (why !== "disconnected") { this.voteBox = el("div", "pb-vote"); p.appendChild(this.voteBox); }
+        const leave = el("button", "pb-btn", why === "disconnected" ? "OK" : "Leave lobby");
         leave.addEventListener("click", () => this.o.onExit("leave"));
-        btns.append(back, leave);
+        btns.append(leave);
       } else {
         const again = el("button", "pb-btn primary", "Rematch");
         again.addEventListener("click", () => this.o.onRematch());
@@ -1975,6 +2130,7 @@
     dispose() {
       if (this.disposed) return;
       this.disposed = true;
+      clearInterval(this.voteTimer);
       cancelAnimationFrame(this.raf);
       if (this.unbind) this.unbind();
       if (this.netOff) this.netOff();

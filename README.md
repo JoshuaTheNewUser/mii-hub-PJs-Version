@@ -175,7 +175,9 @@ A first-person shooter on **Shipment** (from Call of Duty 4), made to feel like 
   - **Rounds:** first to 10 rounds. Each round has 3 seconds of freeze time, then 1:30 to splat the other Mii.
 - **🌐 Online:** play against other people. Everyone picks one of the Miis from their own Mii Hub, and the others see it. Nobody has to open ports or type addresses.
   - **Find Lobby:** a list of everyone who's hosting: the lobby's name, the host, how many players, and 🔒 if it needs a password. Click **Join**.
-  - **Host Lobby:** give it a name, an optional password (leave it empty for anyone to join) and how many players (2–8). Your lobby shows up in everyone's list. When people are in, press **START** (Respawn, first to 20).
+  - **Host Lobby:** give it a name, an optional password (leave it empty for anyone to join) and how many players (2–8). Your lobby shows up in everyone's list.
+  - **In a lobby** you're straight onto the map: run around freely until someone else joins, then the match starts by itself. Online modes: **Respawn** (first to 20) and **Rounds** (no respawning: the last one standing wins the round, first to 7).
+  - **Between matches** there's a 15-second vote for the next mode (and map, when there are more). A tie is picked at random. If everyone else leaves, you're back to running around until someone joins.
   - Everyone meets on the Mii Hub Paintball server: see **[server/README.md](server/README.md)** for how it's set up.
 - **You see the world through your Mii's eyes**, with its Mii hands and shirt colour holding the gun.
 - **The HUD** shows your HP, your paint (ammo), the clock and score, and a kill feed. Hold **Tab** for the scoreboard (score, kills, deaths, headshot %, damage, accuracy, and ping online).

@@ -17,7 +17,7 @@
 (function (root) {
   "use strict";
 
-  const VERSION = 1;          // must match the server's VERSION
+  const VERSION = 2;          // must match the server's VERSION
   const DEFAULT_PORT = 8787;
   // Where everyone meets to find lobbies (the Mii Hub Paintball server, see server/README.md).
   // It's built into the app from a secret when it's built (pb-config.js), so it's not in the code.
@@ -171,9 +171,13 @@
       st.net = net;
       st.connecting = false;
       net.handle({
-        welcome: () => setStatus("", ""),
+        welcome: (m) => { st.serverName = m.name || "Server"; st.online = m.online; setStatus("", ""); },
         rooms: (m) => { st.rooms = m.rooms; rerender(); },
-        room: (m) => { st.room = m.room; st.askPass = null; rerender(); },
+        room: (m) => {
+          st.room = m.room; st.askPass = null;
+          // you're in a lobby: straight onto the map
+          if (!ctx.inMatch() && !st.starting) enterLobby(); else rerender();
+        },
         err: (m) => {
           if (m.code === "password") { st.askPass = m.room; setStatus(m.msg, "err"); }
           else setStatus(m.msg, "err");
@@ -185,7 +189,13 @@
           });
         },
         bye: (m) => { st.roster.delete(m.id); st.loading.delete(m.id); rerender(); },
-        start: (m) => { if (!m.late) st.spawned.clear(); startMatch(m); },
+        // (remembered so a match that's still loading can catch up)
+        warmup: (m) => { st.phase = stamp(m); st.over = st.inter = st.votes = null; },
+        start: (m) => { st.phase = stamp(m); st.over = st.inter = st.votes = null; if (!m.late) st.spawned.clear(); },
+        round: (m) => { st.roundMsg = stamp(m); st.spawned.clear(); },
+        over: (m) => { st.over = stamp(m); },
+        intermission: (m) => { st.inter = stamp(m); },
+        votes: (m) => { st.votes = m; },
         spawn: (m) => st.spawned.set(m.id, m),
         kill: (m) => st.spawned.delete(m.v),
         close: () => {
@@ -217,26 +227,34 @@
       st.net.send({ t: "join", room: id, password: password || "" });
     }
 
-    async function startMatch(m) {
+    const stamp = (m) => Object.assign({ at: performance.now() }, m);
+
+    // load the map and jump in (warmup, a match in progress, or the vote between matches)
+    async function enterLobby() {
       if (st.starting) return;
       st.starting = true;
-      const t0 = performance.now();
-      const room = st.room;
       try {
-        // wait for everyone's Mii to be ready (they were sent when they joined)
+        const room = st.room;
+        // wait for everyone's Mii to be ready (they're sent when you join)
         const ids = room ? room.players.map((p) => p.id).filter((id) => id !== st.net.id) : [];
         const entries = await Promise.all(ids.map((id) => st.loading.get(id) || Promise.resolve(st.roster.get(id))));
+        if (!st.room || !st.net) return;
         // the server gives everyone in the lobby their own paint colour
-        const colorOf = (id) => { const p = room && room.players.find((x) => x.id === id); return p && p.color; };
+        const colorOf = (id) => { const p = st.room.players.find((x) => x.id === id); return p && p.color; };
         for (const e of entries) if (e && colorOf(e.id)) e.color = colorOf(e.id);
-        for (const e of entries) if (e) e.spawn = m.late ? st.spawned.get(e.id) : null;
-        const waited = performance.now() - t0;
+        for (const e of entries) if (e) e.spawn = st.spawned.get(e.id) || null;
         await ctx.startOnline({
           youColor: colorOf(st.net.id),
-          net: st.net, roster: entries.filter(Boolean), startIn: Math.max(0, (m.in || 0) - waited),
-          toWin: m.toWin, timeLimit: m.timeLimit, roomName: room ? room.name : "Online",
+          net: st.net, roster: entries.filter(Boolean), roomName: st.room.name,
+          initial: { phase: st.phase, round: st.roundMsg, over: st.over, inter: st.inter, votes: st.votes },
+          onLeave: () => leaveLobby(),
         });
       } finally { st.starting = false; }
+    }
+    function leaveLobby() {
+      if (st.net) { st.net.send({ t: "leave" }); st.net.send({ t: "list" }); }
+      st.room = null; st.phase = st.roundMsg = st.over = st.inter = st.votes = null;
+      st.spawned.clear();
     }
 
     // ---- drawing the tab ----
@@ -302,14 +320,14 @@
       if (open) d.open = true;
       d.appendChild(el("summary", null, "Server"));
       const row = el("div", "pb-row");
-      const inp = input("Server address, e.g. wss://paintball.example.com", settings.server || DEFAULT_SERVER);
+      const inp = input("Your own server's address (leave empty for the normal one)", settings.server || "");
       const go = el("button", "pb-btn", "Connect");
-      const doIt = () => { settings.server = inp.value.trim(); ctx.save(); connect(settings.server); };
+      const doIt = () => { settings.server = inp.value.trim(); ctx.save(); connect(serverAddress()); };
       go.addEventListener("click", doIt);
       inp.addEventListener("keydown", (e) => { if (e.key === "Enter") doIt(); });
       row.append(inp, go);
       d.appendChild(row);
-      d.appendChild(el("div", "pb-help", "Everyone has to use the same server. Leave it as it is unless you run your own (see server/README.md)."));
+      d.appendChild(el("div", "pb-help", "Everyone has to use the same server. Leave this empty unless you run your own."));
       return d;
     }
 
@@ -318,6 +336,7 @@
       const box = el("div", "pb-box");
       const head = el("div", "pb-boxhead");
       head.appendChild(el("h3", null, "Find Lobby"));
+      head.appendChild(el("span", "pb-srv", "🟢 " + (st.serverName || "Server") + (st.online ? " · " + st.online + " online" : "")));
       const refresh = el("button", "pb-btn small", "↻");
       refresh.title = "Refresh";
       refresh.addEventListener("click", () => st.net.send({ t: "list" }));
@@ -378,44 +397,11 @@
       return box;
     }
 
-    // inside a lobby
+    // you've joined a lobby: the map is loading
     function lobbyBox() {
       const box = el("div", "pb-box");
-      const room = st.room;
-      const meHost = room.host === st.net.id;
-      box.appendChild(el("h3", null, (room.locked ? "🔒 " : "") + room.name));
-      box.appendChild(el("div", "pb-help", "Respawn · first to " + room.toWin + " eliminations · " + Math.round(room.timeLimit / 60000) + " minutes · up to " + room.max + " players"));
-      const list = el("div", "pb-players");
-      for (const p of room.players) {
-        const item = el("div", "pb-player");
-        item.style.setProperty("--c", p.color);
-        const img = el("img"); img.alt = "";
-        const entry = p.id === st.net.id ? null : st.roster.get(p.id);
-        ctx.portraitImg(img, opts, p.id === st.net.id ? ctx.you : entry && entry.rec);
-        const nm = el("span", null, p.name + (p.id === st.net.id ? " (you)" : ""));
-        nm.style.color = p.color;
-        item.append(img, nm);
-        if (room.state !== "lobby") item.appendChild(el("span", null, " · " + p.score));
-        if (p.id === room.host) item.appendChild(el("span", "host", "HOST"));
-        list.appendChild(item);
-      }
-      box.appendChild(list);
-      if (st.status && st.statusCls === "err") box.appendChild(el("div", "pb-status err", st.status));
-      const row = el("div", "pb-row");
-      if (meHost) {
-        const go = el("button", "pb-go", room.state === "live" ? "PLAYING…" : room.state === "over" ? "PLAY AGAIN ▶" : "START ▶");
-        go.disabled = room.players.length < 2 || room.state === "live";
-        if (go.disabled) go.style.opacity = 0.45;
-        go.addEventListener("click", () => st.net.send({ t: "start" }));
-        row.appendChild(go);
-      } else {
-        row.appendChild(el("div", "pb-help", room.state === "live" ? "A match is on: you'll jump in…" : "Waiting for the host to start…"));
-      }
-      const leave = el("button", "pb-btn", "Leave lobby");
-      leave.addEventListener("click", () => { st.net.send({ t: "leave" }); st.room = null; st.net.send({ t: "list" }); setStatus("", ""); });
-      row.appendChild(leave);
-      box.appendChild(row);
-      if (room.players.length < 2) box.appendChild(el("div", "pb-help", meHost ? "Waiting for someone to join. Your lobby is in everyone's Find Lobby list." : "Waiting for more players."));
+      box.appendChild(el("h3", null, (st.room.locked ? "🔒 " : "") + st.room.name));
+      box.appendChild(el("div", "pb-status", "Joining…"));
       return box;
     }
 
@@ -424,7 +410,7 @@
       dispose() { disconnect(true); container = null; },
       get net() { return st.net; },
       get state() { return st; },
-      connect, hostLobby, joinLobby,
+      connect, hostLobby, joinLobby, leaveLobby,
     };
   }
 

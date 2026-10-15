@@ -24,7 +24,7 @@ const http = require("http");
 const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
-const VERSION = 1;
+const VERSION = 2; // (2: lobbies with warmup, modes and voting)
 const PORT = parseInt(process.env.PORT || "8787", 10);
 const HOST = process.env.HOST || undefined; // e.g. 127.0.0.1 = only reachable through Tailscale Funnel
 const MAX_PLAYERS = Math.max(2, Math.min(16, parseInt(process.env.MAX_PLAYERS || "8", 10))); // most a host can pick
@@ -32,6 +32,12 @@ const TO_WIN = 20;               // first to 20 eliminations
 const TIME_LIMIT = 10 * 60e3;    // or whoever's ahead after 10 minutes
 const RESPAWN_MS = parseInt(process.env.RESPAWN_MS || "2000", 10);
 const COUNTDOWN_MS = parseInt(process.env.COUNTDOWN_MS || "3000", 10);
+const ROUNDS_TO_WIN = 7;                 // rounds mode: first to 7 rounds
+const ROUND_TIME = 90e3;                 // a round with no winner after 1:30 is a draw
+const ROUND_FREEZE_MS = parseInt(process.env.ROUND_FREEZE_MS || "3000", 10);
+const ROUND_END_MS = parseInt(process.env.ROUND_END_MS || "3500", 10);
+const INTERMISSION_MS = parseInt(process.env.INTERMISSION_MS || "15000", 10);
+const SERVER_NAME = process.env.SERVER_NAME || "Admin Server"; // what players see in the list (never the address)
 const MAX_MII_BYTES = 6 * 1024 * 1024;
 const MAX_ROOMS = 200;
 
@@ -47,7 +53,7 @@ const KNIFE_DAMAGE = [25, 40, 65, 90, 180];
  *   create { name, password, max }       host a lobby (password optional; max players 2..MAX_PLAYERS)
  *   join   { room, password }            join a lobby by id (password if it has one)
  *   leave  {}
- *   start  {}                            host only: start (or restart) the match
+ *   vote   { mode, map }                 during the 15 s intermission: what to play next
  *   st     { s: [x, y, z, vx, vz, yaw, pitch, duck, flags] }   your movement, ~30 times a second
  *   shot   { o: [x,y,z], e: [x,y,z], n: [nx,ny,nz] | null, m }  a paintball you fired (for everyone's screens)
  *   ev     { k }                         a sound to play at your position (reload, deploy, land...)
@@ -55,10 +61,14 @@ const KNIFE_DAMAGE = [25, 40, 65, 90, 180];
  *   spawn  { x, z, yaw }                 you're back in after being splattered
  *   ping   { c }
  * server -> client
- *   welcome { id, v, maxPlayers }   rooms { rooms }   room { room }   mii { id, name, color, mii }   bye { id }
- *   start { in, toWin, timeLimit }  st { id, s }  shot { id, ... }  ev { id, k }
+ *   welcome { id, v, maxPlayers, name, online }   rooms { rooms }   room { room }   mii { id, name, color, mii }   bye { id }
+ *   warmup {}                        nobody to play with yet: run around freely
+ *   start { in, mode, map, toWin, timeLimit, late?, round? }   a match begins after `in` ms
+ *   round { n, in, scores }  roundEnd { winner, scores }   (rounds mode)
+ *   st { id, s }  shot { id, ... }  ev { id, k }
  *   dmg { v, by, d, z, hp, w }  kill { v, by, w, h, b, scores }  spawn { id, x, z, yaw }
- *   over { winner, scores }  pong { c, s }  err { msg }
+ *   over { winner, scores, mode }  intermission { in, modes, maps }  votes { modes, maps }  voted { mode, map }
+ *   pong { c, s }  err { msg }
  */
 
 let nextId = 1;
@@ -109,18 +119,141 @@ function scores(room) {
   return s;
 }
 
+// ---------------------------------------------------------------------
+// A lobby's life:  warmup (run around until a 2nd player joins) -> countdown
+//   -> live (respawn: first to 20 | rounds: last one standing wins the round)
+//   -> intermission (15 s: vote for the next mode/map) -> countdown -> ...
+// ---------------------------------------------------------------------
+const MODES = {
+  respawn: { id: "respawn", name: "Respawn", desc: "Back in 2 s after being splattered. First to " + TO_WIN + " eliminations.", toWin: TO_WIN, timeLimit: TIME_LIMIT },
+  rounds: { id: "rounds", name: "Rounds", desc: "No respawning: the last one standing wins the round. First to " + ROUNDS_TO_WIN + " rounds.", toWin: ROUNDS_TO_WIN, timeLimit: 0 },
+};
+const MAPS = { shipment: { id: "shipment", name: "Shipment" } };
+
+function clearTimers(room) {
+  clearTimeout(room.timer); clearTimeout(room.roundTimer);
+  room.timer = room.roundTimer = null;
+}
+
+function toWarmup(room) {
+  clearTimers(room);
+  room.state = "warmup";
+  room.votes = new Map();
+  for (const id of room.players) { const p = players.get(id); p.score = 0; p.deaths = 0; }
+  broadcast(room, { t: "warmup" });
+  roomChanged(room);
+}
+
+// a 2nd player is here: get going
+function maybeStart(room) {
+  if (room.state === "warmup" && room.players.length >= 2) startMatch(room, room.mode);
+}
+
+function startMatch(room, mode) {
+  clearTimers(room);
+  const M = MODES[mode] || MODES.respawn;
+  room.mode = M.id;
+  room.state = "live";
+  room.startedAt = Date.now() + COUNTDOWN_MS;
+  room.round = 0;
+  for (const id of room.players) {
+    const p = players.get(id);
+    p.score = 0; p.deaths = 0; p.hp = 100; p.alive = false; p.diedAt = 0; p.inRound = false;
+    p.lastAk = 0; p.lastKnife = 0;
+  }
+  broadcast(room, { t: "start", in: COUNTDOWN_MS, mode: M.id, map: room.map, toWin: M.toWin, timeLimit: M.timeLimit });
+  if (M.id === "respawn") room.timer = setTimeout(() => endMatch(room), COUNTDOWN_MS + TIME_LIMIT);
+  else startRound(room, COUNTDOWN_MS);
+  roomChanged(room);
+}
+
+// ---- rounds mode ----
+function startRound(room, freeze) {
+  clearTimeout(room.roundTimer);
+  room.round++;
+  room.roundLiveAt = Date.now() + freeze;
+  room.roundOver = false;
+  for (const id of room.players) { const p = players.get(id); p.alive = false; p.hp = 100; p.inRound = true; p.diedAt = 0; }
+  broadcast(room, { t: "round", n: room.round, in: freeze, scores: scores(room) });
+  room.roundTimer = setTimeout(() => endRound(room, null), freeze + ROUND_TIME);
+}
+function endRound(room, winner) {
+  if (room.state !== "live" || room.mode !== "rounds" || room.roundOver) return;
+  room.roundOver = true;
+  clearTimeout(room.roundTimer);
+  if (winner) winner.score++;
+  broadcast(room, { t: "roundEnd", winner: winner ? winner.id : null, scores: scores(room) });
+  roomChanged(room);
+  if (winner && winner.score >= ROUNDS_TO_WIN) { room.roundTimer = setTimeout(() => endMatch(room), ROUND_END_MS); return; }
+  room.roundTimer = setTimeout(() => startRound(room, ROUND_FREEZE_MS), ROUND_END_MS);
+}
+function checkRound(room) {
+  if (room.mode !== "rounds" || room.roundOver) return;
+  const left = room.players.map((id) => players.get(id)).filter((p) => p.inRound && p.alive);
+  const inRound = room.players.map((id) => players.get(id)).filter((p) => p.inRound);
+  if (inRound.length >= 2 && left.length <= 1) endRound(room, left[0] || null);
+}
+
+// ---- the end, and voting for what's next ----
+function endMatch(room) {
+  if (room.state !== "live") return;
+  clearTimers(room);
+  let winner = null, best = -1;
+  for (const id of room.players) { const p = players.get(id); if (p.score > best) { best = p.score; winner = id; } }
+  broadcast(room, { t: "over", winner, scores: scores(room), mode: room.mode });
+  if (room.players.length < 2) return toWarmup(room);
+  room.state = "intermission";
+  room.votes = new Map();
+  room.voteEnds = Date.now() + INTERMISSION_MS;
+  broadcast(room, {
+    t: "intermission", in: INTERMISSION_MS,
+    modes: Object.values(MODES).map((m) => ({ id: m.id, name: m.name, desc: m.desc })),
+    maps: Object.values(MAPS).map((m) => ({ id: m.id, name: m.name })),
+  });
+  room.timer = setTimeout(() => finishVote(room), INTERMISSION_MS);
+  roomChanged(room);
+}
+function voteCounts(room) {
+  const modes = {}, maps = {};
+  for (const v of room.votes.values()) {
+    if (v.mode) modes[v.mode] = (modes[v.mode] || 0) + 1;
+    if (v.map) maps[v.map] = (maps[v.map] || 0) + 1;
+  }
+  return { modes, maps };
+}
+// most votes wins; a tie (or no votes) is picked at random among the leaders
+function pickVote(counts, options) {
+  let best = -1, top = [];
+  for (const id of options) {
+    const n = counts[id] || 0;
+    if (n > best) { best = n; top = [id]; } else if (n === best) top.push(id);
+  }
+  return top[Math.floor(Math.random() * top.length)];
+}
+function finishVote(room) {
+  if (room.state !== "intermission") return;
+  const c = voteCounts(room);
+  const mode = pickVote(c.modes, Object.keys(MODES));
+  room.map = pickVote(c.maps, Object.keys(MAPS));
+  broadcast(room, { t: "voted", mode, map: room.map, counts: c });
+  if (room.players.length >= 2) startMatch(room, mode);
+  else { room.mode = mode; toWarmup(room); }
+}
+
 function leaveRoom(p) {
   const room = p.room && rooms.get(p.room);
   p.room = null;
+  clearTimeout(p.spawnTimer);
   if (!room) return;
   room.players = room.players.filter((id) => id !== p.id);
+  if (room.votes) room.votes.delete(p.id);
   broadcast(room, { t: "bye", id: p.id });
-  if (!room.players.length) { clearTimeout(room.timer); rooms.delete(room.id); }
+  if (!room.players.length) { clearTimers(room); rooms.delete(room.id); }
   else {
-    clearTimeout(p.spawnTimer);
     if (room.host === p.id) room.host = room.players[0];
-    // only one player left in a match: it's over
-    if (room.state === "live" && room.players.length < 2) endMatch(room);
+    // only one player left: back to running around until someone else joins
+    if (room.players.length < 2 && room.state !== "warmup") { toWarmup(room); return; }
+    if (room.state === "live" && room.mode === "rounds") checkRound(room);
   }
   roomChanged(room);
 }
@@ -133,7 +266,7 @@ function joinRoom(p, room) {
   if (used.has(p.color.toLowerCase())) p.color = PALETTE.find((c) => !used.has(c)) || p.color;
   p.room = room.id;
   p.score = 0; p.deaths = 0; p.hp = 100;
-  p.alive = false; p.diedAt = 0; // joins as "waiting to spawn"
+  p.alive = false; p.diedAt = 0; p.inRound = false; // joins as "waiting to spawn"
   room.players.push(p.id);
   // tell everyone what the new player's Mii looks like, and the new player about everyone else
   const meMii = JSON.stringify({ t: "mii", id: p.id, name: p.name, color: p.color, mii: p.mii });
@@ -144,43 +277,29 @@ function joinRoom(p, room) {
     send(p, { t: "mii", id: o.id, name: o.name, color: o.color, mii: o.mii });
   }
   roomChanged(room);
-  if (room.state === "live") {
-    send(p, { t: "start", in: Math.max(0, room.startedAt - Date.now()), toWin: TO_WIN, timeLimit: TIME_LIMIT - Math.max(0, Date.now() - room.startedAt), late: true });
-    // who's already running around (they spawned before you got here)
-    for (const id of room.players) {
-      const o = players.get(id);
-      if (o !== p && o.alive && o.pos) send(p, { t: "spawn", id: o.id, x: o.pos[0], z: o.pos[2], yaw: o.yaw || 0 });
-    }
+  // what's going on in here right now
+  const now = Date.now();
+  const M = MODES[room.mode] || MODES.respawn;
+  if (room.state === "warmup") send(p, { t: "warmup" });
+  else if (room.state === "live") {
+    send(p, { t: "start", in: Math.max(0, room.startedAt - now), mode: room.mode, map: room.map, toWin: M.toWin, timeLimit: M.timeLimit ? M.timeLimit - Math.max(0, now - room.startedAt) : 0, late: true, round: room.round });
+  } else if (room.state === "intermission") {
+    send(p, { t: "over", winner: null, scores: scores(room), mode: room.mode, late: true });
+    send(p, { t: "intermission", in: Math.max(0, room.voteEnds - now), modes: Object.values(MODES).map((m) => ({ id: m.id, name: m.name, desc: m.desc })), maps: Object.values(MAPS).map((m) => ({ id: m.id, name: m.name })) });
+    send(p, Object.assign({ t: "votes" }, voteCounts(room)));
   }
-}
-
-function startMatch(room) {
-  room.state = "live";
-  room.startedAt = Date.now() + COUNTDOWN_MS;
+  // who's already running around (they spawned before you got here)
   for (const id of room.players) {
-    const p = players.get(id);
-    p.score = 0; p.deaths = 0; p.hp = 100; p.alive = false; p.diedAt = 0;
-    p.lastAk = 0; p.lastKnife = 0;
+    const o = players.get(id);
+    if (o !== p && o.alive && o.pos) send(p, { t: "spawn", id: o.id, x: o.pos[0], z: o.pos[2], yaw: o.yaw || 0 });
   }
-  broadcast(room, { t: "start", in: COUNTDOWN_MS, toWin: TO_WIN, timeLimit: TIME_LIMIT });
-  clearTimeout(room.timer);
-  room.timer = setTimeout(() => endMatch(room), COUNTDOWN_MS + TIME_LIMIT);
-  roomChanged(room);
-}
-
-function endMatch(room) {
-  if (room.state !== "live") return;
-  clearTimeout(room.timer);
-  room.state = "over";
-  let winner = null, best = -1;
-  for (const id of room.players) { const p = players.get(id); if (p.score > best) { best = p.score; winner = id; } }
-  broadcast(room, { t: "over", winner, scores: scores(room) });
-  roomChanged(room);
+  maybeStart(room);
 }
 
 function doSpawn(p, sp) {
   const room = p.room && rooms.get(p.room);
-  if (!room || room.state !== "live" || p.alive) return;
+  if (!room || p.alive) return;
+  if (room.state !== "live" && room.state !== "warmup") return;
   p.alive = true; p.hp = 100;
   p.pos = [sp.x, 0, sp.z];
   p.yaw = sp.yaw;
@@ -212,7 +331,7 @@ function onMessage(p, msg) {
   const room = p.room ? rooms.get(p.room) : null;
   switch (msg.t) {
     case "hello": {
-      if (msg.v !== VERSION) return send(p, { t: "err", msg: "Your Mii Hub and this server are different versions. Update Mii Hub (and the server) and try again." });
+      if (msg.v !== VERSION) return send(p, { t: "err", msg: "Your Mii Hub and this server are different versions. Update Mii Hub and try again." });
       p.name = clean(msg.name, 20) || "Mii";
       p.color = isColor(msg.color) ? msg.color.toLowerCase() : "#ff3fa4";
       const mii = msg.mii || {};
@@ -222,7 +341,7 @@ function onMessage(p, msg) {
         p.mii = { kind: "demo", look: mii.look && typeof mii.look === "object" ? mii.look : {} };
       }
       p.ready = true;
-      send(p, { t: "welcome", id: p.id, v: VERSION, maxPlayers: MAX_PLAYERS });
+      send(p, { t: "welcome", id: p.id, v: VERSION, maxPlayers: MAX_PLAYERS, name: SERVER_NAME, online: players.size });
       sendRoomList(p);
       break;
     }
@@ -235,8 +354,8 @@ function onMessage(p, msg) {
       const salt = crypto.randomBytes(8).toString("hex");
       const max = Math.max(2, Math.min(MAX_PLAYERS, Math.round(num(msg.max)) || MAX_PLAYERS));
       const r = {
-        id, name: clean(msg.name, 32) || p.name + "'s lobby", host: p.id, players: [], state: "lobby", timer: null, startedAt: 0,
-        max, salt, pass: pw ? hashPass(salt, pw) : null,
+        id, name: clean(msg.name, 32) || p.name + "'s lobby", host: p.id, players: [], state: "warmup", timer: null, roundTimer: null, startedAt: 0,
+        max, salt, pass: pw ? hashPass(salt, pw) : null, mode: "respawn", map: "shipment", votes: new Map(), round: 0,
       };
       rooms.set(id, r);
       joinRoom(p, r);
@@ -259,10 +378,13 @@ function onMessage(p, msg) {
       break;
     }
     case "leave": leaveRoom(p); break;
-    case "start": {
-      if (!room || room.host !== p.id) return;
-      if (room.players.length < 2) return send(p, { t: "err", msg: "You need at least 2 players to start." });
-      startMatch(room);
+    case "vote": {
+      if (!room || room.state !== "intermission") return;
+      const v = room.votes.get(p.id) || {};
+      if (MODES[msg.mode]) v.mode = msg.mode;
+      if (MAPS[msg.map]) v.map = msg.map;
+      room.votes.set(p.id, v);
+      broadcast(room, Object.assign({ t: "votes" }, voteCounts(room)));
       break;
     }
     case "st": {
@@ -276,7 +398,7 @@ function onMessage(p, msg) {
       break;
     }
     case "shot": {
-      if (!room || room.state !== "live" || !p.alive) return;
+      if (!room || (room.state !== "live" && room.state !== "warmup") || !p.alive) return;
       if (!Array.isArray(msg.o) || !Array.isArray(msg.e)) return;
       broadcast(room, { t: "shot", id: p.id, o: msg.o.slice(0, 3).map(num), e: msg.e.slice(0, 3).map(num), n: Array.isArray(msg.n) ? msg.n.slice(0, 3).map(num) : null, m: clean(msg.m, 10) }, p.id);
       break;
@@ -288,6 +410,7 @@ function onMessage(p, msg) {
     }
     case "hit": {
       if (!room || room.state !== "live" || !p.alive || now < room.startedAt) return;
+      if (room.mode === "rounds" && (now < room.roundLiveAt || room.roundOver)) return;
       const v = players.get(msg.v);
       if (!v || v.room !== room.id || v === p || !v.alive) return;
       if (!validHit(p, v, msg, now)) return;
@@ -296,19 +419,27 @@ function onMessage(p, msg) {
       broadcast(room, { t: "dmg", v: v.id, by: p.id, d, z: msg.z, hp: v.hp, w: msg.w });
       if (v.hp <= 0) {
         v.alive = false; v.diedAt = now; v.deaths++;
-        p.score++;
+        if (room.mode === "respawn") p.score++;
         broadcast(room, { t: "kill", v: v.id, by: p.id, w: msg.w, h: msg.z === "head" ? 1 : 0, b: msg.b ? 1 : 0, scores: scores(room) });
         roomChanged(room);
-        if (p.score >= TO_WIN) endMatch(room);
+        if (room.mode === "respawn" && p.score >= TO_WIN) endMatch(room);
+        else checkRound(room);
       }
       break;
     }
     case "spawn": {
-      if (!room || room.state !== "live" || p.alive) return;
-      // a bit early (lag)? let them in as soon as it's allowed
-      const wait = Math.max(p.diedAt ? p.diedAt + RESPAWN_MS * 0.85 - now : 0, room.startedAt - 250 - now);
+      if (!room || p.alive) return;
       const sp = { x: num(msg.x), z: num(msg.z), yaw: num(msg.yaw) };
       clearTimeout(p.spawnTimer);
+      if (room.state === "warmup") return doSpawn(p, sp); // running around freely
+      if (room.state !== "live") return;
+      if (room.mode === "rounds") {
+        // you come in at the start of a round (people who joined mid-round watch until the next)
+        if (p.inRound && !room.roundOver && !p.diedAt && now < room.roundLiveAt + 3000) doSpawn(p, sp);
+        return;
+      }
+      // a bit early (lag)? let them in as soon as it's allowed
+      const wait = Math.max(p.diedAt ? p.diedAt + RESPAWN_MS * 0.85 - now : 0, room.startedAt - 250 - now);
       if (wait > 0) p.spawnTimer = setTimeout(() => doSpawn(p, sp), wait);
       else doSpawn(p, sp);
       break;
@@ -323,7 +454,7 @@ function onMessage(p, msg) {
 const server = http.createServer((req, res) => {
   // open http://<this computer>:8787 in a browser to check it's running
   res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" });
-  res.end("Mii Hub Paintball server is running.\n" + players.size + " player(s) online, " + rooms.size + " room(s).\n");
+  res.end(SERVER_NAME + " (Mii Hub Paintball) is running.\n" + players.size + " player(s) online, " + rooms.size + " room(s).\n");
 });
 const wss = new WebSocketServer({ server, maxPayload: MAX_MII_BYTES * 1.4 + 4096 });
 
