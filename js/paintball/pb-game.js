@@ -641,6 +641,7 @@
       f.snaps = [];
       f.portrait = p.rec ? this.opts.portraitFor(p.rec) : "";
       this.byNet.set(p.id, f);
+      if (p.spawn) { f.mover.place(p.spawn.x, p.spawn.z); f.yaw = p.spawn.yaw || 0; f.alive = true; } // already playing (you joined late)
       if (p.tpl) this.makeAvatar(f, p.tpl, p.look || {}, p.rec);
       if (this.hudBoard) this.updateScore();
       return f;

@@ -105,6 +105,7 @@
     const st = {
       net: null, status: "", statusCls: "", connecting: false,
       rooms: [], room: null, roster: new Map(), loading: new Map(), starting: false,
+      spawned: new Map(), // who's alive in the match and where they came in (for joining late)
     };
     let container = null;
     const rerender = () => { if (container && !ctx.inMatch()) render(container); };
@@ -167,7 +168,9 @@
           });
         },
         bye: (m) => { st.roster.delete(m.id); st.loading.delete(m.id); rerender(); },
-        start: (m) => startMatch(m),
+        start: (m) => { if (!m.late) st.spawned.clear(); startMatch(m); },
+        spawn: (m) => st.spawned.set(m.id, m),
+        kill: (m) => st.spawned.delete(m.v),
         close: () => {
           st.net = null; st.room = null; st.rooms = []; st.roster.clear(); st.loading.clear();
           setStatus("Disconnected from the server.", "err");
@@ -201,6 +204,7 @@
         // the server gives everyone in the room their own paint colour
         const colorOf = (id) => { const p = room && room.players.find((x) => x.id === id); return p && p.color; };
         for (const e of entries) if (e && colorOf(e.id)) e.color = colorOf(e.id);
+        for (const e of entries) if (e) e.spawn = m.late ? st.spawned.get(e.id) : null;
         const waited = performance.now() - t0;
         await ctx.startOnline({
           youColor: colorOf(st.net.id),

@@ -108,6 +108,7 @@ function leaveRoom(p) {
   broadcast(room, { t: "bye", id: p.id });
   if (!room.players.length) { clearTimeout(room.timer); rooms.delete(room.id); }
   else {
+    clearTimeout(p.spawnTimer);
     if (room.host === p.id) room.host = room.players[0];
     // only one player left in a match: it's over
     if (room.state === "live" && room.players.length < 2) endMatch(room);
@@ -134,7 +135,14 @@ function joinRoom(p, room) {
     send(p, { t: "mii", id: o.id, name: o.name, color: o.color, mii: o.mii });
   }
   roomChanged(room);
-  if (room.state === "live") send(p, { t: "start", in: 0, toWin: TO_WIN, timeLimit: TIME_LIMIT - (Date.now() - room.startedAt), late: true });
+  if (room.state === "live") {
+    send(p, { t: "start", in: Math.max(0, room.startedAt - Date.now()), toWin: TO_WIN, timeLimit: TIME_LIMIT - Math.max(0, Date.now() - room.startedAt), late: true });
+    // who's already running around (they spawned before you got here)
+    for (const id of room.players) {
+      const o = players.get(id);
+      if (o !== p && o.alive && o.pos) send(p, { t: "spawn", id: o.id, x: o.pos[0], z: o.pos[2], yaw: o.yaw || 0 });
+    }
+  }
 }
 
 function startMatch(room) {
@@ -159,6 +167,15 @@ function endMatch(room) {
   for (const id of room.players) { const p = players.get(id); if (p.score > best) { best = p.score; winner = id; } }
   broadcast(room, { t: "over", winner, scores: scores(room) });
   roomChanged(room);
+}
+
+function doSpawn(p, sp) {
+  const room = p.room && rooms.get(p.room);
+  if (!room || room.state !== "live" || p.alive) return;
+  p.alive = true; p.hp = 100;
+  p.pos = [sp.x, 0, sp.z];
+  p.yaw = sp.yaw;
+  broadcast(room, { t: "spawn", id: p.id, x: sp.x, z: sp.z, yaw: sp.yaw });
 }
 
 // Is this hit believable? (stops someone with a modified game from cheating)
@@ -229,6 +246,7 @@ function onMessage(p, msg) {
       p.lastSt = now;
       const s = msg.s.map(num);
       p.pos = [s[0], s[1], s[2]];
+      p.yaw = s[5];
       broadcast(room, { t: "st", id: p.id, s }, p.id);
       break;
     }
@@ -262,11 +280,12 @@ function onMessage(p, msg) {
     }
     case "spawn": {
       if (!room || room.state !== "live" || p.alive) return;
-      if (p.diedAt && now - p.diedAt < RESPAWN_MS * 0.85) return; // too early (a little slack for lag)
-      if (now < room.startedAt - 250) return;
-      p.alive = true; p.hp = 100;
-      p.pos = [num(msg.x), 0, num(msg.z)];
-      broadcast(room, { t: "spawn", id: p.id, x: num(msg.x), z: num(msg.z), yaw: num(msg.yaw) });
+      // a bit early (lag)? let them in as soon as it's allowed
+      const wait = Math.max(p.diedAt ? p.diedAt + RESPAWN_MS * 0.85 - now : 0, room.startedAt - 250 - now);
+      const sp = { x: num(msg.x), z: num(msg.z), yaw: num(msg.yaw) };
+      clearTimeout(p.spawnTimer);
+      if (wait > 0) p.spawnTimer = setTimeout(() => doSpawn(p, sp), wait);
+      else doSpawn(p, sp);
       break;
     }
     case "ping": send(p, { t: "pong", c: num(msg.c), s: now }); break;

@@ -86,11 +86,9 @@ function client(port) {
   // respawning too early is refused, on time is fine
   b.send({ t: "spawn", x: 5, z: 5, yaw: 0 });
   await wait(30);
-  assert.strictEqual(a.all("spawn").length, 2, "too early");
+  assert.strictEqual(a.all("spawn").length, 2, "too early: not yet");
   await wait(320);
-  b.send({ t: "spawn", x: 5, z: 5, yaw: 0 });
-  await wait(40);
-  assert.strictEqual(a.all("spawn").length, 3, "respawned");
+  assert.strictEqual(a.all("spawn").length, 3, "...but let in when it's allowed");
 
   // first to 20 wins
   for (let i = 1; i < 20; i++) {
@@ -102,6 +100,23 @@ function client(port) {
   await wait(80);
   const over = a.last("over");
   assert(over && over.winner === aId && over.scores[aId] === 20, "A wins at 20");
+
+  // someone joining mid-match is told who's already playing
+  a.send({ t: "start" });
+  await wait(120);
+  a.send({ t: "spawn", x: 1, z: 2, yaw: 0 });
+  a.send({ t: "st", s: [3, 0, 4, 0, 0, 1.5, 0, 0, 9] });
+  await wait(60);
+  const d = await client(port);
+  d.send({ t: "hello", v: 1, name: "Dee", color: "#00ff00", mii: { kind: "demo" } });
+  await wait(50);
+  d.send({ t: "join", room: roomId });
+  await wait(100);
+  assert(d.last("start") && d.last("start").late, "late start");
+  const sp = d.all("spawn").find((m) => m.id === aId);
+  assert(sp && sp.x === 3 && sp.z === 4 && sp.yaw === 1.5, "late joiner sees who's alive");
+  d.ws.close();
+  await wait(50);
 
   // leaving
   b.ws.close();
