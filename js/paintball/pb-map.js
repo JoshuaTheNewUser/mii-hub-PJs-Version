@@ -32,6 +32,7 @@
   function cl(v) { return v < 0 ? 0 : v > 255 ? 255 : Math.round(v); }
   function rgb(a, k) { k = k == null ? 1 : k; return 'rgb(' + cl(a[0] * k) + ',' + cl(a[1] * k) + ',' + cl(a[2] * k) + ')'; }
   function rgba(a, al, k) { k = k == null ? 1 : k; return 'rgba(' + cl(a[0] * k) + ',' + cl(a[1] * k) + ',' + cl(a[2] * k) + ',' + al + ')'; }
+  var CTX_OPTS = { willReadFrequently: true }; // CPU-backed canvases: much faster for procedural drawing + readback
   function mkCanvas(w, h) { var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
   function linCol(a, k) { // sRGB 0..255 triple -> linear THREE.Color (for vertex colours)
     k = k == null ? 1 : k;
@@ -50,7 +51,7 @@
   }
   // soft value-noise blotches (overlay/multiply) - small random canvas scaled up with smoothing
   function blotch(ctx, x, y, w, h, gw, gh, rnd, alpha, mode, range) {
-    var s = mkCanvas(gw, gh), sc = s.getContext('2d'), img = sc.createImageData(gw, gh), d = img.data, i, g;
+    var s = mkCanvas(gw, gh), sc = s.getContext('2d', CTX_OPTS), img = sc.createImageData(gw, gh), d = img.data, i, g;
     range = range == null ? 120 : range;
     for (i = 0; i < d.length; i += 4) { g = 128 + (rnd() - 0.5) * 2 * range; d[i] = d[i + 1] = d[i + 2] = g; d[i + 3] = 255; }
     sc.putImageData(img, 0, 0);
@@ -92,6 +93,15 @@
       ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.cos(a) * l, sy + Math.sin(a) * l); ctx.stroke();
     }
   }
+  function dusty(ctx, x, y, w, h, amt) { // desaturate + kicked-up dust from the ground
+    ctx.save();
+    ctx.globalCompositeOperation = 'saturation'; ctx.fillStyle = 'rgba(128,128,128,' + (0.22 * amt) + ')'; ctx.fillRect(x, y, w, h);
+    ctx.globalCompositeOperation = 'source-over';
+    var g = ctx.createLinearGradient(0, y + h * 0.55, 0, y + h);
+    g.addColorStop(0, 'rgba(150,134,110,0)'); g.addColorStop(1, 'rgba(150,134,110,' + (0.3 * amt) + ')');
+    ctx.fillStyle = g; ctx.fillRect(x, y + h * 0.55, w, h * 0.45);
+    ctx.restore();
+  }
   function grime(ctx, x, y, w, h, frac, alpha) {
     var g = ctx.createLinearGradient(0, y + h * (1 - frac), 0, y + h);
     g.addColorStop(0, 'rgba(48,38,28,0)'); g.addColorStop(1, 'rgba(48,38,28,' + alpha + ')');
@@ -116,8 +126,8 @@
     }
   }
   function heightToNormal(hc, strength) {
-    var w = hc.width, h = hc.height, src = hc.getContext('2d').getImageData(0, 0, w, h).data;
-    var out = mkCanvas(w, h), oc = out.getContext('2d'), img = oc.createImageData(w, h), d = img.data;
+    var w = hc.width, h = hc.height, src = hc.getContext('2d', CTX_OPTS).getImageData(0, 0, w, h).data;
+    var out = mkCanvas(w, h), oc = out.getContext('2d', CTX_OPTS), img = oc.createImageData(w, h), d = img.data;
     for (var y = 0; y < h; y++) {
       var y0 = y > 0 ? y - 1 : y, y1 = y < h - 1 ? y + 1 : y;
       for (var x = 0; x < w; x++) {
@@ -141,12 +151,12 @@
 
   // ---------------------------------------------------------------- palette
   var PAINTS = [
-    { base: [118, 44, 33] },              // oxide red
-    { base: [38, 60, 92] },               // navy
-    { base: [42, 86, 76] },               // teal green
-    { base: [158, 86, 36] },              // dull orange
-    { base: [102, 106, 106] },            // grey
-    { base: [168, 160, 140], dark: true } // dirty cream
+    { base: [112, 48, 38] },              // oxide red
+    { base: [44, 62, 86] },               // navy
+    { base: [50, 82, 72] },               // teal green
+    { base: [148, 88, 46] },              // dull orange
+    { base: [98, 100, 98] },              // grey
+    { base: [156, 148, 130], dark: true } // dirty cream
   ];
   var VARIANTS = [
     { p: 0, brand: 'KORVAX', code: 'KRVU', logo: 0 },
@@ -187,7 +197,7 @@
   function codeNum(rnd, pre) { var s = pre + ' '; for (var i = 0; i < 6; i++) s += (rnd() * 10) | 0; return s + ' ' + ((rnd() * 10) | 0); }
 
   function buildAtlasA(rnd) {
-    var S = 1024, c = mkCanvas(S, S), ctx = c.getContext('2d'), hc = mkCanvas(S, S), hx = hc.getContext('2d');
+    var S = 1024, c = mkCanvas(S, S), ctx = c.getContext('2d', CTX_OPTS), hc = mkCanvas(S, S), hx = hc.getContext('2d', CTX_OPTS);
     var W = 512, H = 256, P = W / 26;
     for (var i = 0; i < 8; i++) {
       var V = VARIANTS[i], base = PAINTS[V.p].base, ox = (i % 2) * W, oy = (i >> 1) * H;
@@ -233,6 +243,7 @@
         ctx.fillStyle = g; ctx.fillRect(dx - dr, dy - dr, dr * 2, dr * 2);
       }
       grime(ctx, ox, oy, W, H, 0.45, 0.5);
+      dusty(ctx, ox, oy, W, H, 1);
       ctx.fillStyle = 'rgba(20,18,16,0.15)'; ctx.fillRect(ox, oy, W, 4);
       ctx.restore();
       grain(ctx, ox, oy, W, H, 16, rnd, 6);
@@ -247,7 +258,7 @@
   // Atlas B (1024): 4x4 cells of 256. door 0..7 (rows 0,1), front 0..5 (row 2, row 3 col 0-1), interior (2,3), interior2 (3,3)
   function cellB(col, row) { return [col * 256, row * 256]; }
   function buildAtlasB(rnd) {
-    var S = 1024, c = mkCanvas(S, S), ctx = c.getContext('2d'), hc = mkCanvas(S, S), hx = hc.getContext('2d');
+    var S = 1024, c = mkCanvas(S, S), ctx = c.getContext('2d', CTX_OPTS), hc = mkCanvas(S, S), hx = hc.getContext('2d', CTX_OPTS);
     var i, x, ox, oy, base, P;
     function hfill(v, x0, y0, w, h) { hx.fillStyle = 'rgb(' + v + ',' + v + ',' + v + ')'; hx.fillRect(x0, y0, w, h); }
     // doors
@@ -294,6 +305,7 @@
       rustPatches(ctx, ox, oy, 256, 24, 14, rnd, 0, 3);
       scratches(ctx, ox, oy, 256, 256, 60, rnd);
       grime(ctx, ox, oy, 256, 256, 0.4, 0.5);
+      dusty(ctx, ox, oy, 256, 256, 1);
       ctx.restore();
       grain(ctx, ox, oy, 256, 256, 16, rnd, 6);
       hfill(150, ox, oy, 256, 256);
@@ -319,6 +331,7 @@
       rustPatches(ctx, ox, oy, 256, 256, 40, rnd, 0.4, 4);
       scratches(ctx, ox, oy, 256, 256, 50, rnd);
       grime(ctx, ox, oy, 256, 256, 0.4, 0.45);
+      dusty(ctx, ox, oy, 256, 256, 1);
       ctx.restore();
       grain(ctx, ox, oy, 256, 256, 16, rnd, 6);
       for (x = 0; x < 256; x++) hfill(x < 16 || x >= 240 ? 210 : cl(60 + prof(((x - 16) % P) / P) * 120), ox + x, oy, 1, 256);
@@ -345,7 +358,7 @@
 
   // wood / cargo atlas (512)
   function buildWood(rnd) {
-    var c = mkCanvas(512, 512), ctx = c.getContext('2d');
+    var c = mkCanvas(512, 512), ctx = c.getContext('2d', CTX_OPTS);
     function planks(ox, oy, w, h, n, horiz, col, varr) {
       var sz = (horiz ? h : w) / n;
       for (var k = 0; k < n; k++) {
@@ -393,7 +406,7 @@
     // pallet planks
     planks(0, 256, 256, 128, 4, true, [140, 116, 80], 30);
     // container floor (oily hardwood)
-    planks(0, 384, 256, 128, 8, false, [86, 58, 38], 22);
+    planks(0, 384, 256, 128, 8, false, [78, 58, 42], 10);
     blotch(ctx, 0, 384, 256, 128, 6, 3, rnd, 0.5, 'multiply', 120);
     // cardboard
     ctx.fillStyle = '#9a7a52'; ctx.fillRect(256, 256, 128, 128);
@@ -414,7 +427,7 @@
 
   // generic grime texture for misc steel (tiles, used with vertex colours)
   function buildGrime(rnd) {
-    var c = mkCanvas(256, 256), ctx = c.getContext('2d');
+    var c = mkCanvas(256, 256), ctx = c.getContext('2d', CTX_OPTS);
     ctx.fillStyle = '#d8d8d8'; ctx.fillRect(0, 0, 256, 256);
     blotch(ctx, 0, 0, 256, 256, 4, 4, rnd, 0.5, 'overlay', 90);
     blotch(ctx, 0, 0, 256, 256, 16, 16, rnd, 0.4, 'overlay', 110);
@@ -426,7 +439,7 @@
   }
 
   function buildDrumTex(rnd, base, label) {
-    var c = mkCanvas(256, 256), ctx = c.getContext('2d');
+    var c = mkCanvas(256, 256), ctx = c.getContext('2d', CTX_OPTS);
     // side: canvas y 0..192 (v 0.25..1, top of drum at canvas top)
     ctx.fillStyle = rgb(base); ctx.fillRect(0, 0, 256, 192);
     blotch(ctx, 0, 0, 256, 192, 8, 4, rnd, 0.4, 'overlay', 100);
@@ -451,7 +464,7 @@
   }
 
   function buildSky(rnd, horizon) {
-    var c = mkCanvas(1024, 256), ctx = c.getContext('2d');
+    var c = mkCanvas(1024, 256), ctx = c.getContext('2d', CTX_OPTS);
     var g = ctx.createLinearGradient(0, 0, 0, 256);
     g.addColorStop(0, '#2b333e'); g.addColorStop(0.25, '#424b56'); g.addColorStop(0.42, '#69707a');
     g.addColorStop(0.5, horizon); g.addColorStop(1, horizon);
@@ -474,7 +487,7 @@
   function buildEnvCube(horizon) {
     var faces = [];
     for (var f = 0; f < 6; f++) {
-      var c = mkCanvas(32, 32), ctx = c.getContext('2d');
+      var c = mkCanvas(32, 32), ctx = c.getContext('2d', CTX_OPTS);
       if (f === 2) { ctx.fillStyle = '#4a5562'; ctx.fillRect(0, 0, 32, 32); }
       else if (f === 3) { ctx.fillStyle = '#3c3933'; ctx.fillRect(0, 0, 32, 32); }
       else {
@@ -553,6 +566,7 @@
   function build(opts) {
     opts = opts || {};
     var rnd = makeRng(opts.seed || 1337);
+    var _t0 = performance.now(), PROF = opts.profile ? function (l) { console.log('[pbmap] ' + l + ' ' + (performance.now() - _t0).toFixed(0) + 'ms'); } : function () {};
     var disposables = [];
     var group = new THREE.Group(); group.name = 'PBMap-Shipment';
     var boxes = [], cyls = [];
@@ -566,10 +580,10 @@
       if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; }
       disposables.push(t); return t;
     }
-    var atlasA = buildAtlasA(rnd), atlasB = buildAtlasB(rnd);
+    var atlasA = buildAtlasA(rnd); PROF('atlasA'); var atlasB = buildAtlasB(rnd); PROF('atlasB');
     var tA = tex(atlasA.map, true), tAn = tex(atlasA.normal, false), tB = tex(atlasB.map, true), tBn = tex(atlasB.normal, false);
     var tW = tex(buildWood(rnd), true), tG = tex(buildGrime(rnd), true, true);
-    var FOG_HEX = '#767b7e';
+    PROF('wood+grime'); var FOG_HEX = '#767b7e';
     var envCube = buildEnvCube(FOG_HEX); disposables.push(envCube);
 
     var UV_SIDE = [], UV_DOOR = [], UV_FRONT = [], i;
@@ -600,7 +614,7 @@
       if (!c.open) {
         gA.box(M, 0, H / 2, 0, CW, H, CL, { px: side, nx: side2 }, null);
         gB.box(M, 0, H / 2, 0, CW, H, CL, { pz: UV_DOOR[c.v], nz: UV_FRONT[V.p], py: roof }, null);
-        if (!c.noColl) coll(c.x, c.z, HW + 0.01, HL + 0.01, c.rot, y, y + H, 'metal');
+        if (!c.noColl) coll(c.x, c.z, HW, HL, c.rot, y, y + H, 'metal');
         if (c.trim !== false) trim(M, H, paint, dark, true, true);
         if (c.rods) rods(M, H, paint, P.base);
         if (!y) footprints.push({ x: c.x, z: c.z, hw: HW, hd: HL, rot: c.rot, s: 1 });
@@ -621,7 +635,7 @@
       coll(c.x, c.z, HW - 0.05, HL - 0.05, c.rot, y, y + 0.08, 'wood');
       trim(M, H, paint, dark, false, false);
       [-1, 1].forEach(function (sx) {
-        [-1, 1].forEach(function (sz) { p = toWorld(f, sx * (HW - 0.08), sz * (HL - 0.08)); coll(p[0], p[1], 0.085, 0.085, c.rot, y, y + H, 'metal'); });
+        [-1, 1].forEach(function (sz) { p = toWorld(f, sx * (HW - 0.085), sz * (HL - 0.085)); coll(p[0], p[1], 0.075, 0.075, c.rot, y, y + H, 'metal'); });
       });
       [-1, 1].forEach(function (sz) {
         p = toWorld(f, 0, sz * (HL - 0.08));
@@ -748,8 +762,8 @@
     for (k = 0; k < 14; k++) {
       var zc = -17 + 1.214 + 2.428 * k;
       // east wall: doors facing inward (-x)
-      stack(15.9 + HL, zc, -PI / 2, heightsEW[k], k, HW, HL, { rods: true, outward: [1, 0] });
-      stack(-15.9 - HL, zc, PI / 2, heightsEW[13 - k], k + 5, HW, HL, { rods: true, outward: [-1, 0] });
+      stack(15.9 + HL, zc, -PI / 2, heightsEW[k], k, 1.214, HL, { rods: true, outward: [1, 0] });
+      stack(-15.9 - HL, zc, PI / 2, heightsEW[13 - k], k + 5, 1.214, HL, { rods: true, outward: [-1, 0] });
     }
     var heightsNS = [3, 2, 2, 3, 2, 2, 3];
     for (k = 0; k < 7; k++) {
@@ -787,7 +801,7 @@
     crate(-12.6, -13.68, 2.08, 1.39, 1.0, D(-13), 0, 'B'); q = off(-12.6, -13.68, D(-13), -0.42, 0.05); crate(q[0], q[1], 0.95, 0.9, 0.8, D(-13) + 0.12, 1.0, 'A');
     crate(-8.79, -13.55, 1.39, 1.47, 1.25, 0, 0, 'A');
     crate(-13.9, -9.53, 1.39, 2.42, 1.1, D(-15), 0, 'B'); q = off(-13.9, -9.53, D(-15), 0.05, -0.55); crate(q[0], q[1], 1.1, 1.0, 0.9, D(-15) - 0.1, 1.1, 'A');
-    crate(2.9, -16.11, 1.04, 0.78, 0.9, D(30), 0, 'A');
+    crate(3.2, -16.05, 1.04, 0.78, 0.9, D(30), 0, 'A');
     q = off(12.25, -12.56, D(28), -0.83, 0); crate(q[0], q[1], 1.6, 1.56, 1.2, D(28), 0, 'A');
     q = off(12.25, -12.56, D(28), 0.86, 0); crate(q[0], q[1], 1.55, 1.5, 1.0, D(28), 0, 'B'); crate(q[0], q[1], 1.1, 1.1, 0.9, D(28) + 0.2, 1.0, 'A');
     crate(12.56, -8.62, 1.47, 1.47, 1.3, 0, 0, 'B');
@@ -929,6 +943,7 @@
       gM.box(M, 1.5, 18.6, 0, 3.2, 1.6, 3.2, ALL, linCol([200, 196, 188]));
     })();
 
+    PROF('layout');
     // ---- drums (instanced) -----------------------------------------
     var DRUMS = [[-15.54, -16.37], [-5.85, -8.57], [-5.85, -7.88], [5.93, -7.88], [6.45, -3.29], [6.54, -13.51], [6.97, -12.9], [7.49, -12.64],
       [8.27, -12.56], [15.2, -16.45], [-5.59, 7.45], [-5.59, 7.88], [-12.86, 10.65], [-12.6, 11.34], [-8.7, 12.73], [-7.92, 12.73], [-8.36, 13.42],
@@ -945,22 +960,25 @@
       else { var ox = b.hw - Math.abs(lx), oz = b.hd - Math.abs(lz); if (ox < oz) { px = (lx < 0 ? -1 : 1) * (ox + r); pz = 0; } else { px = 0; pz = (lz < 0 ? -1 : 1) * (oz + r); } }
       return [px * c + pz * s, -px * s + pz * c];
     }
-    var drumPos = DRUMS.map(function (d) {
-      var x = d[0], z = d[1];
-      for (var it = 0; it < 8; it++) {
-        var moved = false;
-        boxes.forEach(function (b) { var p = circleBoxPen(x, z, DR + 0.03, b); if (p) { x += p[0]; z += p[1]; moved = true; } });
-        x = Math.max(BOUNDS.minX + DR + 0.03, Math.min(BOUNDS.maxX - DR - 0.03, x)); z = Math.max(BOUNDS.minZ + DR + 0.03, Math.min(BOUNDS.maxZ - DR - 0.03, z));
-        if (!moved) break;
-      }
-      return [x, z];
-    });
-    for (var it2 = 0; it2 < 6; it2++) { // drum-drum separation
-      for (var a = 0; a < drumPos.length; a++) for (var b2 = a + 1; b2 < drumPos.length; b2++) {
+    var drumPos = DRUMS.map(function (d) { return [d[0], d[1]]; });
+    function nudgeDrums() {
+      drumPos.forEach(function (d) {
+        for (var it = 0; it < 8; it++) {
+          var moved = false;
+          boxes.forEach(function (b) { var p = circleBoxPen(d[0], d[1], DR + 0.03, b); if (p) { d[0] += p[0]; d[1] += p[1]; moved = true; } });
+          d[0] = Math.max(BOUNDS.minX + DR + 0.03, Math.min(BOUNDS.maxX - DR - 0.03, d[0])); d[1] = Math.max(BOUNDS.minZ + DR + 0.03, Math.min(BOUNDS.maxZ - DR - 0.03, d[1]));
+          if (!moved) break;
+        }
+      });
+    }
+    for (var round = 0; round < 6; round++) {
+      nudgeDrums();
+      for (var a = 0; a < drumPos.length; a++) for (var b2 = a + 1; b2 < drumPos.length; b2++) { // drum-drum separation
         var dx = drumPos[b2][0] - drumPos[a][0], dz = drumPos[b2][1] - drumPos[a][1], dd = Math.hypot(dx, dz), mn = DR * 2 + 0.04;
         if (dd < mn && dd > 1e-6) { var pu = (mn - dd) / 2 / dd; drumPos[a][0] -= dx * pu; drumPos[a][1] -= dz * pu; drumPos[b2][0] += dx * pu; drumPos[b2][1] += dz * pu; }
       }
     }
+    nudgeDrums();
     var drumGeo = (function () {
       var pts = [[0.282, 0], [0.3, 0.008], [0.3, 0.02], [0.295, 0.03], [0.295, 0.285], [0.307, 0.295], [0.307, 0.305], [0.295, 0.315], [0.295, 0.585], [0.307, 0.595], [0.307, 0.605], [0.295, 0.615],
         [0.295, 0.87], [0.3, 0.88], [0.3, 0.9], [0.285, 0.9], [0.283, 0.885]].map(function (p) { return new THREE.Vector2(p[0], p[1]); });
@@ -991,11 +1009,12 @@
       group.add(im);
     });
 
+    PROF('drums');
     // ---- ground ----------------------------------------------------
     var G = 1024, GS = 40, gk = G / GS;
     function gp(x, z) { return [(x + GS / 2) * gk, (z + GS / 2) * gk]; }
-    var gc = mkCanvas(G, G), gx = gc.getContext('2d'), rc = mkCanvas(512, 512), rx = rc.getContext('2d');
-    gx.fillStyle = '#5b5852'; gx.fillRect(0, 0, G, G);
+    var gc = mkCanvas(G, G), gx = gc.getContext('2d', CTX_OPTS), rc = mkCanvas(512, 512), rx = rc.getContext('2d', CTX_OPTS);
+    gx.fillStyle = '#4f4c46'; gx.fillRect(0, 0, G, G);
     blotch(gx, 0, 0, G, G, 5, 5, rnd, 0.45, 'overlay', 100);
     blotch(gx, 0, 0, G, G, 18, 18, rnd, 0.35, 'overlay', 110);
     blotch(gx, 0, 0, G, G, 70, 70, rnd, 0.25, 'overlay', 110);
@@ -1071,18 +1090,22 @@
         var rp = [ox / G * 512, oz / G * 512]; rx.fillStyle = 'rgba(150,150,150,' + a * 0.6 + ')'; rx.beginPath(); rx.arc(rp[0], rp[1], rr2 / 2, 0, 7); rx.fill();
       }
     }
-    for (var os = 0; os < 22; os++) stain((rnd() - 0.5) * 30, (rnd() - 0.5) * 32, 0.6 + rnd() * 1.2, 0.35 + rnd() * 0.3);
+    for (var os = 0; os < 34; os++) stain((rnd() - 0.5) * 30, (rnd() - 0.5) * 32, 0.6 + rnd() * 1.2, 0.35 + rnd() * 0.3);
     drumPos.forEach(function (p) { if (rnd() < 0.5) stain(p[0] + (rnd() - 0.5), p[1] + (rnd() - 0.5), 0.6, 0.4); });
     // puddles
     var PUDDLES = [[-7.6, -10.2, 1.6], [9.2, -5.6, 1.3], [0.2, 0.3, 1.1], [-8.4, 6.0, 1.5], [6.2, 10.3, 1.4], [-13.2, -5.2, 1.0], [13.4, -4.9, 0.9], [-5.4, 15.4, 1.0], [0.4, -9.6, 0.8], [12.6, 4.4, 0.9]];
+    var rim = mkCanvas(G, G), rimx = rim.getContext('2d', CTX_OPTS), pblobs = [];
     PUDDLES.forEach(function (pd) {
       var blobs = [];
       for (var j = 0; j < 7; j++) blobs.push([pd[0] + (rnd() - 0.5) * pd[2] * 1.4, pd[1] + (rnd() - 0.5) * pd[2] * 0.9, pd[2] * (0.35 + rnd() * 0.45), pd[2] * (0.2 + rnd() * 0.3), rnd() * PI]);
       // wet darkened rim
-      gx.save(); gx.filter = 'blur(' + (0.25 * gk) + 'px)';
-      gx.fillStyle = 'rgba(30,30,30,0.35)';
-      blobs.forEach(function (b) { var p = gp(b[0], b[1]); gx.beginPath(); gx.ellipse(p[0], p[1], (b[2] + 0.3) * gk, (b[3] + 0.3) * gk, b[4], 0, 7); gx.fill(); });
-      gx.restore();
+      rimx.fillStyle = 'rgba(30,30,30,0.35)';
+      blobs.forEach(function (b) { var p = gp(b[0], b[1]); rimx.beginPath(); rimx.ellipse(p[0], p[1], (b[2] + 0.3) * gk, (b[3] + 0.3) * gk, b[4], 0, 7); rimx.fill(); });
+      pblobs.push(blobs);
+    });
+    gx.save(); gx.filter = 'blur(' + (0.25 * gk) + 'px)'; gx.drawImage(rim, 0, 0); gx.restore();
+    PUDDLES.forEach(function (pd, pi) {
+      var blobs = pblobs[pi];
       gx.fillStyle = 'rgba(46,54,62,0.92)';
       blobs.forEach(function (b) { var p = gp(b[0], b[1]); gx.beginPath(); gx.ellipse(p[0], p[1], b[2] * gk, b[3] * gk, b[4], 0, 7); gx.fill(); });
       // sky sheen
@@ -1095,16 +1118,17 @@
     // gravel + debris
     for (var gv = 0; gv < 9000; gv++) { var l = rnd() < 0.5; gx.fillStyle = l ? 'rgba(170,160,145,' + (0.2 + rnd() * 0.3) + ')' : 'rgba(25,22,20,' + (0.2 + rnd() * 0.3) + ')'; gx.fillRect(rnd() * G, rnd() * G, 1 + rnd() * 1.5, 1 + rnd() * 1.5); }
     for (var db = 0; db < 60; db++) { gx.save(); gx.translate(rnd() * G, rnd() * G); gx.rotate(rnd() * 3); gx.fillStyle = rnd() < 0.5 ? 'rgba(180,172,150,0.5)' : 'rgba(110,80,50,0.5)'; gx.fillRect(0, 0, 3 + rnd() * 6, 2 + rnd() * 4); gx.restore(); }
-    // contact AO under everything that sits on the ground
-    gx.save(); gx.filter = 'blur(' + (0.35 * gk) + 'px)';
+    // contact AO under everything that sits on the ground (drawn sharp into a layer, blurred once)
+    var ao = mkCanvas(G, G), aox = ao.getContext('2d', CTX_OPTS);
     footprints.forEach(function (f) {
-      var p = gp(f.x, f.z); gx.fillStyle = 'rgba(12,10,8,' + (0.55 * f.s) + ')';
-      gx.save(); gx.translate(p[0], p[1]);
-      if (f.r) { gx.beginPath(); gx.arc(0, 0, (f.r + 0.12) * gk, 0, 7); gx.fill(); }
-      else { gx.rotate(-f.rot); gx.fillRect(-(f.hw + 0.12) * gk, -(f.hd + 0.12) * gk, (f.hw + 0.12) * 2 * gk, (f.hd + 0.12) * 2 * gk); }
-      gx.restore();
+      if (Math.abs(f.x) > GS / 2 + 4 || Math.abs(f.z) > GS / 2 + 4) return;
+      var p = gp(f.x, f.z); aox.fillStyle = 'rgba(12,10,8,' + (0.55 * f.s) + ')';
+      aox.save(); aox.translate(p[0], p[1]);
+      if (f.r) { aox.beginPath(); aox.arc(0, 0, (f.r + 0.12) * gk, 0, 7); aox.fill(); }
+      else { aox.rotate(-f.rot); aox.fillRect(-(f.hw + 0.12) * gk, -(f.hd + 0.12) * gk, (f.hw + 0.12) * 2 * gk, (f.hd + 0.12) * 2 * gk); }
+      aox.restore();
     });
-    gx.restore();
+    gx.save(); gx.filter = 'blur(' + (0.35 * gk) + 'px)'; gx.drawImage(ao, 0, 0); gx.restore();
     // warm light pools from the floodlights & wall lamps
     gx.save(); gx.globalCompositeOperation = 'lighter';
     [[-12.5, -13.5, 7], [12.5, -13.5, 7], [-12.5, 13.5, 7], [12.5, 13.5, 7]].concat(hanging.map(function (h) { return [h.x, h.z, 3.5]; })).forEach(function (lp) {
@@ -1115,13 +1139,13 @@
     grain(gx, 0, 0, G, G, 18, rnd, 5);
     // roughness: base mostly rough
     rx.save(); rx.globalCompositeOperation = 'destination-over'; rx.fillStyle = 'rgb(240,240,240)'; rx.fillRect(0, 0, 512, 512); rx.restore();
-    var tGround = tex(gc, true), tRough = tex(rc, false);
+    PROF('ground'); var tGround = tex(gc, true), tRough = tex(rc, false);
     var groundMat = new THREE.MeshStandardMaterial({ map: tGround, roughnessMap: tRough, roughness: 1, metalness: 0, envMap: envCube, envMapIntensity: 0.9 });
     var groundGeo = new THREE.PlaneGeometry(GS, GS); groundGeo.rotateX(-PI / 2);
     var ground = new THREE.Mesh(groundGeo, groundMat); ground.receiveShadow = true; ground.name = 'ground';
     group.add(ground); disposables.push(groundMat, groundGeo);
     // outer ground (tiled)
-    var oc = mkCanvas(256, 256), ocx = oc.getContext('2d');
+    var oc = mkCanvas(256, 256), ocx = oc.getContext('2d', CTX_OPTS);
     ocx.fillStyle = '#55524c'; ocx.fillRect(0, 0, 256, 256); blotch(ocx, 0, 0, 256, 256, 4, 4, rnd, 0.4, 'overlay', 100); grain(ocx, 0, 0, 256, 256, 20, rnd, 4);
     ocx.strokeStyle = 'rgba(30,28,26,0.3)'; ocx.strokeRect(0, 0, 256, 256);
     var tOut = tex(oc, true, true); tOut.repeat.set(40, 40);
@@ -1145,13 +1169,14 @@
     addMesh(gL, matL, false, 'lamps');
     rodGeo.dispose(); poleGeo.dispose();
 
+    PROF('meshes');
     // ---- sky dome ----------------------------------------------------
     var skyTex = tex(buildSky(rnd, FOG_HEX), true);
     var skyGeo = new THREE.SphereGeometry(95, 32, 16), skyMat = new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false });
     var sky = new THREE.Mesh(skyGeo, skyMat); sky.renderOrder = -10; sky.name = 'sky'; group.add(sky); disposables.push(skyGeo, skyMat);
 
     // ---- glows (one Points draw) ---------------------------------------
-    var glc = mkCanvas(64, 64), glx = glc.getContext('2d'), gr = glx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    var glc = mkCanvas(64, 64), glx = glc.getContext('2d', CTX_OPTS), gr = glx.createRadialGradient(32, 32, 0, 32, 32, 32);
     gr.addColorStop(0, 'rgba(255,240,210,1)'); gr.addColorStop(0.18, 'rgba(255,214,150,0.55)'); gr.addColorStop(0.5, 'rgba(255,190,120,0.12)'); gr.addColorStop(1, 'rgba(255,190,120,0)');
     glx.fillStyle = gr; glx.fillRect(0, 0, 64, 64);
     var tGlow = tex(glc, true);
@@ -1167,12 +1192,12 @@
     var NDUST = 450, dpos = new Float32Array(NDUST * 3), dseed = [];
     for (i = 0; i < NDUST; i++) { dpos[i * 3] = (rnd() - 0.5) * 31; dpos[i * 3 + 1] = rnd() * 6; dpos[i * 3 + 2] = (rnd() - 0.5) * 33; dseed.push(rnd() * 100); }
     var dustGeo = new THREE.BufferGeometry(); dustGeo.setAttribute('position', new THREE.BufferAttribute(dpos, 3));
-    var dc2 = mkCanvas(16, 16), dcx = dc2.getContext('2d'), dg = dcx.createRadialGradient(8, 8, 0, 8, 8, 8); dg.addColorStop(0, 'rgba(255,255,255,1)'); dg.addColorStop(1, 'rgba(255,255,255,0)'); dcx.fillStyle = dg; dcx.fillRect(0, 0, 16, 16);
+    var dc2 = mkCanvas(16, 16), dcx = dc2.getContext('2d', CTX_OPTS), dg = dcx.createRadialGradient(8, 8, 0, 8, 8, 8); dg.addColorStop(0, 'rgba(255,255,255,1)'); dg.addColorStop(1, 'rgba(255,255,255,0)'); dcx.fillStyle = dg; dcx.fillRect(0, 0, 16, 16);
     var dustMat = new THREE.PointsMaterial({ size: 0.035, map: tex(dc2, true), color: hexLin('#d9cdb8'), transparent: true, opacity: 0.45, depthWrite: false, sizeAttenuation: true });
     var dust = new THREE.Points(dustGeo, dustMat); dust.name = 'dust'; dust.frustumCulled = false; group.add(dust); disposables.push(dustGeo, dustMat);
 
     // ---- lights ----------------------------------------------------------
-    var hemi = new THREE.HemisphereLight(hexLin('#a9b6c6'), hexLin('#4a4237'), 0.75); group.add(hemi);
+    var hemi = new THREE.HemisphereLight(hexLin('#a9b6c6'), hexLin('#4a4237'), 0.68); group.add(hemi);
     var amb = new THREE.AmbientLight(hexLin('#5a6170'), 0.25); group.add(amb);
     var key = new THREE.DirectionalLight(hexLin('#ffd6a3'), 1.25);
     key.position.set(17, 26, -11); key.target.position.set(0, 0, 0);
@@ -1184,11 +1209,12 @@
     var fill = new THREE.DirectionalLight(hexLin('#9fb2cc'), 0.35); fill.position.set(-14, 18, 16); fill.target.position.set(0, 0, 0);
     group.add(fill); group.add(fill.target);
 
+    PROF('sky+glow+lights');
     // ---- spawns ----------------------------------------------------------
     function sp(x, z) { return { x: x, z: z, yaw: Math.atan2(x, z) }; }
     var spawns = {
-      a: [sp(-9.4, 15.9), sp(5.3, 15.9), sp(13.7, 13.9), sp(-0.3, 10.1)],
-      b: [sp(-9.4, -15.9), sp(5.3, -15.9), sp(13.7, -15.0), sp(-0.3, -10.1)]
+      a: [sp(-9.4, 15.9), sp(4.4, 15.9), sp(13.7, 13.9), sp(-0.3, 10.1)],
+      b: [sp(-9.4, -15.9), sp(5.8, -15.3), sp(13.7, -15.0), sp(-0.3, -10.1)]
     };
 
     // ---- fog / background ------------------------------------------------
