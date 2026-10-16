@@ -372,8 +372,11 @@
     if (!inst || !inst.bellyMeshes) return;
     const amount = Math.max(0, Math.min(1, Number(fullness) || 0));
     inst.fullness = amount;
+    // Exaggerated nonlinear cartoon belly: the last bites make the Mii visibly rounder.
+    const bulge = Math.pow(amount, 1.35);
+    const scale = 1 + bulge * 0.9;
     for (const item of inst.bellyMeshes) {
-      const attr = item.geometry.getAttribute("position"), out = attr.array, scale = 1 + amount * 0.28;
+      const attr = item.geometry.getAttribute("position"), out = attr.array;
       for (let i = 0; i < item.weights.length; i++) {
         const w = item.weights[i], j = i * 3;
         out[j] = item.original[j] + (item.original[j] - item.cx) * (scale - 1) * w;
@@ -383,7 +386,6 @@
       attr.needsUpdate = true; item.geometry.computeVertexNormals(); item.geometry.computeBoundingSphere();
     }
   }
-
   function createInstance(template, look) {
     const object = THREE.SkeletonUtils.clone(template.scene);
     applyLook(object, look, template.source);
