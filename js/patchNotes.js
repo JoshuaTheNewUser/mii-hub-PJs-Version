@@ -10,8 +10,9 @@
   "use strict";
 
   const NOTES = [
+    { v: null, date: "2026-10-16", title: "Thicker arms", notes: ["Paintball: your Mii's arms in first person are a little thicker."] },
     {
-      v: null, date: "2026-10-16", title: "Chess, the Deagle, and a big Mii Hub update",
+      v: "1.1.0", date: "2026-10-16", title: "Chess, the Deagle, and a big Mii Hub update",
       notes: [
         "♟️ Chess! Play any Mii from its menu or the new Chess button. Miis start as beginners and get better with every finished game (Master after about 20), but even a Master is beatable.",
         "🌐 Online chess against other people through the same server as Paintball: host or join a game, with an optional password, a clock (bullet to classical), draw offers, resigning and rematches.",

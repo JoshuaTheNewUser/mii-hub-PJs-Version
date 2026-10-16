@@ -805,7 +805,7 @@
 
   function buildSleeve(b, col) {
     // a plain round Mii arm along +Y from 0 (the hand) to 0.6
-    b.add(cylY(0.03, 0.033, 0.6, 20), col, mtx(0, 0.3, 0));
+    b.add(cylY(0.039, 0.043, 0.6, 20), col, mtx(0, 0.3, 0));
   }
 
   // ---------------------------------------------------------------------------------------------
