@@ -645,6 +645,11 @@
   }
   refreshAll(true);
 
+  const eatingContestBtn = $("eatingContestBtn");
+  if (eatingContestBtn) eatingContestBtn.addEventListener("click", () => {
+    if (!window.MiiEatingContest) return;
+    window.MiiEatingContest.open({ stage: $("stage"), hub, walkers: hub.active().filter((w) => w && !w.ghost && !w.held) });
+  });
 
   // ---------- the Mii menu (right-click a Mii) ----------
   const MG = window.MiniGames;
