@@ -1433,3 +1433,18 @@ body {
 .tl-row.next .tl-badge { background: var(--accent); color: #fff; }
 .tl-body ul { margin: 2px 0 0; padding-left: 18px; font-size: 0.85rem; }
 .topbar { position: relative; z-index: 40; }
+
+/* ---------- PJ's Version: eating contest ---------- */
+.eating-contest-card { width: min(620px, 100%); }
+.ec-food { font-size: 2.4rem; text-align: center; margin: 4px 0; }
+.ec-intro { color: var(--muted); text-align: center; margin: 4px 0 12px; }
+.ec-players { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ec-player { display: grid; grid-template-columns: 42px 1fr auto; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 12px; }
+.ec-avatar { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; background: var(--bg); }
+.ec-player-name { font-weight: 800; overflow-wrap: anywhere; }
+.ec-player-score { font-size: 1.3rem; font-weight: 800; color: var(--accent); }
+.ec-meter { height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; margin-top: 4px; }
+.ec-meter span { display: block; height: 100%; background: linear-gradient(90deg, #7fd65a, #2fa4e7); transition: width .25s; }
+.ec-controls { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+.ec-status { min-height: 2.5em; text-align: center; font-weight: 800; margin: 10px 0 4px; }
+@media (max-width: 480px) { .ec-players { grid-template-columns: 1fr; } }
