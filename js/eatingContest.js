@@ -72,8 +72,11 @@
     const timerEl=document.createElement("div"); timerEl.className="ec3d-timer"; timerEl.textContent="20.0";
     const close=document.createElement("button"); close.className="ec3d-exit"; close.textContent="✕ EXIT";
     const status=document.createElement("div"); status.className="ec3d-status"; status.textContent=players[0].name+" is you! Mash SPACE to eat!";
-    hud.append(brand,timerEl,hint,scoreboard,close); overlay.append(canvas,hud,status); stage.appendChild(overlay);
+    const finishScreen=document.createElement("div"); finishScreen.className="ec3d-finish"; finishScreen.hidden=true;
+    hud.append(brand,timerEl,hint,scoreboard,close); overlay.append(canvas,hud,status,finishScreen); stage.appendChild(overlay);
     let renderer,scene,camera,raf=0,closed=false,finished=false,started=performance.now(),last=started,elapsed=0,clock=0,roundFood=pick(foods), foodCooldown=0;
+    const cameraHome=new THREE.Vector3(0,7.5,12.8), cameraTarget=new THREE.Vector3(0,.95,0);
+    let cameraMode="orbit", cameraKick=0, cameraSweep=0;
     const disposables=[];
     try{
       renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:"high-performance"});
@@ -122,14 +125,47 @@
       for(let i=0;i<9;i++){const x=-4+i;const flag=mesh(new THREE.ConeGeometry(.22,.38,3),mat([0xf45d65,0xffd44a,0x49bfe8][i%3]),arena,x,3.7,-4.5);flag.rotation.z=Math.PI;}
     }catch(e){console.error("3D eating contest failed",e);overlay.remove();alert("Could not start the 3D contest. Check the browser console for details.");return;}
     function resize(){if(closed)return;const w=Math.max(1,overlay.clientWidth),h=Math.max(1,overlay.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
-    function setFull(p,v){p.fullness=clamp(v,0,1);M.setEatingFullness(p.inst,p.fullness);}
+    function setFull(p,v){
+      p.fullness=clamp(v,0,1);
+      M.setEatingFullness(p.inst,p.fullness);
+      // A gentle whole-character size change accompanies the belly deformation.
+      const size=1+p.fullness*.12;
+      p.inst.holder.scale.setScalar(size);
+      p.sizePercent=Math.round((size-1)*100);
+    }
     function updateScore(p){p.scoreCtx.clearRect(0,0,256,80);p.scoreCtx.fillStyle="rgba(24,38,48,.76)";p.scoreCtx.beginPath();p.scoreCtx.roundRect(5,5,246,70,18);p.scoreCtx.fill();p.scoreCtx.font="bold 30px sans-serif";p.scoreCtx.fillStyle=p.user?"#ffe46c":"#ffffff";p.scoreCtx.textAlign="center";p.scoreCtx.fillText(p.name,128,36);p.scoreCtx.font="bold 25px sans-serif";p.scoreCtx.fillText(p.score+" bites",128,65);p.scoreTex.needsUpdate=true;}
-    function eat(p){if(closed||finished)return;p.score++;setFull(p,Math.min(.95,p.fullness+.085));p.foodT=0;p.cheer=.35;p.foodGroup.visible=true;p.foodObj.visible=true;p.foodObj.position.set(0,.1,0);p.foodObj.scale.setScalar(.8);p.foodGroup.userData.target=new THREE.Vector3(p.pos.x*.28,2.1,p.pos.z*.28);updateScore(p);status.textContent=p.user?"NOM NOM! Keep going!":p.name+" takes a bite!";if(p.score%5===0)status.textContent=p.name+" is on a roll!";}
+    function eat(p){if(closed||finished)return;p.score++;setFull(p,Math.min(.95,p.fullness+.085));p.foodT=0;p.cheer=.35;
+      cameraKick=.75;cameraSweep=players.indexOf(p);cameraMode="bite";p.foodGroup.visible=true;p.foodObj.visible=true;p.foodObj.position.set(0,.1,0);p.foodObj.scale.setScalar(.8);p.foodGroup.userData.target=new THREE.Vector3(p.pos.x*.28,2.1,p.pos.z*.28);updateScore(p);status.textContent=p.user?"NOM NOM! Keep going!":p.name+" takes a bite!";if(p.score%5===0)status.textContent=p.name+" is on a roll!";}
     function key(e){if(e.code==="Space"||e.code==="Enter"){e.preventDefault();if(!e.repeat)eat(players[0]);}if(e.code==="Escape")closeGame();}
     function pointer(e){if(e.target===canvas)eat(players[0]);}
     function closeGame(){if(closed)return;closed=true;if(raf)cancelAnimationFrame(raf);root.removeEventListener("keydown",key);canvas.removeEventListener("pointerdown",pointer);root.removeEventListener("resize",resize);players.forEach(p=>{setFull(p,0);p.walker.arms=p.oldArms||"down";p.walker.state=p.oldState==="playing"?"idle":p.oldState;M.disposeObject(p.inst.holder);if(p.scoreTex)p.scoreTex.dispose();});renderer.dispose();overlay.remove();if(active&&active.close===closeGame)active=null;}
     close.addEventListener("click",closeGame);canvas.addEventListener("pointerdown",pointer);root.addEventListener("keydown",key);root.addEventListener("resize",resize);overlay.tabIndex=0;overlay.focus();
-    function finish(){finished=true;const winner=players.slice().sort((a,b)=>b.score-a.score)[0];status.textContent="🏆 "+winner.name+" WINS!  •  "+winner.score+" bites";hint.textContent="PRESS SPACE / CLICK TO PLAY AGAIN";timerEl.textContent="FINISH";players.forEach(p=>{p.inst.rig.pose({t:clock,dt:.016,arms:p===winner?"wave":"eat",dance:p===winner});});}
+    function finish(){
+      finished=true;
+      const ranked=players.slice().sort((a,b)=>b.score-a.score);
+      const winner=ranked[0];
+      status.textContent="🏆 "+winner.name+" WINS!  •  "+winner.score+" bites";
+      hint.textContent="RESULTS";
+      timerEl.textContent="DONE";
+      cameraMode="results";cameraKick=1.8;
+      finishScreen.hidden=false;
+      finishScreen.innerHTML="";
+      const title=document.createElement("h2");title.textContent="🏆 CONTEST RESULTS";finishScreen.appendChild(title);
+      const subtitle=document.createElement("p");subtitle.className="ec3d-finish-sub";subtitle.textContent=winner.name+" wins with "+winner.score+" bites!";finishScreen.appendChild(subtitle);
+      ranked.forEach((p,index)=>{
+        const row=document.createElement("div");row.className="ec3d-result-row";
+        const place=document.createElement("strong");place.className="ec3d-result-place";place.textContent=["🥇","🥈","🥉","4️⃣"][index]||String(index+1);
+        const info=document.createElement("div");info.className="ec3d-result-info";
+        const name=document.createElement("strong");name.textContent=p.name;
+        const stats=document.createElement("span");stats.textContent=p.score+" bites  •  size change: +"+(p.sizePercent||0)+"%";
+        const track=document.createElement("div");track.className="ec3d-result-track";
+        const bar=document.createElement("span");bar.style.width=(Math.max(4,p.score/Math.max(1,ranked[0].score)*100))+"%";track.appendChild(bar);
+        info.append(name,stats,track);row.append(place,info);finishScreen.appendChild(row);
+      });
+      const note=document.createElement("p");note.className="ec3d-finish-note";note.textContent="Size change is a playful in-game effect, based on each Mii's fullness.";finishScreen.appendChild(note);
+      const again=document.createElement("button");again.className="ec3d-again";again.textContent="PLAY AGAIN";again.addEventListener("click",()=>{closeGame();open(opts);});finishScreen.appendChild(again);
+      players.forEach(p=>{p.inst.rig.pose({t:clock,dt:.016,arms:p===winner?"wave":"eat",dance:p===winner});});
+    }
     function frame(now){
       if(closed)return;raf=requestAnimationFrame(frame);
       const dt=Math.min(.05,(now-last)/1000);last=now;clock+=dt;
@@ -149,7 +185,26 @@
       } else {
         players.forEach(p=>{p.inst.rig.pose({t:clock,dt,arms:p.score===Math.max(...players.map(q=>q.score))?"wave":"eat",sit:true,dance:p.score===Math.max(...players.map(q=>q.score))});});
       }
-      camera.position.x=Math.sin(clock*.12)*.65;camera.position.y=7.5+Math.sin(clock*.2)*.18;camera.lookAt(0,.95,0);
+      // Cinematic camera: slow orbit during play, quick push-in on bites, wide winner shot.
+      const orbitX=Math.sin(clock*.18)*1.5;
+      const orbitZ=Math.cos(clock*.18)*.45;
+      let desired=cameraHome.clone();
+      let look=cameraTarget.clone();
+      if(cameraMode==="bite" && cameraKick>0){
+        const targetPlayer=players[cameraSweep]||players[0];
+        desired.set(targetPlayer.pos.x*.6,5.3,10.5+targetPlayer.pos.z*.15);
+        look.set(targetPlayer.pos.x*.25,1.4,targetPlayer.pos.z*.2);
+        cameraKick=Math.max(0,cameraKick-dt*1.35);
+        if(cameraKick===0)cameraMode="orbit";
+      } else if(cameraMode==="results"){
+        desired.set(Math.sin(clock*.12)*.6,8.7,15.5);
+        look.set(0,1.0,0);
+      } else {
+        desired.x+=orbitX; desired.z+=orbitZ;
+        look.x=Math.sin(clock*.13)*.18;
+      }
+      camera.position.lerp(desired,1-Math.exp(-dt*2.4));
+      camera.lookAt(look);
       renderer.render(scene,camera);
       scoreboard.textContent=players.map(p=>(p.user?"★ ":"")+p.name+": "+p.score).join("   •   ");
     }
