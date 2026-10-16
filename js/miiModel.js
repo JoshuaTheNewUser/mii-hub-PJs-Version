@@ -342,6 +342,48 @@
     return found;
   }
 
+  // Private, procedural torso geometry for the optional eating-contest animation.
+  function prepareBellyDeformation(object) {
+    const entries = [];
+    const torsoName = /(shirt|top|hoodie|sweater|jacket|coat|dress|overall|vest|polo|tee|tshirt|kimono|torso|body)/i;
+    const excluded = /(pants|trouser|shorts|skirt|shoe|sock|sleeve|arm|glove|hat|hair|face|head)/i;
+    object.traverse((mesh) => {
+      if (!mesh.isMesh || !mesh.geometry || !torsoName.test(mesh.name || "") || excluded.test(mesh.name || "")) return;
+      const geometry = mesh.geometry.clone(), position = geometry.getAttribute("position");
+      if (!position || position.count < 12) { geometry.dispose(); return; }
+      geometry.computeBoundingBox();
+      const box = geometry.boundingBox, size = box.getSize(new THREE.Vector3());
+      if (size.y < 0.08 || size.x < 0.04) { geometry.dispose(); return; }
+      mesh.geometry = geometry;
+      const original = new Float32Array(position.array), weights = new Float32Array(position.count);
+      const cx = (box.min.x + box.max.x) * 0.5, cz = (box.min.z + box.max.z) * 0.5;
+      for (let i = 0; i < position.count; i++) {
+        const x = original[i * 3], yn = (original[i * 3 + 1] - box.min.y) / size.y;
+        weights[i] = Math.max(0, Math.min(1,
+          Math.exp(-Math.pow((yn - 0.43) / 0.24, 2)) *
+          Math.exp(-Math.pow((x - cx) / Math.max(size.x * 0.42, 0.001), 2))));
+      }
+      if (weights.some((v) => v > 0.08)) entries.push({ geometry, original, weights, cx, cz });
+    });
+    return entries;
+  }
+
+  function setEatingFullness(inst, fullness) {
+    if (!inst || !inst.bellyMeshes) return;
+    const amount = Math.max(0, Math.min(1, Number(fullness) || 0));
+    inst.fullness = amount;
+    for (const item of inst.bellyMeshes) {
+      const attr = item.geometry.getAttribute("position"), out = attr.array, scale = 1 + amount * 0.28;
+      for (let i = 0; i < item.weights.length; i++) {
+        const w = item.weights[i], j = i * 3;
+        out[j] = item.original[j] + (item.original[j] - item.cx) * (scale - 1) * w;
+        out[j + 1] = item.original[j + 1];
+        out[j + 2] = item.original[j + 2] + (item.original[j + 2] - item.cz) * (scale - 1) * w;
+      }
+      attr.needsUpdate = true; item.geometry.computeVertexNormals(); item.geometry.computeBoundingSphere();
+    }
+  }
+
   function createInstance(template, look) {
     const object = THREE.SkeletonUtils.clone(template.scene);
     applyLook(object, look, template.source);
@@ -416,7 +458,7 @@
       const footY = ankle ? wp(ankle).y : Math.max(0, hipY - 2 * (hipY - wp(kneeBone).y));
       if (hipY - footY > 0.1) rig.legLen = hipY - footY + 0.05;
     }
-    return { holder, inner, object, rig };
+    return { holder, inner, object, rig, bellyMeshes: prepareBellyDeformation(object), fullness: 0 };
   }
 
   // ---- posing ----
@@ -786,5 +828,5 @@
     });
   }
 
-  root.MiiModel = Object.assign(api, { loadTemplate, createInstance, applyLook, portrait, disposeObject, srgbColor, rgbToHex, DEFAULT_STYLE, lieDepth });
+  root.MiiModel = Object.assign(api, { loadTemplate, createInstance, applyLook, portrait, disposeObject, srgbColor, rgbToHex, DEFAULT_STYLE, lieDepth, setEatingFullness });
 })(typeof self !== "undefined" ? self : this);
