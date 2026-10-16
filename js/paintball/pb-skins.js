@@ -21,7 +21,7 @@
   const TIER = {};
   TIERS.forEach((t, i) => { t.rank = i; TIER[t.id] = t; });
 
-  const WEAPON_NAMES = { ak: "Paint AK", awp: "Paint AWP", knife: "Butterfly Knife" };
+  const WEAPON_NAMES = { ak: "Paint AK", awp: "Paint AWP", deagle: "Paint Deagle", knife: "Butterfly Knife" };
 
   // pattern: the kind of artwork; c: its colours (base first); fx: extras for the rarer ones
   //   fx.glow   parts of the pattern glow a little (emissive)
@@ -69,6 +69,26 @@
     S("awp_asiimov", "awp", "red", "Asiimov", "asiimov", ["#f4f4f2", "#ff7a1a", "#151515"], { glow: true }),
     S("awp_medusa", "awp", "red", "Medusa", "medusa", ["#1d7a6b", "#e8c55a", "#0d2a28"], { metal: true }),
     S("awp_dragonlore", "awp", "red", "Dragon Lore", "dragon", ["#c9a35a", "#2e7d3a", "#8a2a1a"], { metal: true, glow: true }),
+
+    // ---------------- Paint Deagle (sidearm) ----------------
+    S("dg_mudder", "deagle", "blue", "Mudder", "spray", ["#6b5a3e", "#a08a62", "#3a3022"]),
+    S("dg_night", "deagle", "blue", "Night", "solid", ["#23262b", "#3a3f46", "#111316"]),
+    S("dg_urban", "deagle", "blue", "Urban Rubble", "ddpat", ["#9a9590", "#5c5853", "#d0ccc6"]),
+    S("dg_storm", "deagle", "blue", "Midnight Storm", "veins", ["#1d2238", "#5a6bd8", "#0e1020"]),
+    S("dg_corinthian", "deagle", "blue", "Corinthian", "laminate", ["#7a1f2a", "#d8b46a", "#3d0f14"]),
+    S("dg_lightrail", "deagle", "blue", "Light Rail", "blocks", ["#e6e3dc", "#3a6bc4", "#222222"]),
+    S("dg_directive", "deagle", "purple", "Directive", "circuit", ["#1f2a3a", "#3fd0ff", "#ff9a2e"], { glow: true }),
+    S("dg_cobalt", "deagle", "purple", "Cobalt Disruption", "hex", ["#0f2f8a", "#4fa3ff", "#08143d"], { metal: true }),
+    S("dg_crimson", "deagle", "purple", "Crimson Web", "web", ["#9e1220", "#141414", "#ff4a4a"]),
+    S("dg_oxide", "deagle", "purple", "Oxide Blaze", "graffiti", ["#4a4f55", "#d86a2a", "#1c1e21"]),
+    S("dg_trigger", "deagle", "purple", "Trigger Discipline", "comic", ["#f2e9d8", "#2a2a2a", "#d83a3a"]),
+    S("dg_conspiracy", "deagle", "pink", "Conspiracy", "noir", ["#2a2a2a", "#e8e0c8", "#c9a35a"], { metal: true }),
+    S("dg_kumicho", "deagle", "pink", "Kumicho Dragon", "dragon", ["#1f2f6b", "#e8c55a", "#c4221b"], { metal: true }),
+    S("dg_mecha", "deagle", "pink", "Mecha Industries", "asiimov", ["#f2f2f0", "#2a7bff", "#141414"], { glow: true }),
+    S("dg_oceandrive", "deagle", "pink", "Ocean Drive", "oceandrive", ["#1fd6c4", "#ff5fa8", "#fff1a8"], { glow: true }),
+    S("dg_blaze", "deagle", "red", "Blaze", "blaze", ["#1a1a1a", "#ff7a1a", "#ffd23f"], { glow: true }),
+    S("dg_printstream", "deagle", "red", "Printstream", "printstream", ["#f6f6f8", "#141418", "#c8c8ff"], { metal: true, shift: true }),
+    S("dg_koi", "deagle", "red", "Golden Koi", "koi", ["#d9a62a", "#fff0b8", "#7a4a0a"], { metal: true, glow: true }),
 
     // ---------------- Butterfly Knife (gold only) ----------------
     S("kn_fade", "knife", "gold", "Fade", "fade", ["#ffd23f", "#ff3fb4", "#7a3cff"], { metal: true, shift: true }),
@@ -845,6 +865,137 @@
         const dk = sstep(0.58, 0.68, t) * 0.7; o[0] += (C[2][0] - o[0]) * dk; o[1] += (C[2][1] - o[1]) * dk; o[2] += (C[2][2] - o[2]) * dk;
       });
     },
+    // Blaze: gloss black with bright flames licking back from the muzzle end, red -> orange -> yellow
+    blaze(g, W, H, C, R, N) {
+      field(g, W, H, (x, y, o) => { const n = N.fbm(x / H * 1.5, y / H * 1.5, 3); set(o, C[0], 0.75 + n * 0.45 + (1 - y / H) * 0.15); });
+      const red = mixC(C[1], [200, 20, 10], 0.55), tongues = [];
+      // each tongue rises from the bottom (more of them toward the front), leans back toward the butt,
+      // flickers side to side and narrows to a curled tip
+      for (let i = 0; i < 34; i++) {
+        const fx = Math.pow(R(), 0.55), x0 = W * (0.22 + 0.82 * fx), y0 = H * (1.05 + R() * 0.1);
+        const len = H * (0.55 + R() * 0.75) * (0.55 + 0.6 * fx), steps = 24, pts = [[x0, y0]];
+        const lean = 0.55 + R() * 0.5, curl = (R() < 0.5 ? -1 : 1) * (0.6 + R() * 0.9), ph = R() * TAU, wig = 0.35 + R() * 0.3;
+        for (let k = 1; k <= steps; k++) {
+          const f = k / steps, a = -Math.PI / 2 - lean * (0.4 + f * 0.8) + Math.sin(f * 7 + ph) * wig + curl * f * f * f;
+          const p = pts[k - 1]; pts.push([p[0] + Math.cos(a) * len / steps, p[1] + Math.sin(a) * len / steps]);
+        }
+        tongues.push({ pts, w: H * (0.14 + R() * 0.16) * (0.6 + 0.6 * fx) });
+      }
+      const layers = [[drk(red, 0.2), 1.25, 0.85], [red, 1, 0.95], [C[1], 0.7, 1], [C[2], 0.4, 1], [lit(C[2], 0.65), 0.16, 0.9]];
+      for (const [col, k, al] of layers) for (const t of tongues) { g.fillStyle = css(col, al); ribbon(g, t.pts, t.w * k, 0.5); g.fill(); }
+      // heat along the bottom of the front half and a few embers
+      const hg = g.createLinearGradient(0, H, 0, H * 0.6); hg.addColorStop(0, css(C[2], 0.55)); hg.addColorStop(1, css(C[1], 0));
+      g.fillStyle = hg; g.fillRect(W * 0.35, H * 0.6, W * 0.65, H * 0.4);
+      for (let i = 0; i < 80; i++) { const x = W * (0.25 + R() * 0.75), y = R() * H * 0.8; g.fillStyle = css(R() < 0.5 ? C[2] : C[1], 0.75); g.beginPath(); g.arc(x, y, H * 0.004 * (1 + R() * 2), 0, TAU); g.fill(); }
+    },
+    // Printstream: pearlescent white with flowing black printed linework (and the pearl colour shift)
+    printstream(g, W, H, C, R, N) {
+      const pearlA = mixC(C[2], [190, 255, 235], 0.55), pearlB = mixC(C[2], [255, 205, 240], 0.45);
+      field(g, W, H, (x, y, o) => {
+        const u = x / H, v = y / H, q = N.fbm(u * 0.45, v * 0.6, 3), t = N.fbm(u * 0.3 + q * 1.2, v * 0.9 - q * 0.9, 3);
+        // pearl base: white with a soft pastel sheen
+        const sh = N.fbm(u * 0.8 + 31, v * 0.8, 3);
+        setMix(o, C[0], sh > 0.5 ? pearlA : pearlB, Math.min(1, Math.abs(sh - 0.5) * 2.2) * 0.7);
+        // printed stream lines: smooth contours of a stretched, warped field, only where the stream runs
+        const z = t * 15, d = Math.abs(frac(z) - 0.5) * 2, mask = sstep(0.42, 0.52, N.fbm(u * 0.35 + 7, v * 0.7 + q, 2));
+        const ln = (1 - sstep(0.05, 0.12, d)) * mask;
+        // solid black pools in the middle of the densest part of the stream
+        const pool = sstep(0.64, 0.66, N.fbm(u * 0.5 + 3, v * 0.9 + q * 0.8, 3)) * mask;
+        const k = Math.max(ln, pool);
+        if (k > 0) { o[0] += (C[1][0] - o[0]) * k; o[1] += (C[1][1] - o[1]) * k; o[2] += (C[1][2] - o[2]) * k; }
+      });
+      // a few bold calligraphic swooshes running along the gun
+      g.lineCap = "round"; g.lineJoin = "round";
+      for (let i = 0; i < 4; i++) {
+        const pts = wander(R, N, -H * 0.2 + R() * W * 0.3, H * (0.2 + R() * 0.6), (R() - 0.5) * 0.3, 40, W / 34, 1.0, 11 + i * 2.3);
+        g.fillStyle = css(C[1]); ribbon(g, pts, H * 0.004, H * (0.035 + R() * 0.03)); g.fill();
+        g.strokeStyle = css(C[1]); g.lineWidth = Math.max(1, H * 0.005); strokePts(g, pts.map((p) => [p[0], p[1] + H * 0.05]), true);
+      }
+    },
+    // Golden Koi: polished gold fish scales with koi swimming along the gun among ripples
+    koi(g, W, H, C, R, N) {
+      fill(g, W, H, C[0]);
+      scaleTexture(g, W, H, R, H * 0.075, drk(C[0], 0.12), C[2], lit(C[0], 0.4));
+      g.strokeStyle = css(C[1], 0.45); g.lineWidth = Math.max(1, H * 0.005);
+      for (let i = 0; i < 10; i++) { // ripples
+        const x = R() * W, y = R() * H, r = H * (0.08 + R() * 0.12);
+        for (let k = 0; k < 3; k++) { g.beginPath(); g.ellipse(x, y, r * (1 + k * 0.5), r * (0.45 + k * 0.22), 0, 0, TAU); g.stroke(); }
+      }
+      const orange = mixC(C[0], [235, 80, 20], 0.65);
+      const fish = (cx, cy, L, dir, tilt) => {
+        g.save(); g.translate(cx, cy); g.rotate(tilt); g.scale(dir, 1);
+        const w = L * 0.22;
+        // tail fin (two lobes) and side fins
+        g.fillStyle = css(lit(C[1], 0.2), 0.9); g.strokeStyle = css(C[2]); g.lineWidth = Math.max(1, H * 0.008);
+        g.beginPath(); g.moveTo(-L * 0.42, 0); g.quadraticCurveTo(-L * 0.62, -w * 1.5, -L * 0.78, -w * 1.35); g.quadraticCurveTo(-L * 0.66, 0, -L * 0.78, w * 1.35); g.quadraticCurveTo(-L * 0.62, w * 1.5, -L * 0.42, 0); g.fill(); g.stroke();
+        for (const s of [-1, 1]) { g.beginPath(); g.moveTo(L * 0.12, s * w * 0.7); g.quadraticCurveTo(L * 0.02, s * w * 1.9, -L * 0.12, s * w * 1.5); g.quadraticCurveTo(-L * 0.02, s * w * 0.9, L * 0.12, s * w * 0.7); g.fill(); g.stroke(); }
+        // body
+        g.beginPath(); g.moveTo(L * 0.5, 0); g.bezierCurveTo(L * 0.42, -w * 1.1, -L * 0.15, -w * 1.15, -L * 0.45, 0); g.bezierCurveTo(-L * 0.15, w * 1.15, L * 0.42, w * 1.1, L * 0.5, 0); g.closePath();
+        g.fillStyle = css(C[1]); g.fill();
+        g.save(); g.clip();
+        g.fillStyle = css(orange); // kohaku patches
+        for (let k = 0; k < 3; k++) { blobPath(g, L * (0.3 - k * 0.27 + (R() - 0.5) * 0.08), (R() - 0.6) * w * 0.8, w * (0.55 + R() * 0.35), R, 0.4); g.fill(); }
+        g.strokeStyle = css(drk(C[0], 0.2), 0.5); g.lineWidth = Math.max(1, H * 0.003); // body scales
+        for (let sx = -L * 0.4; sx < L * 0.4; sx += w * 0.32) for (let sy = -w; sy < w; sy += w * 0.32) { g.beginPath(); g.arc(sx, sy + ((sx / (w * 0.32)) & 1) * w * 0.16, w * 0.17, -Math.PI / 2, Math.PI / 2); g.stroke(); }
+        g.restore();
+        g.strokeStyle = css(C[2]); g.lineWidth = Math.max(1, H * 0.009); g.stroke();
+        g.fillStyle = css(C[2]); g.beginPath(); g.arc(L * 0.34, -w * 0.3, w * 0.13, 0, TAU); g.fill(); // eye
+        g.strokeStyle = css(C[2], 0.8); g.lineWidth = Math.max(1, H * 0.005); g.beginPath(); g.moveTo(L * 0.48, w * 0.12); g.quadraticCurveTo(L * 0.6, w * 0.4, L * 0.66, w * 0.25); g.stroke(); // barbel
+        g.restore();
+      };
+      fish(W * 0.24, H * 0.42, H * 0.95, 1, -0.08);
+      fish(W * 0.62, H * 0.58, H * 0.85, -1, 0.1);
+      fish(W * 0.9, H * 0.36, H * 0.7, 1, 0.05);
+      g.globalCompositeOperation = "lighter"; // polished gold glints
+      for (let i = 0; i < 40; i++) { const x = R() * W, y = R() * H, s = H * (0.01 + R() * 0.02), sg = g.createRadialGradient(x, y, 0, x, y, s * 2); sg.addColorStop(0, css(WHITE, 0.5)); sg.addColorStop(1, css(C[1], 0)); g.fillStyle = sg; g.beginPath(); g.arc(x, y, s * 2, 0, TAU); g.fill(); }
+      g.globalCompositeOperation = "source-over";
+    },
+    // Ocean Drive: Miami-vice sunset: pink -> yellow sky, a striped retro sun, teal sea, palm silhouettes, neon stripes
+    oceandrive(g, W, H, C, R, N) {
+      const hz = H * 0.58, navy = [40, 22, 70];
+      const sky = g.createLinearGradient(0, 0, 0, hz); sky.addColorStop(0, css(mixC(C[1], navy, 0.35))); sky.addColorStop(0.55, css(C[1])); sky.addColorStop(1, css(C[2]));
+      g.fillStyle = sky; g.fillRect(0, 0, W, hz);
+      // the sun: a disc with horizontal cut-outs toward the horizon
+      const sx = W * 0.58, sr = H * 0.42;
+      g.save(); g.beginPath(); g.rect(0, 0, W, hz); g.clip();
+      const sg = g.createLinearGradient(0, hz - sr, 0, hz); sg.addColorStop(0, css(C[2])); sg.addColorStop(1, css(lit(C[1], 0.15)));
+      g.fillStyle = sg; g.beginPath(); g.arc(sx, hz, sr, 0, TAU); g.fill();
+      g.fillStyle = css(C[1]);
+      for (let k = 0; k < 5; k++) { const yy = hz - sr * (0.08 + k * 0.13), hh = sr * (0.035 + (4 - k) * 0.012); g.fillRect(sx - sr, yy, sr * 2, hh); }
+      g.restore();
+      // the sea: teal, darker toward the bottom, with light streaks and the sun's reflection
+      const sea = g.createLinearGradient(0, hz, 0, H); sea.addColorStop(0, css(lit(C[0], 0.2))); sea.addColorStop(1, css(drk(C[0], 0.45)));
+      g.fillStyle = sea; g.fillRect(0, hz, W, H - hz);
+      for (let i = 0; i < 60; i++) {
+        const y = hz + Math.pow(R(), 1.6) * (H - hz), w = H * (0.05 + R() * 0.3), x = R() * W, near = Math.abs(x - sx) < sr * 0.9;
+        g.fillStyle = css(near ? C[2] : lit(C[0], 0.6), near ? 0.8 : 0.5); g.fillRect(x, y, w, Math.max(1, H * 0.008));
+      }
+      // neon diagonal stripes (80s), behind the palms
+      for (let i = 0; i < 4; i++) { const x = W * (0.05 + i * 0.07); g.fillStyle = css(i % 2 ? C[0] : WHITE, 0.85); polyPath(g, [[x, H], [x + H * 0.06, H], [x + H * 0.66, 0], [x + H * 0.6, 0]]); g.fill(); }
+      // palm trees: curved trunks with drooping fronds, in a deep violet silhouette
+      const palm = (x, lean, h) => {
+        const top = [x + lean * h, H - h], col = css(navy);
+        g.strokeStyle = col; g.lineCap = "round"; g.lineWidth = H * 0.045;
+        g.beginPath(); g.moveTo(x, H + 2); g.quadraticCurveTo(x + lean * h * 0.2, H - h * 0.5, top[0], top[1]); g.stroke();
+        g.fillStyle = col;
+        for (let k = 0; k < 7; k++) {
+          const a = -Math.PI / 2 + (k - 3) * 0.5 + (R() - 0.5) * 0.2, L = h * (0.38 + R() * 0.18), dx = Math.cos(a) * L, dy = Math.sin(a) * L * 0.5;
+          g.beginPath(); g.moveTo(top[0], top[1]);
+          g.quadraticCurveTo(top[0] + dx * 0.6, top[1] + dy - L * 0.25, top[0] + dx, top[1] + dy + L * 0.35);
+          g.quadraticCurveTo(top[0] + dx * 0.5, top[1] + dy * 0.4 - L * 0.08, top[0], top[1] + H * 0.02); g.fill();
+        }
+        g.beginPath(); g.arc(top[0], top[1] + H * 0.02, H * 0.03, 0, TAU); g.fill();
+      };
+      palm(W * 0.08, 0.35, H * 0.95); palm(W * 0.2, -0.2, H * 0.7); palm(W * 0.86, -0.3, H * 1.0); palm(W * 0.95, 0.15, H * 0.7);
+      // a few teal tropical leaves in the corners
+      for (let i = 0; i < 6; i++) {
+        const x = i < 3 ? R() * W * 0.12 : W - R() * W * 0.12, y = R() < 0.5 ? H * R() * 0.3 : H * (0.7 + R() * 0.3), L = H * (0.35 + R() * 0.25), a = R() * TAU;
+        g.save(); g.translate(x, y); g.rotate(a);
+        g.fillStyle = css(C[0]); g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(L * 0.5, -L * 0.3, L, 0); g.quadraticCurveTo(L * 0.5, L * 0.3, 0, 0); g.fill();
+        g.strokeStyle = css(drk(C[0], 0.4)); g.lineWidth = Math.max(1, H * 0.006); g.beginPath(); g.moveTo(0, 0); g.lineTo(L * 0.95, 0); g.stroke();
+        g.restore();
+      }
+    },
   };
 
   // Rarity finish: blue stays muted and a bit worn, higher tiers get punchier colour and contrast,
@@ -881,7 +1032,8 @@
   }
 
   // Glow mask for fx.glow skins: the pixels close to the pattern's glowing colours, in their own colour
-  const GLOW_COLS = { asiimov: [1], dragon: [2], lotus: [1, 2], doppler: [1, 2, "w"], lightning: [1, 2, "w"], hex: [1], circuit: [1, 2], neon: [1, 2], hyperbeast: [1, 2] };
+  const GLOW_COLS = { asiimov: [1], dragon: [2], lotus: [1, 2], doppler: [1, 2, "w"], lightning: [1, 2, "w"], hex: [1], circuit: [1, 2], neon: [1, 2], hyperbeast: [1, 2],
+    blaze: [1, 2], koi: [1], oceandrive: [1, 2] };
   function glowMask(src, sk, W, H) {
     const cols = (GLOW_COLS[sk.pattern] || [1, 2]).map((i) => (i === "w" ? WHITE : hexRGB(sk.c[i])));
     const c = document.createElement("canvas"); c.width = W; c.height = H;

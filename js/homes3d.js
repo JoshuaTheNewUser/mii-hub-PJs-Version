@@ -74,6 +74,16 @@
     return put(p, G.box(), typeof color === "object" ? color : toon(color), Object.assign({ x, y, z, sx: w, sy: h, sz: d }, o));
   }
 
+  // A round stick from (x1, y1, z1) to (x2, y2, z2) (easel legs, stool legs...).
+  const UP = new THREE.Vector3(0, 1, 0), tmpDir = new THREE.Vector3();
+  function rod(p, color, x1, y1, z1, x2, y2, z2, r) {
+    tmpDir.set(x2 - x1, y2 - y1, z2 - z1);
+    const len = tmpDir.length();
+    const m = put(p, G.cyl(10), typeof color === "object" ? color : toon(color), { x: (x1 + x2) / 2, y: (y1 + y2) / 2, z: (z1 + z2) / 2, sx: r, sy: len, sz: r });
+    m.quaternion.setFromUnitVectors(UP, tmpDir.normalize());
+    return m;
+  }
+
   // Builds something that moves as one piece (a car, a cloud...) and merges its
   // parts into a few shapes, so it's quick to draw. Build it at the origin.
   function movingThing(parent, build) {
@@ -877,7 +887,7 @@
       u.shell.floor.material = flatMaterial(items.floor, true);
       if (u.contents) { u.room.remove(u.contents); disposeFlat(u.contents); }
       u.anim = [];
-      const f = flatContents(items, r.activity || null, r.name, u.anim);
+      const f = flatContents(items, r.activity || null, r.name, u.anim, r.record);
       u.contents = f.group;
       u.spot = f.spot;
       u.room.add(u.contents);
@@ -1036,6 +1046,8 @@
 
   // Wallpaper and floor pictures (they repeat across the walls and floor).
   // (size: the picture is drawn at 256 x 256 and scaled down to size x size)
+  // The picture tiles, so anything drawn near an edge is drawn again on the other
+  // side (wrapped), or there'd be cut-off shapes and seams where tiles meet.
   function patternTexture(it, isFloor, size) {
     const base = it.color || (isFloor ? "#c98a52" : "#f6ead2");
     const acc = it.accent || base;
@@ -1046,6 +1058,9 @@
       ctx.scale(S / 256, S / 256);
       ctx.fillStyle = base; ctx.fillRect(0, 0, w, h);
       const r = seeded(17);
+      // draws f(x, y) at (x, y) and at its copies one tile away, so it wraps round
+      const wrap = (x, y, f) => { for (const dx of [-w, 0, w]) for (const dy of [-h, 0, h]) f(x + dx, y + dy); };
+      const dot = (x, y, rad) => wrap(x, y, (px, py) => { ctx.beginPath(); ctx.arc(px, py, rad, 0, TAU); ctx.fill(); });
       if (pat === "stripes") {
         ctx.fillStyle = acc;
         for (let x = 0; x < w; x += 64) ctx.fillRect(x, 0, 28, h);
@@ -1055,13 +1070,25 @@
         ctx.fillStyle = acc;
         for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) heart(ctx, x * 64 + (y % 2) * 32 + 16, y * 64 + 18, 26);
         ctx.fillStyle = "rgba(255,255,255,0.6)";
-        for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { ctx.beginPath(); ctx.arc(x * 64 + (y % 2 ? 0 : 32) + 16, y * 64 + 48, 3, 0, TAU); ctx.fill(); }
+        for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) dot(x * 64 + (y % 2 ? 0 : 32) + 16, y * 64 + 48, 3);
       } else if (pat === "clouds") {
-        ctx.fillStyle = acc; ctx.fillRect(0, h * 0.9, w, h * 0.1);
-        ctx.fillStyle = "rgba(255,255,255,0.85)";
-        for (const [x, y] of [[50, 60], [180, 140], [90, 200], [230, 40]]) {
-          for (const [dx, dy, rr] of [[0, 0, 18], [18, -8, 20], [36, 0, 16], [18, 6, 16]]) { ctx.beginPath(); ctx.arc(x + dx, y + dy, rr, 0, TAU); ctx.fill(); }
-        }
+        // fluffy white clouds on a soft sky: each cloud is one solid shape (no
+        // see-through overlaps), with a pale blue shadow underneath, wrapped at the edges
+        const puff = (x, y, col, dy) => {
+          ctx.fillStyle = col;
+          wrap(x, y + dy, (px, py) => {
+            ctx.beginPath();
+            for (const [ox, oy, rr] of [[-26, 6, 15], [-8, -6, 20], [14, -2, 18], [30, 7, 13]]) { ctx.moveTo(px + ox + rr, py + oy); ctx.arc(px + ox, py + oy, rr, 0, TAU); }
+            ctx.rect(px - 26, py + 6, 56, 14);
+            ctx.fill();
+          });
+        };
+        ctx.fillStyle = acc; ctx.globalAlpha = 0.35;
+        for (const [x, y] of [[40, 30], [170, 96], [100, 170], [230, 220]]) dot(x, y, 2.5);
+        ctx.globalAlpha = 1;
+        const spots = [[64, 58], [196, 34], [150, 150], [32, 196], [236, 128]];
+        for (const [x, y] of spots) puff(x, y, acc, 5);
+        for (const [x, y] of spots) puff(x, y, "#ffffff", 0);
       } else if (pat === "grid") {
         ctx.strokeStyle = acc; ctx.lineWidth = 3; ctx.shadowColor = acc; ctx.shadowBlur = 10;
         for (let k = 0; k <= w; k += 64) {
@@ -1070,12 +1097,12 @@
         }
         ctx.shadowBlur = 0;
         ctx.fillStyle = "#6ff0ff";
-        for (let i = 0; i < 6; i++) { const x = Math.floor(r() * 4) * 64, y = Math.floor(r() * 4) * 64; ctx.beginPath(); ctx.arc(x, y, 5, 0, TAU); ctx.fill(); }
+        for (let i = 0; i < 6; i++) { const x = Math.floor(r() * 4) * 64, y = Math.floor(r() * 4) * 64; dot(x, y, 5); }
       } else if (pat === "damask") {
         ctx.fillStyle = acc;
         for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) {
           const cx = x * 128 + 64 + (y % 2) * 64, cy = y * 128 + 64;
-          for (const ox of [0, -256, 256]) damask(ctx, cx + ox, cy);
+          wrap(cx, cy, (px, py) => damask(ctx, px, py));
         }
       } else if (pat === "planks") {
         for (let row = 0; row < 4; row++) {
@@ -1091,36 +1118,121 @@
           }
           ctx.fillStyle = acc; ctx.fillRect(0, row * 64, w, 3);
           ctx.strokeStyle = "rgba(120,70,30,0.25)"; ctx.lineWidth = 2;
-          for (let g = 0; g < 3; g++) { const y = row * 64 + 14 + g * 16 + r() * 6; ctx.beginPath(); ctx.moveTo(0, y); ctx.bezierCurveTo(80, y + 6, 160, y - 6, w, y + 2); ctx.stroke(); }
+          for (let g = 0; g < 3; g++) { const y = row * 64 + 14 + g * 16 + r() * 6; ctx.beginPath(); ctx.moveTo(0, y); ctx.bezierCurveTo(80, y + 6, 160, y - 6, w, y); ctx.stroke(); }
         }
       } else if (pat === "checker") {
         ctx.fillStyle = acc;
         for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) if ((x + y) % 2 === 0) ctx.fillRect(x * 64, y * 64, 64, 64);
       } else if (pat === "marble") {
+        // veins start and end at the same height, so they carry on into the next tile
         ctx.strokeStyle = acc; ctx.lineWidth = 2.5; ctx.globalAlpha = 0.8;
         for (let i = 0; i < 7; i++) {
-          const y = r() * h;
-          ctx.beginPath(); ctx.moveTo(-10, y);
-          ctx.bezierCurveTo(70, y + (r() - 0.5) * 120, 170, y + (r() - 0.5) * 120, w + 10, y + (r() - 0.5) * 60);
-          ctx.stroke();
+          const y = r() * h, a = (r() - 0.5) * 120, b = (r() - 0.5) * 120;
+          wrap(0, y, (px, py) => { ctx.beginPath(); ctx.moveTo(px, py); ctx.bezierCurveTo(px + 85, py + a, px + 170, py + b, px + w, py); ctx.stroke(); });
         }
         ctx.globalAlpha = 1;
         ctx.strokeStyle = "rgba(150,150,170,0.6)"; ctx.lineWidth = 2;
         ctx.strokeRect(0, 0, 128, 128); ctx.strokeRect(128, 0, 128, 128); ctx.strokeRect(0, 128, 128, 128); ctx.strokeRect(128, 128, 128, 128);
+      } else if (pat === "stars") {
+        // a night sky: twinkly dots, little stars and a crescent moon
+        for (let i = 0; i < 70; i++) { ctx.fillStyle = r() < 0.5 ? "rgba(255,255,255,0.55)" : "rgba(255,240,190,0.4)"; dot(r() * w, r() * h, 0.8 + r() * 1.2); }
+        ctx.fillStyle = acc;
+        for (const [x, y, s] of [[40, 50, 11], [160, 30, 8], [210, 150, 12], [90, 130, 7], [30, 220, 9], [150, 210, 10], [250, 80, 7]]) wrap(x, y, (px, py) => star(ctx, px, py, s));
+        wrap(110, 70, (px, py) => {
+          ctx.fillStyle = "#fff4c4"; ctx.beginPath(); ctx.arc(px, py, 18, 0, TAU); ctx.fill();
+          ctx.fillStyle = base; ctx.beginPath(); ctx.arc(px + 8, py - 6, 16, 0, TAU); ctx.fill();
+        });
+      } else if (pat === "leaves") {
+        // big jungle leaves in two greens, on the slant
+        const leaf = (x, y, a, s, col) => wrap(x, y, (px, py) => {
+          ctx.save(); ctx.translate(px, py); ctx.rotate(a);
+          ctx.fillStyle = col;
+          ctx.beginPath(); ctx.moveTo(0, -s); ctx.quadraticCurveTo(s * 0.6, -s * 0.2, 0, s); ctx.quadraticCurveTo(-s * 0.6, -s * 0.2, 0, -s); ctx.fill();
+          ctx.strokeStyle = "rgba(255,255,255,0.45)"; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(0, -s * 0.85); ctx.lineTo(0, s * 0.9); ctx.stroke();
+          for (let k = -2; k <= 2; k++) { ctx.beginPath(); ctx.moveTo(0, k * s * 0.3); ctx.lineTo(s * 0.3, k * s * 0.3 - s * 0.18); ctx.moveTo(0, k * s * 0.3); ctx.lineTo(-s * 0.3, k * s * 0.3 - s * 0.18); ctx.stroke(); }
+          ctx.restore();
+        });
+        const light = "#8fd07a";
+        for (const [x, y, a, s, c] of [[50, 60, 0.6, 46, acc], [180, 40, -0.5, 40, light], [130, 150, 0.2, 50, acc], [30, 190, -0.7, 38, light], [220, 190, 0.9, 44, acc], [100, 240, -0.2, 30, light]]) leaf(x, y, a, s, c);
+      } else if (pat === "brick") {
+        // rows of bricks with light mortar between them
+        ctx.fillStyle = acc; ctx.fillRect(0, 0, w, h);
+        const bh = 32, bw = 64;
+        for (let row = 0; row < h / bh; row++) {
+          const off = (row % 2) * (bw / 2);
+          for (let k = -1; k <= w / bw; k++) {
+            const x = k * bw + off;
+            ctx.fillStyle = ["#b9553f", "#a84a36", "#c46149", "#b04f3b"][(row * 3 + k + 8) % 4];
+            ctx.fillRect(x + 3, row * bh + 3, bw - 6, bh - 6);
+            ctx.fillStyle = "rgba(255,255,255,0.12)"; ctx.fillRect(x + 3, row * bh + 3, bw - 6, 4);
+          }
+        }
+      } else if (pat === "tatami") {
+        // two tatami mats per tile (one each way), woven, with dark cloth edges
+        const mat = (x, y, mw, mh, across) => {
+          ctx.fillStyle = base; ctx.fillRect(x, y, mw, mh);
+          ctx.strokeStyle = "rgba(120,130,60,0.35)"; ctx.lineWidth = 1.5;
+          if (across) for (let k = 3; k < mh; k += 6) { ctx.beginPath(); ctx.moveTo(x, y + k); ctx.lineTo(x + mw, y + k); ctx.stroke(); }
+          else for (let k = 3; k < mw; k += 6) { ctx.beginPath(); ctx.moveTo(x + k, y); ctx.lineTo(x + k, y + mh); ctx.stroke(); }
+          ctx.fillStyle = acc;
+          if (across) { ctx.fillRect(x, y, 6, mh); ctx.fillRect(x + mw - 6, y, 6, mh); } else { ctx.fillRect(x, y, mw, 6); ctx.fillRect(x, y + mh - 6, mw, 6); }
+        };
+        mat(0, 0, 128, 256, false);
+        mat(128, 0, 128, 128, true);
+        mat(128, 128, 128, 128, true);
+      } else if (pat === "hex") {
+        // honeycomb: 4 x 4 hexagons per tile (every other row shifted), so it tiles
+        const cw = 64, rh = 64, rx = cw / Math.sqrt(3), ry = rh / 1.5;
+        ctx.lineWidth = 5; ctx.strokeStyle = acc; ctx.lineJoin = "round";
+        for (let row = -1; row <= 4; row++) for (let col = -1; col <= 4; col++) {
+          const cx = col * cw + (row % 2 ? cw / 2 : 0), cy = row * rh;
+          ctx.beginPath();
+          for (let k = 0; k < 6; k++) { const a = PI / 6 + k * PI / 3; const px = cx + Math.cos(a) * rx, py = cy + Math.sin(a) * ry; if (k) ctx.lineTo(px, py); else ctx.moveTo(px, py); }
+          ctx.closePath();
+          if ((((row + 3 * col) % 4) + 4) % 4 === 0) { ctx.fillStyle = "rgba(255,255,255,0.3)"; ctx.fill(); }
+          ctx.stroke();
+        }
+      } else if (pat === "chevron") {
+        // parquet: short planks on the slant, every other column the other way (a zig-zag)
+        const cw = 64, T = 32;
+        const tones = [base, "#b2733f", "#9c5f31", "#b87a46"];
+        ctx.strokeStyle = acc; ctx.lineWidth = 2.5;
+        for (let col = 0; col < 4; col++) {
+          const x0 = col * cw, up = col % 2 === 0;
+          for (let k = -2; k < 12; k++) {
+            const y = k * T;
+            const yl = up ? y : y - cw, yr = up ? y - cw : y; // left / right edge heights
+            ctx.fillStyle = tones[((k % 4) + 4) % 4];
+            ctx.beginPath(); ctx.moveTo(x0, yl); ctx.lineTo(x0 + cw, yr); ctx.lineTo(x0 + cw, yr + T); ctx.lineTo(x0, yl + T); ctx.closePath();
+            ctx.fill(); ctx.stroke();
+          }
+        }
       } else {
         // plain: a soft speckle (carpet, or grass blades for fake grass)
         const grass = /grass/.test(it.id || "");
         for (let i = 0; i < (grass ? 260 : 400); i++) {
           const x = r() * w, y = r() * h;
           ctx.fillStyle = r() < 0.5 ? acc : "rgba(255,255,255,0.18)";
-          if (grass) { ctx.fillRect(x, y, 2, 7); } else { ctx.beginPath(); ctx.arc(x, y, 1.6, 0, TAU); ctx.fill(); }
+          if (grass) wrap(x, y, (px, py) => ctx.fillRect(px, py, 2, 7)); else dot(x, y, 1.6);
         }
         if (!isFloor) {
           ctx.fillStyle = acc;
-          for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { ctx.beginPath(); ctx.arc(x * 64 + (y % 2) * 32 + 16, y * 64 + 32, 4, 0, TAU); ctx.fill(); }
+          for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) dot(x * 64 + (y % 2) * 32 + 16, y * 64 + 32, 4);
         }
       }
     }, [1, 1]);
+  }
+
+  // A five-pointed star.
+  function star(ctx, x, y, s) {
+    ctx.beginPath();
+    for (let k = 0; k < 10; k++) {
+      const a = -PI / 2 + k * PI / 5, rr = k % 2 ? s * 0.45 : s;
+      if (k) ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); else ctx.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+    }
+    ctx.closePath();
+    ctx.fill();
   }
 
   function damask(ctx, x, y) {
@@ -1174,11 +1286,27 @@
     special: { x: 4.5, z: -3.4, ry: 0 },             // back-right corner
   };
   const WINDOW = { x: -0.4, w: 2.4, y0: 1.5, y1: 3.6 };
+  // lamps that stand on the bedside table (so the clock and book move off it)
+  const NIGHTSTAND_LAMPS = ["lamp-lava", "lamp-moon"];
   const DOOR = { z: 3.0, w: 1.3, h: 2.5 };
 
   function toWorld(place, lx, lz) {
     const c = Math.cos(place.ry), s = Math.sin(place.ry);
     return { x: place.x + lx * c + lz * s, z: place.z - lx * s + lz * c };
+  }
+
+  // Where a home's self-portrait gets its picture: opts.portrait (a function
+  // record -> picture URL, or a URL), or else MiiHomes3D.portraitFor(record),
+  // which the app sets up. Returns a function giving the URL ("" = not ready yet).
+  function portraitSource(opts, record) {
+    const o = opts && opts.portrait;
+    if (typeof o === "function") return () => o(record);
+    if (typeof o === "string") return () => o;
+    if (!record || !record.id) return null;
+    return () => {
+      const f = root.MiiHomes3D && root.MiiHomes3D.portraitFor;
+      return typeof f === "function" ? f(record) : "";
+    };
   }
 
   // ---------- furniture models ----------
@@ -1756,34 +1884,80 @@
     },
     "art-portrait": {
       spot: { wx: 2.4, wz: -3.2, yaw: PI },
+      // The home's own Mii, painted in a golden frame. The picture comes from the
+      // app (ctx.portrait gives the Mii's portrait picture, see portraitSource):
+      // until it's ready, the canvas shows a soft "sketch" and is filled in after.
       build(g, ctx) {
         const name = (ctx.record && ctx.record.name) || "Me";
-        const tex = canvasTexture(180, 230, (c, w, h) => {
-          const gr = c.createRadialGradient(w / 2, h / 2, 10, w / 2, h / 2, 140);
-          gr.addColorStop(0, "#c46a7a"); gr.addColorStop(1, "#6a2a3a");
+        const cv = document.createElement("canvas");
+        cv.width = 192; cv.height = 240;
+        const c = cv.getContext("2d");
+        const tex = new THREE.CanvasTexture(cv);
+        tex.encoding = THREE.sRGBEncoding;
+        tex.anisotropy = 8;
+        const paint = (img) => {
+          const w = cv.width, h = cv.height;
+          const gr = c.createRadialGradient(w / 2, h * 0.42, 10, w / 2, h / 2, 150);
+          gr.addColorStop(0, "#d98a8f"); gr.addColorStop(1, "#6a2a3a");
           c.fillStyle = gr; c.fillRect(0, 0, w, h);
-          c.fillStyle = "#4a2a1a"; c.beginPath(); c.ellipse(w / 2, 104, 62, 66, 0, PI, 0); c.fill();
-          c.fillStyle = "#ffd6b0"; c.beginPath(); c.ellipse(w / 2, 112, 52, 58, 0, 0, TAU); c.fill();
-          c.fillStyle = "#4a2a1a"; c.beginPath(); c.ellipse(w / 2 - 14, 70, 44, 20, -0.3, 0, TAU); c.fill();
-          c.fillStyle = "#2a1a1a"; c.beginPath(); c.ellipse(w / 2 - 18, 110, 6, 9, 0, 0, TAU); c.ellipse(w / 2 + 18, 110, 6, 9, 0, 0, TAU); c.fill();
-          c.fillStyle = "#ff9aa8"; c.beginPath(); c.ellipse(w / 2 - 30, 128, 9, 5, 0, 0, TAU); c.ellipse(w / 2 + 30, 128, 9, 5, 0, 0, TAU); c.fill();
-          c.strokeStyle = "#8a3a3a"; c.lineWidth = 3; c.beginPath(); c.arc(w / 2, 132, 14, 0.2, PI - 0.2); c.stroke();
-          c.fillStyle = "#4a7ad0"; c.beginPath(); c.ellipse(w / 2, h + 10, 70, 60, 0, PI, 0); c.fill();
-        });
+          // brush strokes, like an oil painting
+          const r = seeded(7);
+          for (let i = 0; i < 40; i++) {
+            c.strokeStyle = r() < 0.5 ? "rgba(255,255,255,0.05)" : "rgba(60,10,30,0.08)"; c.lineWidth = 6 + r() * 6;
+            const x = r() * w, y = r() * h; c.beginPath(); c.moveTo(x, y); c.lineTo(x + 30 * (r() - 0.5), y + 30 * (r() - 0.5)); c.stroke();
+          }
+          if (img) {
+            // the portrait is a square head-and-shoulders picture with a clear background
+            const s = w * 1.12;
+            c.imageSmoothingEnabled = true; c.imageSmoothingQuality = "high";
+            c.drawImage(img, (w - s) / 2, h - s * 0.98, s, s);
+            // a soft varnish glow over the top
+            const v = c.createLinearGradient(0, 0, w, h);
+            v.addColorStop(0, "rgba(255,240,210,0.12)"); v.addColorStop(0.5, "rgba(255,255,255,0)"); v.addColorStop(1, "rgba(80,20,40,0.12)");
+            c.fillStyle = v; c.fillRect(0, 0, w, h);
+          } else {
+            // still being painted: a pale pencil sketch of a Mii
+            c.strokeStyle = "rgba(255,240,230,0.6)"; c.lineWidth = 3; c.setLineDash([7, 6]);
+            c.beginPath(); c.ellipse(w / 2, 110, 50, 58, 0, 0, TAU); c.stroke();
+            c.beginPath(); c.ellipse(w / 2, h + 20, 74, 66, 0, PI, 0); c.stroke();
+            c.setLineDash([]);
+            c.fillStyle = "rgba(255,240,230,0.7)"; c.textAlign = "center"; c.textBaseline = "middle";
+            c.font = "bold 34px 'Nunito', sans-serif"; c.fillText("🎨", w / 2, 112);
+          }
+          tex.needsUpdate = true;
+        };
+        paint(null);
+        // ask for the picture now and then: it may not be drawn yet, or the Mii's look may change
+        const src = ctx.portrait;
+        if (src) {
+          let last = "", next = 0;
+          const check = (t) => {
+            if (t < next) return;
+            next = t + (last ? 2 : 0.4);
+            let url = "";
+            try { url = src() || ""; } catch (e) { url = ""; }
+            if (!url || url === last) return;
+            last = url;
+            const img = new Image();
+            img.onload = () => { if (last === url) paint(img); };
+            img.src = url;
+          };
+          check(0);
+          ctx.anim.push(check);
+        }
         const gold = toon(0xffcf3a);
         block(g, gold, 0, 0, 0, 1.45, 1.8, 0.12, 0.08);
         block(g, 0xd9a441, 0, 0, 0.04, 1.25, 1.6, 0.06, 0.04);
-        plane(g, 1.12, 1.45, toon(0xffffff, { map: tex }), { z: 0.08 });
+        plane(g, 1.12, 1.4, toon(0xffffff, { map: tex }), { z: 0.08 });
         for (const [x, y] of [[-0.72, 0.9], [0.72, 0.9], [-0.72, -0.9], [0.72, -0.9]]) ball(g, gold, x, y, 0.06, 0.1);
         ball(g, gold, 0, 1.0, 0.04, 0.16, { sz: 0.5 });
-        const plaque = canvasTexture(192, 48, (c, w, h) => {
-          c.fillStyle = "#d9a441"; c.fillRect(0, 0, w, h);
-          c.fillStyle = "#4a3010"; c.textAlign = "center"; c.textBaseline = "middle"; fitFont(c, name, w - 20, 30); c.fillText(name, w / 2, h / 2 + 2);
+        const plaque = canvasTexture(192, 48, (c2, w, h) => {
+          c2.fillStyle = "#d9a441"; c2.fillRect(0, 0, w, h);
+          c2.fillStyle = "#4a3010"; c2.textAlign = "center"; c2.textBaseline = "middle"; fitFont(c2, name, w - 20, 30); c2.fillText(name, w / 2, h / 2 + 2);
         });
         plane(g, 0.8, 0.2, toon(0xffffff, { map: plaque }), { y: -1.08, z: 0.04 });
       },
     },
-
     // ===== special things (back-right corner) =====
     "special-none": { build() {} },
     "special-fishtank": {
@@ -1925,6 +2099,705 @@
         ctx.anim.push((t) => { bag.rotation.z = Math.sin(t * 2.2) * 0.06; bag.rotation.x = Math.sin(t * 1.7) * 0.04; });
       },
     },
+
+    // =====================================================================
+    // More furniture (same slots, same rules as above)
+    // =====================================================================
+
+    // ===== beds =====
+    "bed-cloud": {
+      obs: [{ cx: 0, cz: 0, w: 2.6, d: 3.0 }], spot: { lx: 2.2, lz: 0.5, yaw: -PI / 2 }, lie: { lx: 0, lz: 0.1, h: 0.84, yaw: PI },
+      build(g, ctx) {
+        // a puffy cloud: a soft base with round puffs all round, and a cloud headboard
+        block(g, 0xdcecff, 0, 0.21, 0, 2.1, 0.42, 2.9, 0.18);
+        const puffs = [];
+        for (let k = 0; k < 7; k++) for (const s of [-1, 1]) puffs.push({ x: s * 1.0, y: 0.3, z: -1.2 + k * 0.4, sx: 0.28, sy: 0.24, sz: 0.3 });
+        for (let k = 0; k < 5; k++) puffs.push({ x: -0.8 + k * 0.4, y: 0.3, z: 1.38, sx: 0.28, sy: 0.24, sz: 0.22 });
+        scatter(g, G.lowSphere(), toon(0xffffff), puffs, true);
+        block(g, 0xffffff, 0, 0.62, 0, 1.9, 0.3, 2.8, 0.14);
+        block(g, 0xaee0ff, 0, 0.8, 0.42, 1.95, 0.08, 1.9, 0.04);
+        for (let k = 0; k < 5; k++) ball(g, 0xffe98a, -0.7 + k * 0.35, 0.85, 0.3 + (k % 2) * 0.6, 0.06, { sy: 0.35 });
+        ball(g, 0xffffff, 0, 0.88, -1.02, 0.3, { sx: 1.5, sy: 0.4 });
+        for (const [x, y, r] of [[-0.75, 1.15, 0.42], [0, 1.45, 0.56], [0.75, 1.15, 0.42], [-0.38, 0.95, 0.38], [0.38, 0.95, 0.38]]) ball(g, 0xffffff, x, y, -1.38, r, { sz: 0.35 });
+        // a little rainbow over the headboard, and a smiling sun
+        for (const [r, col] of [[0.5, 0xff6b6b], [0.42, 0xffcf3a], [0.34, 0x6fcf6a], [0.26, 0x4a9ae2]]) put(g, new THREE.TorusGeometry(r, 0.045, 6, 24, PI), toon(col), { x: 0.85, y: 1.65, z: -1.46 });
+        const sun = dynamic(group(g, -0.95, 1.95, -1.42));
+        ball(sun, glow(0xffd23f, 0.5), 0, 0, 0, 0.2, { sz: 0.4 });
+        for (const s of [-1, 1]) ball(sun, 0x5a3a1a, s * 0.07, 0.04, 0.08, 0.025);
+        ctx.anim.push((t) => { sun.rotation.z = Math.sin(t * 0.8) * 0.15; });
+      },
+    },
+    "bed-futon": {
+      obs: [{ cx: 0, cz: 0, w: 2.2, d: 3.0 }], spot: { lx: 1.95, lz: 0.5, yaw: -PI / 2 }, lie: { lx: 0, lz: 0.1, h: 0.4, yaw: PI },
+      build(g) {
+        // a low tatami platform with a futon, a quilt and a roll pillow
+        block(g, 0xd8d39a, 0, 0.06, 0, 2.2, 0.12, 3.0, 0.03);
+        for (const s of [-1, 1]) block(g, 0x4a6a3a, s * 1.07, 0.065, 0, 0.08, 0.125, 3.0, 0.02);
+        block(g, 0xfffaf0, 0, 0.21, -0.05, 1.7, 0.2, 2.6, 0.09);
+        const quilt = canvasTexture(128, 128, (c, w, h) => {
+          c.fillStyle = "#3f6fb5"; c.fillRect(0, 0, w, h);
+          c.strokeStyle = "rgba(255,255,255,0.75)"; c.lineWidth = 2;
+          for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { c.beginPath(); c.arc(x * 32 + 16, y * 32 + 16, 11, 0, TAU); c.stroke(); c.beginPath(); c.arc(x * 32 + 16, y * 32 + 16, 5, 0, TAU); c.stroke(); }
+        }, [2, 2]);
+        block(g, toon(0xffffff, { map: quilt }), 0, 0.35, 0.38, 1.78, 0.1, 1.75, 0.05);
+        block(g, 0xff9ec7, 0, 0.35, -0.5, 1.78, 0.1, 0.12, 0.04);
+        put(g, G.capsule(), toon(0xf0e3c8), { y: 0.42, z: -0.98, sx: 0.26, sy: 0.6, sz: 0.26, rz: PI / 2 });
+        // a paper lantern on the floor by the head
+        cylinder(g, 0x6b4423, 0.85, 0.16, -1.25, 0.12, 0.04);
+        put(g, G.cyl(12), toon(0xfff1d6, { emissive: 0xffd890, emissiveIntensity: 0.5 }), { x: 0.85, y: 0.36, z: -1.25, sx: 0.13, sy: 0.36, sz: 0.13 });
+        cylinder(g, 0x6b4423, 0.85, 0.56, -1.25, 0.12, 0.04);
+      },
+    },
+    "bed-pirate": {
+      obs: [{ cx: 0, cz: 0.3, w: 2.3, d: 3.6 }], spot: { lx: 2.15, lz: 0.6, yaw: -PI / 2 }, lie: { lx: 0, lz: 0.05, h: 1.0, yaw: PI },
+      build(g, ctx) {
+        const wood = toon(0x8a5a3a), gold = toon(0xffcf3a);
+        // the hull, with a pointy bow at the foot
+        block(g, wood, 0, 0.42, -0.1, 2.2, 0.84, 2.8, 0.16);
+        put(g, G.box(), wood, { y: 0.42, z: 1.3, sx: 1.1, sy: 0.84, sz: 1.1, ry: PI / 4 });
+        block(g, gold, 0, 0.7, -0.1, 2.24, 0.08, 2.84, 0.03);
+        put(g, G.box(), gold, { y: 0.7, z: 1.3, sx: 1.13, sy: 0.08, sz: 1.13, ry: PI / 4 });
+        ball(g, gold, 0, 0.62, 2.08, 0.12);
+        for (const s of [-1, 1]) for (const z of [-0.9, -0.15, 0.6]) {
+          put(g, G.circle(), toon(0x9fd8ff, { emissive: 0x5aa8e0, emissiveIntensity: 0.2 }), { x: s * 1.105, y: 0.4, z, s: 0.11, ry: s * PI / 2, shadow: false });
+          put(g, G.torus(0.12, 0.025), gold, { x: s * 1.105, y: 0.4, z, ry: s * PI / 2 });
+        }
+        // the mattress and a striped blanket
+        block(g, 0xffffff, 0, 0.88, -0.15, 1.9, 0.12, 2.6, 0.05);
+        const stripes = canvasTexture(32, 64, (c, w, h) => { for (let i = 0; i < 8; i++) { c.fillStyle = i % 2 ? "#ffffff" : "#e8424f"; c.fillRect(0, i * 8, w, 8); } }, [1, 2]);
+        block(g, toon(0xffffff, { map: stripes }), 0, 0.97, 0.35, 1.94, 0.06, 1.6, 0.03);
+        ball(g, 0xffffff, 0, 1.03, -1.0, 0.28, { sx: 1.5, sy: 0.4 });
+        // the mast, with a sail and a jolly flag
+        cylinder(g, 0x6b4423, 0, 2.05, -1.42, 0.07, 2.9);
+        cylinder(g, 0x6b4423, 0, 3.15, -1.36, 0.04, 1.9, { rz: PI / 2 });
+        const sail = canvasTexture(128, 96, (c, w, h) => {
+          c.fillStyle = "#fff6e0"; c.fillRect(0, 0, w, h);
+          c.fillStyle = "#e8424f"; c.fillRect(0, 30, w, 14); c.fillRect(0, 58, w, 14);
+          c.strokeStyle = "rgba(150,110,60,0.4)"; c.lineWidth = 2; c.strokeRect(2, 2, w - 4, h - 4);
+        });
+        const sl = dynamic(group(g, 0, 3.12, -1.33));
+        plane(sl, 1.6, 1.0, toon(0xffffff, { map: sail, side: THREE.DoubleSide }), { y: -0.55 });
+        const flagTex = canvasTexture(64, 48, (c, w, h) => {
+          c.fillStyle = "#222630"; c.fillRect(0, 0, w, h);
+          c.fillStyle = "#ffffff"; c.beginPath(); c.arc(32, 20, 10, 0, TAU); c.fill(); c.fillRect(26, 24, 12, 8);
+          c.fillStyle = "#222630"; c.beginPath(); c.arc(28, 19, 3, 0, TAU); c.arc(36, 19, 3, 0, TAU); c.fill();
+          c.strokeStyle = "#ffffff"; c.lineWidth = 4; c.beginPath(); c.moveTo(16, 34); c.lineTo(48, 44); c.moveTo(48, 34); c.lineTo(16, 44); c.stroke();
+        });
+        const flag = dynamic(group(g, 0, 3.38, -1.42));
+        plane(flag, 0.42, 0.3, toon(0xffffff, { map: flagTex, side: THREE.DoubleSide }), { x: 0.24 });
+        ball(g, gold, 0, 3.52, -1.42, 0.07);
+        ctx.anim.push((t) => { sl.rotation.x = Math.sin(t * 1.1) * 0.05 - 0.04; flag.rotation.y = Math.sin(t * 2.3) * 0.25; });
+      },
+    },
+
+    // ===== seats =====
+    "sofa-rocking": {
+      obs: [{ cx: 0, cz: -0.05, w: 1.15, d: 1.45 }], spot: { lx: 0, lz: 1.25, yaw: 0 }, seat: { lx: 0, lz: 0.04, h: 0.63, legs: "out" },
+      build(g) {
+        const wood = toon(0xb07a45), dark = toon(0x8a5a32);
+        // the rockers: two long curves resting on the floor
+        for (const sx of [-0.45, 0.45]) put(g, new THREE.TorusGeometry(2.0, 0.05, 6, 24, 0.72), dark, { x: sx, y: 2.05, rz: -PI / 2 - 0.36, ry: PI / 2 });
+        for (const [x, z] of [[-0.45, -0.32], [0.45, -0.32], [-0.45, 0.32], [0.45, 0.32]]) cylinder(g, wood, x, 0.3, z, 0.04, 0.44);
+        block(g, wood, 0, 0.5, 0.0, 0.96, 0.08, 0.86, 0.03);
+        block(g, 0xff9a8a, 0, 0.58, 0.02, 0.84, 0.09, 0.76, 0.04);
+        // the tall back with spindles
+        for (const sx of [-0.43, 0.43]) cylinder(g, wood, sx, 1.08, -0.42, 0.045, 1.2);
+        block(g, wood, 0, 1.68, -0.42, 1.0, 0.12, 0.08, 0.04);
+        for (let k = 0; k < 4; k++) cylinder(g, wood, -0.24 + k * 0.16, 1.1, -0.43, 0.022, 1.1);
+        block(g, 0xff9a8a, 0, 1.0, -0.36, 0.74, 0.7, 0.07, 0.035);
+        // a knitted blanket over the top, and arms
+        block(g, 0x7fc8ff, -0.15, 1.6, -0.38, 0.5, 0.36, 0.06, 0.03, { rz: 0.06 });
+        for (const sx of [-0.47, 0.47]) {
+          block(g, wood, sx, 0.86, -0.02, 0.08, 0.06, 0.8, 0.03);
+          cylinder(g, wood, sx, 0.68, 0.33, 0.03, 0.36);
+        }
+        // a ball of yarn and knitting needles on the floor
+        ball(g, 0xe8424f, 0.66, 0.1, 0.45, 0.1);
+        cylinder(g, 0xdfe4ea, 0.66, 0.16, 0.45, 0.01, 0.34, { rz: 0.9 });
+      },
+    },
+    "sofa-egg": {
+      obs: [{ cx: 0, cz: -0.2, r: 0.82 }], spot: { lx: 0, lz: 1.3, yaw: 0 }, seat: { lx: 0, lz: 0.06, h: 0.76, legs: "out" },
+      build(g) {
+        const metal = toon(0xdfe4ea);
+        // the stand: a heavy base, a pole and an arm over the top
+        cylinder(g, metal, 0, 0.04, -0.62, 0.28, 0.08);
+        cylinder(g, metal, 0, 1.47, -0.62, 0.045, 2.86);
+        ball(g, metal, 0, 2.9, -0.62, 0.07);
+        cylinder(g, metal, 0, 2.9, -0.33, 0.04, 0.58, { rx: PI / 2 });
+        cylinder(g, 0x8f96a3, 0, 2.5, -0.05, 0.015, 0.8);
+        put(g, G.torus(0.06, 0.015), toon(0x8f96a3), { y: 2.9, z: -0.05 });
+        // the wicker egg, open at the front
+        const wick = canvasTexture(64, 64, (c, w, h) => {
+          c.fillStyle = "#d6ae72"; c.fillRect(0, 0, w, h);
+          c.strokeStyle = "#b88c50"; c.lineWidth = 3;
+          for (let k = -64; k < 128; k += 10) { c.beginPath(); c.moveTo(k, 0); c.lineTo(k + 64, 64); c.stroke(); c.beginPath(); c.moveTo(k + 64, 0); c.lineTo(k, 64); c.stroke(); }
+        }, [6, 4]);
+        const shell = new THREE.SphereGeometry(1, 28, 18, PI / 2 + 1.35, TAU - 2.7);
+        put(g, shell, toon(0xffffff, { map: wick, side: THREE.DoubleSide }), { y: 1.2, z: -0.05, sx: 0.72, sy: 0.95, sz: 0.7 });
+        ball(g, 0xff9ec7, 0, 0.66, 0.0, 0.58, { sy: 0.18 });
+        ball(g, 0xffc6dc, 0, 1.15, -0.45, 0.4, { sy: 0.55, sz: 0.2 });
+        ball(g, 0xffffff, 0.25, 0.85, -0.3, 0.16, { sz: 0.5, rz: 0.4 });
+      },
+    },
+    "sofa-gaming": {
+      obs: [{ cx: 0, cz: -0.05, r: 0.6 }], spot: { lx: 0, lz: 1.2, yaw: 0 }, seat: { lx: 0, lz: 0.05, h: 0.63, legs: "out" },
+      build(g) {
+        const black = toon(0x2f3542), red = toon(0xff3b5a);
+        // five-star base on wheels, and the gas lift
+        for (let k = 0; k < 5; k++) {
+          const a = (k / 5) * TAU + 0.3;
+          put(g, G.box(), black, { x: Math.cos(a) * 0.22, y: 0.12, z: Math.sin(a) * 0.22, sx: 0.44, sy: 0.06, sz: 0.07, ry: -a });
+          ball(g, 0x1e2228, Math.cos(a) * 0.43, 0.06, Math.sin(a) * 0.43, 0.06);
+        }
+        cylinder(g, 0x8f96a3, 0, 0.3, 0, 0.05, 0.36);
+        block(g, black, 0, 0.52, 0.02, 0.9, 0.14, 0.86, 0.07);
+        block(g, red, 0, 0.605, 0.02, 0.46, 0.04, 0.8, 0.02);
+        // the tall racing back with red stripes, wings and a headrest pillow
+        const back = group(g, 0, 0, -0.42);
+        back.rotation.x = -0.08;
+        block(back, black, 0, 1.25, 0, 0.84, 1.3, 0.16, 0.08);
+        for (const sx of [-0.24, 0.24]) block(back, red, sx, 1.2, 0.085, 0.12, 1.15, 0.02, 0.01);
+        for (const sx of [-0.43, 0.43]) block(back, black, sx, 1.35, 0.06, 0.08, 0.6, 0.2, 0.04);
+        ball(back, red, 0, 1.72, 0.1, 0.16, { sx: 1.4, sz: 0.45 });
+        // armrests
+        for (const sx of [-0.47, 0.47]) {
+          block(g, black, sx, 0.74, -0.02, 0.06, 0.28, 0.06, 0.02);
+          block(g, 0x3a3f4a, sx, 0.9, 0.02, 0.1, 0.05, 0.42, 0.02);
+        }
+      },
+    },
+
+    // ===== tables (the Mii stands behind them, at -z, facing you) =====
+    "table-kitchen": {
+      obs: [{ cx: 0, cz: 0, w: 2.15, d: 1.05 }], spot: { lx: 0, lz: -1.15, yaw: 0 },
+      build(g, ctx) {
+        // the island: cupboards in front, a worktop with a hob, a chopping board and fruit
+        block(g, 0xffffff, 0, 0.5, 0, 2.0, 0.92, 0.9, 0.05);
+        block(g, 0x3a3f4a, 0, 0.03, 0.02, 1.9, 0.06, 0.82, 0.02);
+        for (const x of [-0.62, 0, 0.62]) {
+          block(g, 0x9fd8c8, x, 0.5, 0.455, 0.56, 0.72, 0.03, 0.03);
+          ball(g, 0xffcf5a, x + 0.18, 0.72, 0.48, 0.035);
+        }
+        block(g, 0xf2efe8, 0, 0.99, 0, 2.1, 0.08, 1.0, 0.03);
+        block(g, 0x2f3542, -0.45, 1.04, 0, 0.84, 0.03, 0.62, 0.015);
+        for (const [x, z] of [[-0.65, 0.12], [-0.25, -0.12]]) put(g, G.torus(0.13, 0.02), toon(0xff5a3a, { emissive: 0xff3a1a, emissiveIntensity: 0.6 }), { x, y: 1.06, z, rx: PI / 2 });
+        // a frying pan with an egg, and a pot of soup
+        cylinder(g, 0x3a3f4a, -0.65, 1.09, 0.12, 0.19, 0.05);
+        block(g, 0x3a3f4a, -0.65, 1.1, -0.2, 0.06, 0.03, 0.34, 0.01);
+        disc(g, toon(0xffffff), -0.65, 1.117, 0.12, 0.11);
+        ball(g, 0xffc21a, -0.63, 1.12, 0.13, 0.045, { sy: 0.6 });
+        cylinder(g, 0xff7a59, -0.25, 1.17, -0.12, 0.16, 0.22);
+        disc(g, toon(0xffb84a), -0.25, 1.27, -0.12, 0.14);
+        for (const s of [-1, 1]) block(g, 0xff7a59, -0.25 + s * 0.19, 1.22, -0.12, 0.06, 0.03, 0.05, 0.01);
+        block(g, 0xc98b4a, 0.42, 1.045, 0.05, 0.5, 0.03, 0.34, 0.015);
+        put(g, G.capsule(), toon(0xff9a3a), { x: 0.38, y: 1.09, z: 0.06, sx: 0.06, sy: 0.18, sz: 0.06, rz: PI / 2 });
+        for (let k = 0; k < 3; k++) cylinder(g, 0xff9a3a, 0.56 + k * 0.035, 1.07, 0.12 - k * 0.04, 0.03, 0.015);
+        block(g, 0xdfe4ea, 0.48, 1.07, -0.06, 0.24, 0.01, 0.05, 0.005); // a knife
+        put(g, G.taper(0.2, 0.12), toon(0xffffff), { x: 0.82, y: 1.09, z: -0.08, sy: 0.12 });
+        ball(g, 0xff3b3b, 0.78, 1.17, -0.06, 0.07);
+        ball(g, 0xffe25a, 0.88, 1.17, -0.12, 0.065, { sx: 1.4 });
+        ball(g, 0x8ad43a, 0.84, 1.16, 0.0, 0.06);
+        // steam from the pot
+        const puff = canvasTexture(64, 64, (c) => { const gr = c.createRadialGradient(32, 32, 2, 32, 32, 30); gr.addColorStop(0, "rgba(255,255,255,0.9)"); gr.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = gr; c.fillRect(0, 0, 64, 64); });
+        const steam = [];
+        for (let i = 0; i < 4; i++) {
+          const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: puff, transparent: true, depthWrite: false }));
+          g.add(dynamic(s));
+          steam.push(s);
+        }
+        ctx.anim.push((t) => steam.forEach((s, i) => {
+          const k = (t * 0.4 + i / 4) % 1;
+          s.position.set(-0.25 + Math.sin(t * 1.5 + i * 2) * 0.06, 1.32 + k * 0.8, -0.12);
+          s.scale.setScalar(0.15 + k * 0.3);
+          s.material.opacity = (1 - k) * 0.7;
+        }));
+      },
+    },
+    "table-pingpong": {
+      obs: [{ cx: 0, cz: 0, w: 2.65, d: 1.5 }], spot: { lx: -1.72, lz: 0, yaw: PI / 2 },
+      build(g, ctx) {
+        const top = canvasTexture(256, 144, (c, w, h) => {
+          c.fillStyle = "#2e7d5b"; c.fillRect(0, 0, w, h);
+          c.fillStyle = "#ffffff"; c.fillRect(0, 0, w, 4); c.fillRect(0, h - 4, w, 4); c.fillRect(0, 0, 4, h); c.fillRect(w - 4, 0, 4, h); c.fillRect(0, h / 2 - 1, w, 2);
+        });
+        block(g, 0x245f45, 0, 0.77, 0, 2.6, 0.06, 1.45, 0.02);
+        plane(g, 2.58, 1.43, toon(0xffffff, { map: top }), { y: 0.802, rx: -PI / 2 });
+        for (const [x, z] of [[-1.1, -0.58], [1.1, -0.58], [-1.1, 0.58], [1.1, 0.58]]) block(g, 0x3a3f4a, x, 0.37, z, 0.07, 0.74, 0.07, 0.02);
+        for (const x of [-1.1, 1.1]) block(g, 0x3a3f4a, x, 0.2, 0, 0.05, 0.05, 1.16, 0.02);
+        // the net across the middle
+        const net = canvasTexture(128, 16, (c, w, h) => {
+          c.strokeStyle = "rgba(30,30,40,0.85)"; c.lineWidth = 1;
+          for (let x = 0; x <= w; x += 6) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke(); }
+          for (let y = 0; y <= h; y += 6) { c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke(); }
+        });
+        plane(g, 1.55, 0.15, toon(0xffffff, { map: net, transparent: true, side: THREE.DoubleSide }), { y: 0.88, ry: PI / 2 });
+        block(g, 0xffffff, 0, 0.96, 0, 0.02, 0.02, 1.55, 0.005);
+        for (const s of [-1, 1]) block(g, 0x3a3f4a, 0, 0.88, s * 0.78, 0.04, 0.17, 0.04, 0.01);
+        // a bat on the table and a ball bouncing back and forth
+        cylinder(g, 0xe8424f, 0.85, 0.82, 0.35, 0.14, 0.025);
+        block(g, 0xc98b4a, 0.85, 0.82, 0.55, 0.05, 0.03, 0.18, 0.01);
+        const pb = dynamic(ball(g, 0xffffff, 0, 1, 0, 0.04, { shadow: false }));
+        ctx.anim.push((t) => {
+          const k = (t * 0.45) % 2, d = k < 1 ? k : 2 - k; // 0..1..0
+          const x = -1.15 + d * 2.3, b = (d * 2) % 1;
+          pb.position.set(x, 0.85 + Math.sin(b * PI) * 0.35, Math.sin(t * 0.7) * 0.35);
+        });
+      },
+    },
+
+    // ===== fun things (against the right wall; the Mii stands at +z facing them) =====
+    "tv-arcade": {
+      obs: [{ cx: 0, cz: -0.12, w: 1.05, d: 0.95 }], spot: { lx: 0, lz: 1.1, yaw: PI },
+      build(g, ctx) {
+        const body = toon(0x6a3df0), pink = toon(0xff4fd8);
+        block(g, body, 0, 0.95, -0.2, 0.95, 1.9, 0.75, 0.06);
+        for (const s of [-1, 1]) block(g, pink, s * 0.49, 0.95, -0.2, 0.04, 1.92, 0.77, 0.015);
+        block(g, 0x1a1530, 0, 1.36, 0.17, 0.8, 0.64, 0.04, 0.02, { rx: -0.22 });
+        const scr = canvasTexture(128, 128, (c, w, h) => {
+          c.fillStyle = "#0b0b22"; c.fillRect(0, 0, w, h);
+          c.fillStyle = "#ffffff"; const r = seeded(5); for (let i = 0; i < 30; i++) c.fillRect(r() * w, r() * h, 1.5, 1.5);
+          c.fillStyle = "#5cff8a";
+          for (let y = 0; y < 3; y++) for (let x = 0; x < 5; x++) { const px = 14 + x * 22, py = 14 + y * 18; c.fillRect(px, py, 12, 6); c.fillRect(px + 2, py + 6, 3, 3); c.fillRect(px + 7, py + 6, 3, 3); c.fillRect(px + 3, py - 3, 6, 3); }
+          c.fillStyle = "#ffd23f"; c.fillRect(56, 110, 16, 8); c.fillRect(62, 104, 4, 6);
+          c.fillStyle = "#ff4fd8"; c.fillRect(63, 80, 2, 8);
+        }, [1, 1]);
+        const screen = dynamic(plane(g, 0.72, 0.56, basic(scr), { y: 1.36, z: 0.195, rx: -0.22 }));
+        ctx.anim.push((t) => { scr.offset.x = Math.sin(t * 0.8) * 0.06; screen.material.color.setScalar(0.9 + Math.sin(t * 19) * 0.05); });
+        // the glowing sign on top
+        block(g, 0x2a2440, 0, 1.8, 0.1, 0.9, 0.24, 0.14, 0.03);
+        const sign = canvasTexture(128, 32, (c, w, h) => {
+          const gr = c.createLinearGradient(0, 0, w, 0); gr.addColorStop(0, "#ff4fd8"); gr.addColorStop(1, "#5cc8ff");
+          c.fillStyle = gr; c.fillRect(0, 0, w, h);
+          c.fillStyle = "#ffffff"; c.textAlign = "center"; c.textBaseline = "middle"; fitFont(c, "MII ARCADE", w - 10, 20); c.fillText("MII ARCADE", w / 2, h / 2 + 1);
+        });
+        plane(g, 0.84, 0.2, basic(sign), { y: 1.8, z: 0.172 });
+        // the controls: a joystick and buttons on a sloping panel
+        block(g, 0x2a2440, 0, 1.0, 0.3, 0.92, 0.1, 0.36, 0.03, { rx: 0.22 });
+        cylinder(g, 0x2f3542, -0.2, 1.1, 0.3, 0.02, 0.14);
+        const stick = dynamic(group(g, -0.2, 1.1, 0.3));
+        ball(stick, 0xff3b3b, 0, 0.08, 0, 0.055);
+        for (const [x, col] of [[0.05, 0xff3b5a], [0.17, 0xffd23f], [0.29, 0x5cc8ff]]) ball(g, glow(col, 0.6), x, 1.07, 0.33, 0.035, { sy: 0.5 });
+        block(g, 0x2a2440, 0, 0.5, 0.18, 0.3, 0.3, 0.03, 0.01);
+        block(g, 0x8f96a3, 0, 0.55, 0.2, 0.06, 0.1, 0.02, 0.005);
+        ball(g, glow(0xffd23f, 0.8), 0, 0.42, 0.2, 0.03, { sz: 0.4 });
+        ctx.anim.push((t) => { stick.rotation.z = Math.sin(t * 5) * 0.3; stick.rotation.x = Math.cos(t * 3.7) * 0.2; });
+      },
+    },
+    "tv-bookshelf": {
+      obs: [{ cx: 0, cz: -0.33, w: 1.95, d: 0.6 }], spot: { lx: 0, lz: 0.95, yaw: PI },
+      build(g) {
+        const wood = toon(0x9a6a3c);
+        block(g, 0x7a5230, 0, 1.1, -0.56, 1.9, 2.2, 0.04, 0.01);
+        for (const sx of [-0.92, 0.92]) block(g, wood, sx, 1.1, -0.33, 0.08, 2.2, 0.5, 0.02);
+        for (const y of [0.05, 0.6, 1.15, 1.7, 2.17]) block(g, wood, 0, y, -0.33, 1.9, 0.07, 0.5, 0.02);
+        // rows of books (some leaning), with gaps for a globe, a trophy and a plant
+        const r = seeded(11), books = [];
+        const cols = [0xe8424f, 0x4a90e2, 0xffcf3a, 0x5cc84a, 0xff9ec7, 0x9b6bff, 0xff9a3a, 0xf4efe4, 0x2f6f8f];
+        const shelves = [[0.085, -0.86, 0.86], [0.635, -0.86, 0.3], [1.185, -0.4, 0.86], [1.735, -0.86, 0.45]];
+        for (const [y0, x0, x1] of shelves) {
+          let x = x0;
+          while (x < x1) {
+            const w = 0.06 + r() * 0.05, h = 0.32 + r() * 0.14, lean = r() < 0.12 && x > x0 + 0.1 ? 0.25 : 0;
+            books.push({ x: x + w / 2 + lean * h * 0.5, y: y0 + h / 2 * Math.cos(lean), z: -0.33 + (r() - 0.5) * 0.04, sx: w, sy: h, sz: 0.36, rz: -lean, color: cols[Math.floor(r() * cols.length)] });
+            x += w + 0.008 + lean * h * 0.6;
+          }
+        }
+        scatter(g, G.box(), toon(0xffffff), books, true);
+        // a globe
+        cylinder(g, 0x9a6a3c, 0.62, 0.66, -0.33, 0.08, 0.03);
+        put(g, G.torus(0.17, 0.012), toon(0xd9a441), { x: 0.62, y: 0.85, z: -0.33, ry: PI / 2 });
+        ball(g, 0x4a9ae2, 0.62, 0.85, -0.33, 0.15);
+        ball(g, 0x5cc84a, 0.66, 0.9, -0.2, 0.06, { sz: 0.4 });
+        // a trophy, and a little plant on top
+        put(g, G.taper(0.09, 0.05), toon(0xffcf3a), { x: -0.65, y: 1.33, z: -0.3, sy: 0.18 });
+        cylinder(g, 0xffcf3a, -0.65, 1.22, -0.3, 0.025, 0.08);
+        block(g, 0x6b4423, -0.65, 1.2, -0.3, 0.16, 0.04, 0.12, 0.01);
+        put(g, G.taper(0.12, 0.09), toon(0xe0784a), { x: 0.6, y: 2.29, z: -0.33, sy: 0.18 });
+        for (let i = 0; i < 6; i++) { const a = (i / 6) * TAU; put(g, G.sphere(), toon(0x5cc84a), { x: 0.6 + Math.cos(a) * 0.08, y: 2.45, z: -0.33 + Math.sin(a) * 0.08, sx: 0.06, sy: 0.16, sz: 0.06, rx: Math.sin(a) * 0.6, rz: -Math.cos(a) * 0.6 }); }
+        block(g, 0x4a90e2, -0.4, 2.25, -0.33, 0.32, 0.08, 0.24, 0.02);
+        block(g, 0xffcf3a, -0.4, 2.33, -0.33, 0.28, 0.07, 0.22, 0.02);
+      },
+    },
+    "tv-flatscreen": {
+      obs: [{ cx: 0, cz: -0.3, w: 1.95, d: 0.6 }], spot: { lx: 0, lz: 1.65, yaw: PI },
+      build(g, ctx) {
+        // a low media unit with a big, thin TV on it
+        for (const [x, z] of [[-0.85, -0.5], [0.85, -0.5], [-0.85, -0.1], [0.85, -0.1]]) cylinder(g, 0x9a6a3c, x, 0.05, z, 0.03, 0.1);
+        block(g, 0xf4efe4, 0, 0.34, -0.3, 1.9, 0.48, 0.55, 0.04);
+        for (const x of [-0.47, 0.47]) {
+          block(g, 0xe0a868, x, 0.34, -0.02, 0.86, 0.36, 0.03, 0.02);
+          block(g, 0x8f96a3, x, 0.42, 0.0, 0.2, 0.025, 0.02, 0.01);
+        }
+        block(g, 0x2f3542, 0, 0.6, -0.38, 0.42, 0.04, 0.26, 0.015);
+        block(g, 0x2f3542, 0, 0.72, -0.42, 0.08, 0.22, 0.05, 0.01);
+        block(g, 0x1e1e24, 0, 1.38, -0.42, 1.9, 1.1, 0.06, 0.03);
+        const shows = [tvShow(1), gameScreen(), tvShow(2), tvShow(0)];
+        const scr = dynamic(plane(g, 1.8, 1.0, basic(shows[0]), { y: 1.38, z: -0.387 }));
+        block(g, 0x2f3542, 0, 0.62, -0.12, 0.9, 0.08, 0.12, 0.03); // soundbar
+        ball(g, glow(0x5cff8a, 1), 0.38, 0.62, -0.06, 0.012);
+        // a bucket of popcorn and the remote
+        put(g, G.taper(0.11, 0.08), toon(0xe8424f), { x: 0.72, y: 0.67, z: -0.25, sy: 0.18 });
+        for (let i = 0; i < 7; i++) ball(g, 0xfff6d6, 0.72 + Math.cos(i * 2.4) * 0.06, 0.78 + (i % 2) * 0.03, -0.25 + Math.sin(i * 2.4) * 0.06, 0.04);
+        block(g, 0x3a3f4a, -0.7, 0.6, -0.2, 0.06, 0.03, 0.2, 0.01);
+        let show = 0, next = 4;
+        ctx.anim.push((t) => {
+          if (t > next) { show = (show + 1) % shows.length; scr.material.map = shows[show]; next = t + 4 + Math.random() * 3; }
+          if (show === 1) shows[1].offset.x = (t * 0.12) % 1;
+          scr.material.color.setScalar(0.92 + Math.sin(t * 7) * 0.04);
+        });
+      },
+    },
+
+    // ===== rugs =====
+    "rug-shag": {
+      build(g) {
+        const tex = canvasTexture(256, 256, (c, w, h) => {
+          c.fillStyle = "#ff9ec7";
+          c.beginPath(); c.arc(128, 128, 112, 0, TAU); c.fill();
+          for (let i = 0; i < 28; i++) { const a = (i / 28) * TAU; c.beginPath(); c.arc(128 + Math.cos(a) * 112, 128 + Math.sin(a) * 112, 14, 0, TAU); c.fill(); }
+          const r = seeded(3);
+          for (let i = 0; i < 900; i++) {
+            const a = r() * TAU, d = Math.sqrt(r()) * 118;
+            c.strokeStyle = r() < 0.5 ? "rgba(255,255,255,0.35)" : "rgba(220,90,150,0.35)"; c.lineWidth = 2;
+            const x = 128 + Math.cos(a) * d, y = 128 + Math.sin(a) * d;
+            c.beginPath(); c.arc(x, y, 3, r() * TAU, r() * TAU + 3); c.stroke();
+          }
+          c.fillStyle = "rgba(255,255,255,0.5)"; heart(c, 128, 104, 48);
+        });
+        put(g, new THREE.CircleGeometry(1.9, 48), toon(0xffffff, { map: tex, alphaTest: 0.5 }), { y: 0.012, rx: -PI / 2, shadow: false });
+      },
+    },
+    "rug-space": {
+      build(g) {
+        const tex = canvasTexture(256, 180, (c, w, h) => {
+          roundRect(c, 2, 2, w - 4, h - 4, 30); c.save(); c.clip();
+          const gr = c.createRadialGradient(w * 0.6, h * 0.45, 10, w / 2, h / 2, 170);
+          gr.addColorStop(0, "#5a3a9a"); gr.addColorStop(0.5, "#24306a"); gr.addColorStop(1, "#121633");
+          c.fillStyle = gr; c.fillRect(0, 0, w, h);
+          const r = seeded(9);
+          c.fillStyle = "#ffffff"; for (let i = 0; i < 90; i++) { c.beginPath(); c.arc(r() * w, r() * h, 0.6 + r() * 1.4, 0, TAU); c.fill(); }
+          c.fillStyle = "#ffe08a"; for (const [x, y, s] of [[40, 40, 8], [210, 140, 9], [190, 30, 6], [70, 150, 7]]) star(c, x, y, s);
+          c.fillStyle = "#ff9a5a"; c.beginPath(); c.arc(150, 92, 30, 0, TAU); c.fill();
+          c.strokeStyle = "#ffd23f"; c.lineWidth = 5; c.beginPath(); c.ellipse(150, 92, 52, 13, -0.3, 0, TAU); c.stroke();
+          c.fillStyle = "#ffb07a"; c.beginPath(); c.arc(141, 82, 9, 0, TAU); c.fill();
+          c.fillStyle = "#6fd0ff"; c.beginPath(); c.arc(60, 95, 14, 0, TAU); c.fill();
+          c.restore();
+          c.strokeStyle = "#ffd23f"; c.lineWidth = 5; roundRect(c, 5, 5, w - 10, h - 10, 27); c.stroke();
+        });
+        put(g, new THREE.PlaneGeometry(4.0, 2.8), toon(0xffffff, { map: tex, alphaTest: 0.5 }), { y: 0.012, rx: -PI / 2, shadow: false });
+      },
+    },
+    "rug-leaf": {
+      build(g) {
+        const tex = canvasTexture(256, 170, (c, w, h) => {
+          c.fillStyle = "#6fbf5a";
+          c.beginPath(); c.moveTo(6, h / 2); c.bezierCurveTo(60, -10, 190, 0, 250, h / 2); c.bezierCurveTo(190, h, 60, h + 10, 6, h / 2); c.fill();
+          c.fillStyle = "#86d16f"; c.beginPath(); c.moveTo(20, h / 2); c.bezierCurveTo(70, 8, 185, 14, 236, h / 2); c.lineTo(20, h / 2); c.fill();
+          c.strokeStyle = "#e8f7d8"; c.lineWidth = 5; c.beginPath(); c.moveTo(14, h / 2); c.lineTo(242, h / 2); c.stroke();
+          c.lineWidth = 3;
+          for (let k = 0; k < 6; k++) {
+            const x = 50 + k * 32;
+            c.beginPath(); c.moveTo(x, h / 2); c.quadraticCurveTo(x + 14, h / 2 - 20, x + 30, h / 2 - 48 + Math.abs(k - 2.5) * 8); c.stroke();
+            c.beginPath(); c.moveTo(x, h / 2); c.quadraticCurveTo(x + 14, h / 2 + 20, x + 30, h / 2 + 48 - Math.abs(k - 2.5) * 8); c.stroke();
+          }
+        });
+        put(g, new THREE.PlaneGeometry(4.3, 2.85), toon(0xffffff, { map: tex, alphaTest: 0.5 }), { y: 0.012, rx: -PI / 2, rz: 0.12, shadow: false });
+      },
+    },
+
+    // ===== lamps =====
+    "lamp-moon": {
+      obs: [], spot: { wx: -1.55, wz: -2.85, toward: true },
+      build(g, ctx) {
+        // a glowing moon on a little wooden stand (on the bedside table)
+        const y0 = 0.72;
+        cylinder(g, 0x9a6a3c, 0, y0 + 0.03, 0, 0.13, 0.06);
+        cylinder(g, 0xd9a441, 0, y0 + 0.1, 0, 0.012, 0.1);
+        const moon = dynamic(group(g, 0, y0 + 0.3, 0));
+        const mat = toon(0xfff3c4, { emissive: 0xffe08a, emissiveIntensity: 0.7 });
+        ball(moon, mat, 0, 0, 0, 0.19, { shadow: false });
+        for (const [x, y, z, r] of [[0.08, 0.06, 0.15, 0.04], [-0.1, -0.04, 0.14, 0.05], [0.02, -0.11, 0.14, 0.03], [-0.05, 0.12, 0.12, 0.03]]) ball(moon, 0xf0d890, x, y, z, r, { sz: 0.4, shadow: false });
+        // little stars on wires
+        for (const [x, h, z] of [[0.16, 0.5, 0.05], [-0.15, 0.42, -0.04]]) {
+          cylinder(g, 0xd9a441, x, y0 + h / 2, z, 0.006, h);
+          ball(g, glow(0xffe08a, 0.9), x, y0 + h + 0.02, z, 0.035, { shadow: false });
+        }
+        ctx.anim.push((t) => { moon.rotation.y = t * 0.3; mat.emissiveIntensity = 0.6 + Math.sin(t * 1.4) * 0.12; });
+      },
+    },
+    "lamp-disco": {
+      at: { x: 0.3, z: 1.0 }, obs: [], spot: { wx: -1.5, wz: 2.75, toward: true },
+      build(g, ctx) {
+        // a mirror ball on a long chain (the chain must stay the first part: the
+        // little rooms in the apartments take it off), turning, with coloured spots
+        const cy = ROOM.h - 1.2;
+        cylinder(g, 0xb8bcc8, 0, cy + 6, 0, 0.02, 12, { shadow: false });
+        cylinder(g, 0xb8bcc8, 0, cy - 0.02, 0, 0.06, 0.1, { shadow: false });
+        const tiles = canvasTexture(128, 64, (c, w, h) => {
+          const r = seeded(13);
+          for (let y = 0; y < h; y += 8) for (let x = 0; x < w; x += 8) {
+            const v = 150 + Math.floor(r() * 105);
+            c.fillStyle = r() < 0.12 ? ["#ff9ad8", "#9ad8ff", "#fff19a"][Math.floor(r() * 3)] : "rgb(" + v + "," + v + "," + (v + 10 > 255 ? 255 : v + 10) + ")";
+            c.fillRect(x + 0.5, y + 0.5, 7, 7);
+          }
+        });
+        const ballMat = toon(0xffffff, { map: tiles, emissive: 0xffffff, emissiveMap: tiles, emissiveIntensity: 0.35 });
+        const db = dynamic(group(g, 0, cy - 0.5, 0));
+        put(db, G.sphere(), ballMat, { s: 0.42, shadow: false });
+        if (!ctx.flat) {
+          // light spots sweeping round the floor
+          const spots = dynamic(group(g, 0, 0.02, 0));
+          const cols = [0xff5ab8, 0x5ac8ff, 0xffe25a, 0x7cff8a, 0xb58cff];
+          for (let i = 0; i < 14; i++) {
+            const a = i * 2.4, d = 1.0 + (i % 4) * 0.55;
+            disc(spots, new THREE.MeshBasicMaterial({ color: cols[i % cols.length], transparent: true, opacity: 0.55, depthWrite: false, toneMapped: false }), Math.cos(a) * d, 0, Math.sin(a) * d, 0.1 + (i % 3) * 0.04);
+          }
+          ctx.anim.push((t) => { spots.rotation.y = -t * 0.6; });
+        }
+        ctx.anim.push((t) => { db.rotation.y = t * 0.6; ballMat.emissiveIntensity = 0.3 + Math.max(0, Math.sin(t * 5)) * 0.25; });
+      },
+    },
+
+    // ===== plants =====
+    "plant-sunflower": {
+      obs: [{ cx: 0, cz: 0, r: 0.55 }], spot: { wx: -3.75, wz: 3.55, toward: true },
+      build(g, ctx) {
+        block(g, 0xc98b4a, 0, 0.3, 0, 0.8, 0.6, 0.6, 0.05);
+        for (let k = 0; k < 3; k++) block(g, 0xb57843, 0, 0.12 + k * 0.18, 0.302, 0.8, 0.02, 0.01, 0.005);
+        block(g, 0x6b4423, 0, 0.6, 0, 0.7, 0.04, 0.5, 0.01);
+        for (const [x, z, h, s] of [[-0.2, 0.02, 1.7, 1], [0.08, -0.08, 2.05, 1.1], [0.26, 0.1, 1.45, 0.9]]) {
+          cylinder(g, 0x4f9e35, x, 0.6 + (h - 0.6) / 2, z, 0.025, h - 0.6);
+          for (const [dy, sd] of [[0.35, 1], [0.7, -1]]) put(g, G.sphere(), toon(0x5cb840), { x: x + sd * 0.1, y: 0.6 + dy, z, sx: 0.12, sy: 0.04, sz: 0.07, rz: sd * 0.4 });
+          const head = dynamic(group(g, x, h, z + 0.02));
+          head.rotation.x = -0.25;
+          const petals = [];
+          for (let i = 0; i < 12; i++) { const a = (i / 12) * TAU; petals.push({ x: Math.cos(a) * 0.17 * s, y: Math.sin(a) * 0.17 * s, z: 0, sx: 0.11 * s, sy: 0.05 * s, sz: 0.025, rz: a }); }
+          scatter(head, G.lowSphere(), toon(0xffd23f), petals, true);
+          ball(head, 0x7a4a1a, 0, 0, 0.02, 0.11 * s, { sz: 0.35 });
+          ctx.anim.push((t) => { head.rotation.z = Math.sin(t * 0.9 + x * 5) * 0.06; });
+        }
+      },
+    },
+    "plant-bonsai": {
+      obs: [{ cx: 0, cz: 0, r: 0.55 }], spot: { wx: -3.7, wz: 3.5, toward: true },
+      build(g) {
+        // a low wooden stand, a glazed pot and a tiny, twisty tree
+        const wood = toon(0x6b4423);
+        block(g, wood, 0, 0.47, 0, 0.9, 0.06, 0.6, 0.02);
+        for (const [x, z] of [[-0.38, -0.23], [0.38, -0.23], [-0.38, 0.23], [0.38, 0.23]]) block(g, wood, x, 0.22, z, 0.06, 0.44, 0.06, 0.015);
+        block(g, 0x3a6ab8, 0, 0.56, 0, 0.6, 0.12, 0.4, 0.03);
+        block(g, 0x5a8a3a, 0, 0.62, 0, 0.54, 0.02, 0.34, 0.008);
+        const bark = toon(0x7a5230);
+        const segs = [[0, 0.62, 0, 0.06, 0.32, 0.25], [0.08, 0.9, 0.0, 0.05, 0.3, -0.45], [-0.03, 1.15, 0.02, 0.04, 0.26, 0.4], [0.15, 1.02, 0.0, 0.03, 0.26, -1.1]];
+        for (const [x, y, z, r, len, rz] of segs) put(g, G.taper(r * 0.75, r), bark, { x: x - Math.sin(rz) * len / 2, y: y + Math.cos(rz) * len / 2, z, sy: len, rz });
+        for (const [x, y, z, r] of [[-0.12, 1.3, 0, 0.2], [0.12, 1.4, 0.02, 0.17], [0.32, 1.13, 0.02, 0.15], [-0.25, 1.12, 0.03, 0.13]]) ball(g, 0x4f9e35, x, y, z, r, { sy: 0.45 });
+        for (const [x, z] of [[0.18, 0.08], [-0.2, -0.06]]) ball(g, 0x9a9aa0, x, 0.64, z, 0.04, { sy: 0.6 });
+        // little scissors on the stand
+        for (const s of [-1, 1]) block(g, 0xdfe4ea, 0.36, 0.505, 0.17, 0.14, 0.01, 0.02, 0.004, { ry: s * 0.25 });
+      },
+    },
+
+    // ===== wall art (on the back wall) =====
+    "art-starry": {
+      spot: { wx: 2.4, wz: -3.2, yaw: PI },
+      build(g) {
+        const tex = canvasTexture(256, 180, (c, w, h) => {
+          c.fillStyle = "#1d3a7a"; c.fillRect(0, 0, w, h);
+          // swirling sky
+          const r = seeded(21);
+          for (let i = 0; i < 70; i++) {
+            c.strokeStyle = ["#3f6fc8", "#6f9ae8", "#9fc0ff", "#2a4f9a"][i % 4]; c.lineWidth = 3 + r() * 3;
+            const x = r() * w, y = r() * h * 0.7, rad = 8 + r() * 26;
+            c.beginPath(); c.arc(x, y, rad, r() * TAU, r() * TAU + 2); c.stroke();
+          }
+          c.strokeStyle = "#cfe0ff"; c.lineWidth = 4;
+          for (let k = 0; k < 3; k++) { c.beginPath(); c.arc(120, 62, 14 + k * 9, 0.4 + k, 0.4 + k + 4.4); c.stroke(); }
+          for (const [x, y, s] of [[40, 30, 9], [200, 40, 8], [80, 90, 6], [168, 98, 7], [240, 100, 5]]) {
+            c.fillStyle = "rgba(255,240,140,0.35)"; c.beginPath(); c.arc(x, y, s * 2.2, 0, TAU); c.fill();
+            c.fillStyle = "#fff09a"; c.beginPath(); c.arc(x, y, s, 0, TAU); c.fill();
+          }
+          c.fillStyle = "rgba(255,220,90,0.4)"; c.beginPath(); c.arc(226, 26, 22, 0, TAU); c.fill();
+          c.fillStyle = "#ffd23f"; c.beginPath(); c.arc(226, 26, 14, 0, TAU); c.fill();
+          c.fillStyle = "#1d3a7a"; c.beginPath(); c.arc(232, 22, 12, 0, TAU); c.fill();
+          // hills, a village with lit windows, and a tall dark tree
+          c.fillStyle = "#26406a"; c.beginPath(); c.moveTo(0, 140); c.quadraticCurveTo(90, 115, 256, 135); c.lineTo(256, h); c.lineTo(0, h); c.fill();
+          for (let k = 0; k < 7; k++) {
+            const x = 90 + k * 22, y = 140 + (k % 2) * 6;
+            c.fillStyle = "#3a3050"; c.fillRect(x, y, 16, 14);
+            c.beginPath(); c.moveTo(x - 2, y); c.lineTo(x + 8, y - 8); c.lineTo(x + 18, y); c.fill();
+            c.fillStyle = "#ffd23f"; c.fillRect(x + 5, y + 4, 4, 4);
+          }
+          c.fillStyle = "#14261c";
+          c.beginPath(); c.moveTo(30, h); c.bezierCurveTo(10, 120, 40, 60, 46, 20); c.bezierCurveTo(56, 70, 76, 120, 64, h); c.fill();
+        });
+        block(g, 0x3a2a1a, 0, 0, 0, 2.0, 1.45, 0.1, 0.05);
+        block(g, 0xd9a441, 0, 0, 0.03, 1.86, 1.31, 0.06, 0.02);
+        plane(g, 1.8, 1.25, toon(0xffffff, { map: tex }), { z: 0.065 });
+      },
+    },
+    "art-guitar": {
+      spot: { wx: 2.4, wz: -3.2, yaw: PI },
+      build(g) {
+        // an electric guitar on a wall hook, tilted a little
+        block(g, 0x3a3f4a, 0, 1.2, 0.02, 0.2, 0.06, 0.06, 0.02);
+        const gg = group(g, 0, 0.1, 0.04);
+        gg.rotation.z = 0.22;
+        const red = toon(0xe8424f);
+        ball(gg, red, 0, -0.42, 0.05, 0.38, { sy: 1.05, sz: 0.16 });
+        ball(gg, red, 0.02, -0.02, 0.05, 0.29, { sz: 0.16 });
+        ball(gg, 0xffffff, 0.08, -0.35, 0.1, 0.22, { sy: 1.2, sz: 0.06 });
+        for (const y of [-0.15, -0.38]) block(gg, 0x2f3542, 0, y, 0.115, 0.2, 0.06, 0.02, 0.01);
+        block(gg, 0xdfe4ea, 0, -0.6, 0.11, 0.22, 0.05, 0.02, 0.01);
+        for (const [x, y] of [[0.2, -0.62], [0.26, -0.52], [0.22, -0.72]]) cylinder(gg, 0xffcf3a, x, y, 0.115, 0.03, 0.02, { rx: PI / 2 });
+        block(gg, 0xd9a86a, 0, 0.68, 0.06, 0.1, 1.05, 0.05, 0.02);
+        block(gg, 0x5a3a1a, 0, 0.68, 0.087, 0.085, 1.0, 0.01, 0.004);
+        for (let k = 0; k < 9; k++) block(gg, 0xdfe4ea, 0, 0.22 + k * 0.105, 0.093, 0.085, 0.008, 0.004, 0.001);
+        block(gg, 0x2f3542, 0, 1.3, 0.06, 0.17, 0.24, 0.05, 0.03);
+        for (const s of [-1, 1]) for (let k = 0; k < 2; k++) ball(gg, 0xdfe4ea, s * 0.11, 1.24 + k * 0.1, 0.06, 0.025);
+        for (let k = 0; k < 4; k++) block(gg, 0xf4f4f4, -0.03 + k * 0.02, 0.33, 0.1, 0.004, 1.86, 0.004, 0.001);
+        // a little "ROCK" star sticker on the wall
+        const st = canvasTexture(64, 64, (c) => { c.fillStyle = "#ffd23f"; star(c, 32, 34, 30); c.fillStyle = "#e8424f"; c.font = "bold 13px 'Nunito', sans-serif"; c.textAlign = "center"; c.fillText("ROCK", 32, 39); });
+        plane(g, 0.5, 0.5, toon(0xffffff, { map: st, alphaTest: 0.5 }), { x: 0.68, y: 0.85, z: 0.01, rz: -0.2 });
+      },
+    },
+    "art-photos": {
+      spot: { wx: 2.4, wz: -3.2, yaw: PI },
+      build(g, ctx) {
+        // two strings of fairy lights with snapshots pegged on
+        const scenes = [
+          (c) => { c.fillStyle = "#7fd0ff"; c.fillRect(0, 0, 64, 64); c.fillStyle = "#f5dfa4"; c.fillRect(0, 44, 64, 20); c.fillStyle = "#4a9ae2"; c.fillRect(0, 36, 64, 9); c.fillStyle = "#ffd23f"; c.beginPath(); c.arc(48, 14, 8, 0, TAU); c.fill(); },
+          (c) => { c.fillStyle = "#cfe8ff"; c.fillRect(0, 0, 64, 64); c.fillStyle = "#7a8aa8"; c.beginPath(); c.moveTo(0, 56); c.lineTo(24, 18); c.lineTo(44, 50); c.lineTo(56, 30); c.lineTo(64, 56); c.fill(); c.fillStyle = "#fff"; c.beginPath(); c.moveTo(18, 28); c.lineTo(24, 18); c.lineTo(30, 28); c.fill(); c.fillStyle = "#5cc84a"; c.fillRect(0, 54, 64, 10); },
+          (c) => { c.fillStyle = "#ffe9f0"; c.fillRect(0, 0, 64, 64); c.fillStyle = "#ff9ec7"; c.fillRect(14, 32, 36, 20); c.fillStyle = "#fff"; c.fillRect(14, 28, 36, 6); c.fillStyle = "#ff3b5a"; c.beginPath(); c.arc(32, 24, 5, 0, TAU); c.fill(); c.fillStyle = "#ffcf3a"; c.fillRect(30, 12, 3, 8); },
+          (c) => { c.fillStyle = "#fff1dc"; c.fillRect(0, 0, 64, 64); c.fillStyle = "#ff9a3a"; c.beginPath(); c.arc(32, 40, 16, 0, TAU); c.fill(); c.beginPath(); c.moveTo(18, 30); c.lineTo(22, 14); c.lineTo(30, 26); c.moveTo(46, 30); c.lineTo(42, 14); c.lineTo(34, 26); c.fill(); c.fillStyle = "#222"; c.fillRect(25, 36, 4, 4); c.fillRect(35, 36, 4, 4); },
+          (c) => { c.fillStyle = "#b8f0c8"; c.fillRect(0, 0, 64, 64); for (const [x, col] of [[18, "#ffd6b0"], [32, "#c98b5a"], [46, "#ffe0c0"]]) { c.fillStyle = col; c.beginPath(); c.arc(x, 28, 8, 0, TAU); c.fill(); c.fillStyle = ["#e8424f", "#4a90e2", "#ffcf3a"][Math.round(x / 14) % 3]; c.fillRect(x - 8, 38, 16, 22); } },
+          (c) => { const gr = c.createLinearGradient(0, 0, 0, 64); gr.addColorStop(0, "#6a3a9a"); gr.addColorStop(0.6, "#ff8a59"); gr.addColorStop(1, "#ffd166"); c.fillStyle = gr; c.fillRect(0, 0, 64, 64); c.fillStyle = "#3a2a4a"; c.fillRect(0, 50, 64, 14); },
+        ];
+        const lights = [];
+        for (const [row, y] of [[0, 0.45], [1, -0.4]]) {
+          cylinder(g, 0x6b5a4a, 0, y + 0.04, 0.03, 0.008, 2.0, { rz: PI / 2, shadow: false });
+          for (const s of [-1, 1]) ball(g, 0x8f96a3, s * 1.0, y + 0.04, 0.02, 0.03);
+          for (let k = 0; k < 3; k++) {
+            const x = -0.62 + k * 0.62, rz = [0.08, -0.05, 0.1, -0.09, 0.04, -0.07][row * 3 + k];
+            const p = group(g, x, y - 0.25, 0.03);
+            p.rotation.z = rz;
+            block(p, 0xffffff, 0, 0, 0, 0.42, 0.5, 0.015, 0.005);
+            plane(p, 0.36, 0.36, toon(0xffffff, { map: canvasTexture(64, 64, scenes[row * 3 + k]) }), { y: 0.04, z: 0.009 });
+            block(p, 0xc98b4a, 0, 0.27, 0.012, 0.04, 0.1, 0.02, 0.005);
+          }
+          for (let k = 0; k < 6; k++) lights.push(dynamic(ball(g, glow([0xffe08a, 0xff9ec7, 0x9fd8ff][k % 3], 0.8), -0.95 + k * 0.38, y + 0.02, 0.04, 0.03, { shadow: false })));
+        }
+        ctx.anim.push((t) => lights.forEach((l, i) => { l.material.emissiveIntensity = 0.5 + Math.max(0, Math.sin(t * 2 + i * 1.3)) * 0.7; }));
+      },
+    },
+
+    // ===== special things (back-right corner) =====
+    "special-fridge": {
+      obs: [{ cx: 0.55, cz: -0.62, w: 1.05, d: 0.9 }], spot: { lx: 0.45, lz: 0.4, yaw: PI },
+      build(g) {
+        // a rounded retro fridge covered in magnets and a drawing
+        const blue = toon(0x9fd8f0);
+        block(g, blue, 0.55, 1.1, -0.62, 1.0, 2.2, 0.85, 0.14);
+        block(g, 0x7fb8d0, 0.55, 1.45, -0.19, 0.96, 0.03, 0.02, 0.01);
+        for (const [y, h] of [[1.8, 0.4], [1.0, 0.5]]) block(g, 0xdfe4ea, 0.14, y, -0.16, 0.05, h, 0.06, 0.02);
+        block(g, 0xdfe4ea, 0.55, 2.0, -0.185, 0.3, 0.08, 0.01, 0.01);
+        const drawing = canvasTexture(64, 80, (c, w, h) => {
+          c.fillStyle = "#ffffff"; c.fillRect(0, 0, w, h);
+          c.strokeStyle = "#4a90e2"; c.lineWidth = 3; c.beginPath(); c.arc(32, 26, 12, 0, TAU); c.stroke();
+          c.beginPath(); c.moveTo(32, 38); c.lineTo(32, 60); c.moveTo(18, 46); c.lineTo(46, 46); c.moveTo(32, 60); c.lineTo(22, 74); c.moveTo(32, 60); c.lineTo(42, 74); c.stroke();
+          c.fillStyle = "#ffd23f"; c.beginPath(); c.arc(52, 10, 7, 0, TAU); c.fill();
+          c.fillStyle = "#e8424f"; c.beginPath(); c.arc(28, 24, 2, 0, TAU); c.arc(36, 24, 2, 0, TAU); c.fill();
+        });
+        plane(g, 0.3, 0.38, toon(0xffffff, { map: drawing }), { x: 0.68, y: 0.95, z: -0.188, rz: 0.08 });
+        ball(g, 0xe8424f, 0.68, 1.13, -0.17, 0.035, { sz: 0.5 });
+        for (const [x, y, col] of [[0.4, 1.85, 0xffcf3a], [0.7, 1.7, 0x5cc84a], [0.85, 1.95, 0xff9ec7], [0.5, 1.62, 0x9b6bff]]) ball(g, col, x, y, -0.18, 0.045, { sz: 0.5 });
+        block(g, 0xffffff, 0.75, 1.82, -0.186, 0.18, 0.12, 0.005, 0.002, { rz: -0.1 });
+        // feet, and a cereal box and fruit on top
+        for (const x of [0.15, 0.95]) block(g, 0x8f96a3, x, 0.02, -0.3, 0.08, 0.04, 0.08, 0.01);
+        block(g, 0xffcf3a, 0.32, 2.38, -0.62, 0.32, 0.36, 0.12, 0.02);
+        block(g, 0xe8424f, 0.32, 2.42, -0.555, 0.2, 0.08, 0.005, 0.002);
+        put(g, G.taper(0.16, 0.1), toon(0xffffff), { x: 0.78, y: 2.25, z: -0.6, sy: 0.1 });
+        ball(g, 0xffe25a, 0.76, 2.33, -0.58, 0.07, { sx: 1.6 });
+        ball(g, 0xff9a3a, 0.84, 2.33, -0.66, 0.065);
+      },
+    },
+    "special-easel": {
+      obs: [{ cx: 0.35, cz: -0.45, r: 0.55 }, { cx: 1.0, cz: 0.05, r: 0.3 }], spot: { lx: -0.08, lz: 0.32, toward: { lx: 0.35, lz: -0.45 } },
+      build(g) {
+        // the easel, turned a little toward the room
+        const e = group(g, 0.35, 0, -0.45, -0.5);
+        const wood = 0xb07a45;
+        for (const s of [-1, 1]) rod(e, wood, s * 0.38, 0, 0.18, s * 0.12, 1.95, -0.02, 0.03);
+        rod(e, wood, 0, 0, -0.55, 0, 1.85, -0.05, 0.028);
+        block(e, wood, 0, 0.88, 0.1, 0.9, 0.05, 0.12, 0.02);
+        const art = canvasTexture(128, 100, (c, w, h) => {
+          c.fillStyle = "#fffdf5"; c.fillRect(0, 0, w, h);
+          c.fillStyle = "#9fd8ff"; c.fillRect(0, 0, w * 0.75, h * 0.6);
+          c.fillStyle = "#6fcf6a"; c.beginPath(); c.moveTo(0, h * 0.6); c.quadraticCurveTo(50, h * 0.45, w * 0.75, h * 0.62); c.lineTo(w * 0.75, h); c.lineTo(0, h); c.fill();
+          c.fillStyle = "#8a5a3a"; c.fillRect(34, 36, 7, 26);
+          c.fillStyle = "#3fae5a"; c.beginPath(); c.arc(38, 32, 15, 0, TAU); c.fill();
+          c.fillStyle = "#ffd23f"; c.beginPath(); c.arc(80, 18, 9, 0, TAU); c.fill();
+          // still being painted: a few strokes on the white part
+          c.strokeStyle = "#ff7ab8"; c.lineWidth = 5; c.beginPath(); c.moveTo(100, 20); c.quadraticCurveTo(110, 40, 104, 60); c.stroke();
+          c.strokeStyle = "#4a90e2"; c.beginPath(); c.moveTo(112, 70); c.lineTo(122, 88); c.stroke();
+        });
+        block(e, 0xfffdf5, 0, 1.3, 0.08, 0.9, 0.72, 0.04, 0.01, { rx: -0.08 });
+        plane(e, 0.86, 0.68, toon(0xffffff, { map: art }), { y: 1.3, z: 0.104, rx: -0.08 });
+        // a stool with the palette and a jar of brushes
+        const st = group(g, 1.0, 0, 0.05);
+        cylinder(st, 0xb07a45, 0, 0.5, 0, 0.24, 0.06);
+        for (let k = 0; k < 3; k++) { const a = (k / 3) * TAU; rod(st, 0xb07a45, Math.cos(a) * 0.15, 0.47, Math.sin(a) * 0.15, Math.cos(a) * 0.22, 0, Math.sin(a) * 0.22, 0.02); }
+        ball(st, 0xe0b878, -0.04, 0.545, 0, 0.17, { sy: 0.1, sz: 0.8 });
+        for (const [x, z, col] of [[-0.12, 0.05, 0xe8424f], [-0.05, 0.09, 0xffd23f], [0.03, 0.08, 0x4a90e2], [0.08, 0.0, 0x5cc84a]]) ball(st, col, x, 0.56, z, 0.025, { sy: 0.5 });
+        cylinder(st, 0xbfe6ff, 0.12, 0.6, -0.08, 0.05, 0.14);
+        for (const [dx, col] of [[-0.02, 0xe8424f], [0.02, 0x4a90e2]]) { cylinder(st, 0xc98b4a, 0.12 + dx, 0.72, -0.08, 0.008, 0.22, { rz: dx * 4 }); ball(st, col, 0.12 + dx * 2.6, 0.83, -0.08, 0.015, { sy: 1.6 }); }
+      },
+    },
+    "special-robot": {
+      obs: [{ cx: 0.45, cz: -0.5, r: 0.5 }], spot: { lx: 0.05, lz: 0.42, toward: { lx: 0.45, lz: -0.5 } },
+      build(g, ctx) {
+        // a friendly little robot that looks around and waves
+        const r = group(g, 0.45, 0, -0.5, -0.35);
+        const metal = toon(0xdfe4ea), dark = toon(0x3a3f4a);
+        for (const s of [-1, 1]) {
+          block(r, dark, s * 0.15, 0.06, 0.04, 0.2, 0.12, 0.3, 0.05);
+          cylinder(r, 0xb8bcc8, s * 0.15, 0.3, 0, 0.06, 0.38);
+        }
+        block(r, metal, 0, 0.78, 0, 0.7, 0.62, 0.5, 0.14);
+        const chest = canvasTexture(64, 48, (c, w, h) => {
+          c.fillStyle = "#1e2233"; c.fillRect(0, 0, w, h);
+          c.fillStyle = "#ff6fa5"; heart(c, 20, 12, 22);
+          c.fillStyle = "#5cff8a"; for (let k = 0; k < 3; k++) c.fillRect(38, 12 + k * 9, 18 - k * 4, 5);
+        });
+        plane(r, 0.36, 0.26, basic(chest), { y: 0.8, z: 0.252 });
+        for (const [x, col] of [[-0.2, 0xff3b5a], [0.2, 0xffd23f]]) ball(r, glow(col, 0.6), x, 0.6, 0.25, 0.03, { sz: 0.5 });
+        // arms: the left one hangs down, the right one waves
+        put(r, G.capsule(), metal, { x: -0.43, y: 0.72, sx: 0.12, sy: 0.4, sz: 0.12, rz: -0.15 });
+        ball(r, dark, -0.47, 0.42, 0, 0.07);
+        const arm = dynamic(group(r, 0.4, 0.95, 0));
+        put(arm, G.capsule(), metal, { x: 0.1, y: 0.18, sx: 0.12, sy: 0.4, sz: 0.12, rz: -0.4 });
+        ball(arm, dark, 0.2, 0.42, 0, 0.07);
+        // the head, with screen eyes that blink, and an antenna
+        cylinder(r, dark, 0, 1.12, 0, 0.08, 0.08);
+        const head = dynamic(group(r, 0, 1.36, 0));
+        block(head, metal, 0, 0, 0, 0.6, 0.44, 0.44, 0.12);
+        block(head, 0x1e2233, 0, 0, 0.215, 0.48, 0.3, 0.02, 0.06);
+        const eyes = [];
+        for (const s of [-1, 1]) eyes.push(ball(head, glow(0x5cf0ff, 1), s * 0.11, 0.03, 0.23, 0.05, { sy: 1.3, sz: 0.4, shadow: false }));
+        block(head, glow(0x5cf0ff, 0.8), 0, -0.08, 0.228, 0.12, 0.025, 0.01, 0.01);
+        for (const s of [-1, 1]) cylinder(head, dark, s * 0.31, 0, 0, 0.06, 0.04, { rz: PI / 2 });
+        cylinder(head, 0x8f96a3, 0, 0.3, 0, 0.012, 0.18);
+        const bulb = ball(head, glow(0xff3b5a, 1), 0, 0.41, 0, 0.045, { shadow: false });
+        ctx.anim.push((t) => {
+          head.rotation.y = Math.sin(t * 0.7) * 0.35;
+          head.rotation.z = Math.sin(t * 1.3) * 0.05;
+          const blink = (t % 3.2) < 0.12 ? 0.15 : 1;
+          eyes.forEach((e) => { e.scale.y = 0.065 * blink; });
+          bulb.material.emissiveIntensity = (t % 1) < 0.5 ? 1.2 : 0.2;
+          arm.rotation.z = 0.25 + Math.sin(t * 4) * 0.35;
+        });
+      },
+    },
   };
 
   // A computer screen full of code (scrolls upward).
@@ -2062,6 +2935,15 @@
     "special-telescope": { x: 0.3, z: 0.15, ry: PI, k: 1 },                          // pointing out of the window
     "special-plushies": { x: -0.95, z: 0.45, k: 0.85, stand: { x: 0.75, z: -0.3, toward: { lx: 0.3, lz: -0.35 } }, plant: [1.55, -1.05] },
     "special-punchbag": { x: 0.35 },
+    "lamp-moon": { nightstand: true },
+    "lamp-disco": { x: -0.3, z: 0, k: 0.8, hang: true, stand: { x: 0.75, z: 0.35, yaw: -0.3 } },
+    "sofa-egg": { z: -0.35 },
+    "table-pingpong": { z: 0.4, k: 0.75, stand: { x: -1.45, z: 0.4, yaw: PI / 2 } },
+    "table-kitchen": { z: 0.45, k: 0.85 },
+    "plant-sunflower": { k: 0.8 },
+    "special-fridge": { x: -0.1, z: -0.1 },
+    "special-easel": { x: -0.1, z: 0.1 },
+    "special-robot": { x: -0.1, z: 0.1 },
   };
 
   // Where the Mii goes (room-local), following the same rules as the spots in a home.
@@ -2084,10 +2966,10 @@
 
   // Builds what's inside a flat (detached, around the room's origin) and works
   // out where its Mii goes. act = the resident's activity (or null).
-  function flatContents(items, act, name, anim) {
+  function flatContents(items, act, name, anim, record) {
     const H = root.MiiHomes;
     const g = new THREE.Group();
-    const ctx = { anim, record: { name } };
+    const ctx = { anim, record: { name }, portrait: portraitSource(null, record), flat: true };
     let it = act && act.itemId && H ? H.item(act.itemId) : null;
     let def = it && FURNITURE[it.id];
     let slot = it ? it.slot : "window";
@@ -2308,7 +3190,7 @@
   function buildHome(opts) {
     const record = (opts && opts.record) || { name: "Mii", home: root.MiiHomes ? root.MiiHomes.starterHome() : { items: {} } };
     const items = resolveItems(record);
-    const ctx = { anim: [], record };
+    const ctx = { anim: [], record, portrait: portraitSource(opts, record) };
     const anim = ctx.anim;
     const rootG = new THREE.Group();
     addLights(rootG, { sky: 0xfff6e8, ground: 0xd9c7a8, hemi: 0.5, sun: 0.62, ambient: 0.26, fill: 0.32 });
@@ -2362,7 +3244,7 @@
     const wallMat = toon(0xffffff, { map: wallTex });
     const floorMat = toon(0xffffff, { map: floorTex });
     put(rootG, patchGeo(RX * 2, RZ * 2, 0, 0), floorMat, { y: 0.005, rx: -PI / 2, shadow: false });
-    const dark = wallIt.id === "wall-dark", fancy = wallIt.id === "wall-gold";
+    const dark = wallIt.id === "wall-dark" || wallIt.id === "wall-stars", fancy = wallIt.id === "wall-gold";
     const trimC = dark ? 0x4a4570 : fancy ? 0xd9a441 : 0xffffff;
     const shellC = 0xf6efe4;
 
@@ -2459,7 +3341,7 @@
       block(ns, 0xc98b4a, 0, 0.36, 0, 0.75, 0.72, 0.65, 0.06);
       block(ns, 0xe0a868, 0, 0.42, 0.33, 0.6, 0.25, 0.02, 0.03);
       ball(ns, 0xffcf5a, 0, 0.42, 0.36, 0.04);
-      if (items.lamp.id !== "lamp-lava") {
+      if (!NIGHTSTAND_LAMPS.includes(items.lamp.id)) {
         block(ns, 0xff8a7a, -0.12, 0.85, 0.05, 0.3, 0.26, 0.15, 0.06); // alarm clock
         disc(ns, toon(0xffffff), -0.12, 0.85, 0.13, 0.09, { rx: 0 });
         block(ns, 0x4a90e2, 0.2, 0.76, -0.05, 0.25, 0.06, 0.32, 0.02); // a book
@@ -2564,8 +3446,9 @@
     };
   }
 
-  root.World3D.addPlace({ id: "apartments", name: "Apartments", icon: "🏘️" }, buildApartments);
+  root.World3D.addPlace({ id: "apartments", name: "Courtyard", icon: "🏘️" }, buildApartments);
   root.World3D.addPlace({ id: "home", name: "Home", icon: "🏠" }, buildHome, true);
   // for tests and other files
-  root.MiiHomes3D = { FURNITURE, SLOT_PLACES, unitInfo, APT, floorsFor, MAX_FLOORS };
+  // portraitFor(record) -> picture URL: set by the app, used by the self-portrait painting
+  root.MiiHomes3D = { FURNITURE, SLOT_PLACES, unitInfo, APT, floorsFor, MAX_FLOORS, portraitFor: null, patternTexture };
 })(typeof self !== "undefined" ? self : this);

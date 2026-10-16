@@ -5,6 +5,7 @@
  *   - Tic-Tac-Toe (best of 3: first to 2 wins)
  *   - Connect 4 (one game, winner takes all)
  *   - Paintball (a first-person 1v1, first to 10 rounds: see js/paintball/)
+ *   - Chess (one game: the rules and the Mii chess brain are in js/chess.js)
  *
  * Every Mii has a skill (0-100) for each game. Skill decides how cleverly the
  * Mii plays, and it goes up every time you play that game with them.
@@ -18,6 +19,7 @@
     ttt: { id: "ttt", name: "Tic-Tac-Toe", short: "Tic-Tac-Toe", icon: "⭕", format: "Best of 3", target: 2 },
     c4: { id: "c4", name: "Connect 4", short: "Connect 4", icon: "🔴", format: "Winner takes all", target: 1 },
     paintball: { id: "paintball", name: "Paintball", short: "Paintball", icon: "🎯", format: "First to 10 rounds", target: 10 },
+    chess: { id: "chess", name: "Chess", short: "Chess", icon: "♟️", format: "One game", target: 1 },
   };
 
   // ---------------------------------------------------------------------
@@ -45,9 +47,12 @@
   // How much a Mii learns from one game (a round of RPS counts less than a
   // whole game of Connect 4). Learning slows down as they get better, and
   // they learn a bit more from losing.
-  const LEARN_RATE = { rps: 0.025, ttt: 0.07, c4: 0.12, paintball: 0.018 }; // (paintball: per round)
-  function learn(stats, game, lostThisGame) {
-    const rate = LEARN_RATE[game] * (lostThisGame ? 1.3 : 1);
+  // Chess: a beginner becomes a Master (90+) after about 20 finished games
+  // (about 15 if it keeps losing). `amount` (0-1) is for part of a game,
+  // like a chess game you quit halfway.
+  const LEARN_RATE = { rps: 0.025, ttt: 0.07, c4: 0.12, paintball: 0.018, chess: 0.1 }; // (paintball: per round)
+  function learn(stats, game, lostThisGame, amount) {
+    const rate = LEARN_RATE[game] * (lostThisGame ? 1.3 : 1) * (amount === undefined ? 1 : Math.max(0, Math.min(1, amount)));
     stats.skill = Math.min(100, stats.skill + (100 - stats.skill) * rate);
     return stats.skill;
   }
@@ -306,6 +311,17 @@
       winMatch: grumpy ? ["I knew I'd win.", "Better luck next time."] : sweet ? ["Good game! You played great!", "That was so fun!"] : silly ? ["I am the champion! ♪", "Victory dance time!"] : ["I win! Good game!", "Yay, I won!"],
       loseMatch: grumpy ? ["Rematch. Now.", "...I wasn't trying."] : sweet ? ["You're so good! Well played!", "Congrats! That was fun!"] : shy ? ["You win... good game.", "W-well played!"] : ["You got me! Good game!", "Wow, you're good!"],
       draw: ["A draw! Evenly matched!", "Nobody wins... let's go again!"],
+      // chess
+      check: grumpy ? ["Check. Obviously.", "Check!"] : silly ? ["Check! Knock knock!", "Cheeeck!"] : shy ? ["Um... check?", "Ch-check..."] : ["Check!", "Check! Watch out!"],
+      inCheck: grumpy ? ["Hmph. I saw that.", "Annoying..."] : shy ? ["Eep!", "Oh no, my king..."] : silly ? ["My king is sweating!", "Whoa there!"] : ["Yikes, check!", "Ooh, careful..."],
+      capture: grumpy ? ["Mine now.", "Thanks for the snack."] : silly ? ["Om nom nom!", "Yoink!"] : sweet ? ["Sorry! I'll take that.", "Hehe, got one!"] : ["Got it!", "I'll take that!"],
+      lostPiece: grumpy ? ["Ugh.", "I meant to do that."] : shy ? ["Oh... my piece...", "Aww..."] : silly ? ["Noooo, not Steve!", "He was my favourite!"] : ["Oops!", "Ouch!", "Good one!"],
+      queenLost: grumpy ? ["MY QUEEN?!", "That's... not fair."] : silly ? ["My queen! She had a family!", "Queeeen!"] : ["Oh no, my queen!", "Not my queen!"],
+      winning: grumpy ? ["This is going well. For me.", "Give up yet?"] : sweet ? ["I think I'm doing okay!", "This is fun!"] : silly ? ["I'm on fire! ♪", "Feeling like a grandmaster!"] : ["Things are looking good!", "I like my position!"],
+      losing: grumpy ? ["This isn't over.", "Stop being good."] : shy ? ["Y-you're really good...", "Hmm... uh oh."] : silly ? ["Time for a comeback!", "This is all part of my plan. Probably."] : ["You're tough!", "I need to focus..."],
+      drawYes: grumpy ? ["Fine. A draw.", "...I'll take it."] : sweet ? ["Sure! Good game!", "A draw sounds nice!"] : ["Okay, it's a draw!", "Deal!"],
+      drawNo: grumpy ? ["No way. I'm winning.", "Nope."] : shy ? ["Um... I'd like to keep playing...", "M-maybe not yet..."] : silly ? ["Draw? I'm just getting started!", "Nope! Fight on!"] : ["No thanks, let's keep playing!", "Not yet!"],
+      resign: grumpy ? ["Giving up? Figures.", "Ha. Too easy."] : sweet ? ["Aww, good game anyway!", "Next time for sure!"] : ["You resign? I win!", "Good game!"],
     }[kind];
     return pick(lines);
   }

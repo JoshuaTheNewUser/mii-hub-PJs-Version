@@ -188,6 +188,51 @@
       echo(c, lp, o, 0.21, 0.45, 0.45, 700);
       echo(c, lp, o, 0.37, 0.35, 0.3, 500);
     } },
+    // Deagle: a deep, punchy hand-cannon "BLAM": sharp slide crack, fat low body, short room tail
+    deagle: { dur: 0.75, level: 0.97, variants: 2, build: function (c, o, v) {
+      var k = v ? 0.94 : 1; // the second variant is a touch lower and darker
+      var pre = c.createGain(); var sh = shaper(c, 3.0); pre.connect(sh); sh.connect(o);
+      click(c, pre, 0, 3600 * k, 0.7, 0.004); // hammer / valve
+      burst(c, pre, { t: 0.0, type: "highpass", f: 2800, Q: 0.6, a: 0.0005, d: 0.018, vol: 0.5 }); // crack
+      burst(c, pre, { t: 0.001, type: "bandpass", f: 1250 * k, f2: 520, Q: 1.0, a: 0.001, d: 0.05, vol: 1.25 }); // "BLA-"
+      burst(c, pre, { t: 0.0, type: "bandpass", f: 420 * k, f2: 120, Q: 1.2, a: 0.003, d: 0.17, vol: 1.5 }); // "-AM" thump
+      tone(c, pre, { t: 0, f: 135 * k, f2: 36, fT: 0.16, a: 0.002, d: 0.26, vol: 2.0 }); // chest punch
+      tone(c, pre, { t: 0, f: 62 * k, f2: 30, a: 0.003, d: 0.32, vol: 1.0 });
+      burst(c, pre, { t: 0.004, type: "lowpass", f: 1000, f2: 180, Q: 0.6, a: 0.008, d: 0.32, vol: 0.6, color: "brown" }); // boom tail
+      burst(c, pre, { t: 0.01, type: "lowpass", f: 2400, f2: 600, Q: 0.5, a: 0.012, d: 0.22, vol: 0.28, color: "pink" }); // gas hiss
+      click(c, pre, 0.035, 2100, 0.35, 0.008); ring(c, pre, 0.035, [1350, 2550], 0.04, 0.12); // slide cycling
+      echo(c, pre, o, 0.08, 0.3, 0.25, 1500);
+      echo(c, pre, o, 0.17, 0.25, 0.14, 900);
+    } },
+    deagleFar: { dur: 1.3, level: 0.66, variants: 2, build: function (c, o, v) {
+      var lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = v ? 850 : 1000; lp.connect(o);
+      burst(c, lp, { t: 0, type: "bandpass", f: 650, f2: 240, Q: 1, a: 0.003, d: 0.1, vol: 1.0 });
+      tone(c, lp, { t: 0, f: 105, f2: 36, a: 0.004, d: 0.26, vol: 1.1 });
+      burst(c, lp, { t: 0.01, type: "lowpass", f: 700, f2: 170, Q: 0.5, a: 0.03, d: 0.6, vol: 0.4, color: "brown" });
+      echo(c, lp, o, 0.17, 0.4, 0.4, 800);
+      echo(c, lp, o, 0.31, 0.3, 0.25, 550);
+    } },
+    // Deagle reload foley (viewmodel: mag drops at ~0.3 s, new mag seated at ~1.3 s, slide release ~1.75 s)
+    deagleMagOut: { dur: 0.42, level: 0.72, build: function (c, o) {
+      click(c, o, 0, 2900, 0.9, 0.007); ring(c, o, 0, [1700, 2900, 4300], 0.05, 0.28); // mag catch
+      burst(c, o, { t: 0.015, type: "bandpass", f: 1800, f2: 800, Q: 2, a: 0.012, d: 0.09, vol: 0.55 }); // slides out of the grip
+      burst(c, o, { t: 0.13, type: "lowpass", f: 1100, Q: 0.7, a: 0.002, d: 0.05, vol: 0.35 }); // light rattle of the balls
+      burst(c, o, { t: 0.14, type: "bandpass", f: 3200, Q: 1.5, a: 0.004, d: 0.05, vol: 0.2, color: "crackle" });
+    } },
+    deagleMagIn: { dur: 0.42, level: 0.82, build: function (c, o) {
+      burst(c, o, { t: 0, type: "bandpass", f: 900, f2: 2000, Q: 2, a: 0.03, d: 0.06, vol: 0.4 }); // slide in
+      click(c, o, 0.09, 2400, 1, 0.011); ring(c, o, 0.09, [1400, 2600, 4100], 0.09, 0.38); // seat
+      tone(c, o, { t: 0.09, f: 230, f2: 95, a: 0.001, d: 0.06, vol: 0.6 });
+      click(c, o, 0.16, 3600, 0.6, 0.005); ring(c, o, 0.16, [2300, 3900], 0.05, 0.2); // palm tap click
+    } },
+    // slide pulled back and let go: rack (also used for the draw and the slide release after an empty reload)
+    deagleSlide: { dur: 0.4, level: 0.82, build: function (c, o) {
+      click(c, o, 0, 2300, 0.7, 0.008);
+      burst(c, o, { t: 0.005, type: "bandpass", f: 1500, f2: 2800, Q: 2.5, a: 0.015, d: 0.06, vol: 0.45, color: "crackle" }); // slide back
+      click(c, o, 0.07, 2000, 0.8, 0.009); ring(c, o, 0.07, [1150, 2100], 0.05, 0.22); // stop
+      click(c, o, 0.13, 1700, 1, 0.012); ring(c, o, 0.13, [880, 1620, 2700, 4000], 0.15, 0.5); // slams home
+      tone(c, o, { t: 0.13, f: 210, f2: 85, a: 0.001, d: 0.08, vol: 0.7 });
+    } },
     // bolt cycle, timed to the viewmodel (lift 0.06, pull back 0.11-0.23, push 0.29-0.39, lock 0.47)
     awpBolt: { dur: 0.62, level: 0.8, build: function (c, o) {
       click(c, o, 0.03, 2600, 0.6, 0.006); click(c, o, 0.06, 3400, 0.8, 0.006); ring(c, o, 0.06, [2100, 3700], 0.04, 0.2); // lift

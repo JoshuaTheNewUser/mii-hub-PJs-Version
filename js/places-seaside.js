@@ -757,6 +757,7 @@
       background: 0xcdeeff,
       fog: [0xd8f2ff, 90, 270],
       cameraTilt: 0.44,
+      cameraMaxDistance: 30, // (don't end up out behind the cliffs and the headland)
       cameraTargetY: 1,
       bounds: { minX: -17, maxX: 17, minZ: -12.9, maxZ: 10 },
       entrance: { x: BWX, z: 9.3 },
@@ -1390,7 +1391,7 @@
     scatter(root, flagGeo, toon(0xffffff, { side: THREE.DoubleSide }), flags, false);
 
     // ---------- buildings on the left, right and front ----------
-    cafeScenery(root, anim, FZ, TZ);
+    const zones = cafeScenery(root, anim, FZ, TZ);
     skyClouds(root, anim);
 
     // ---------- pigeons pecking around the fountain ----------
@@ -1426,6 +1427,9 @@
       fog: [0xd8f2ff, 80, 240],
       cameraTilt: 0.42,
       cameraTargetY: 1.6,
+      // zoomed right out, the camera stays inside the ring of nearby buildings
+      // (the ones further out start beyond it), so they can't block the view
+      cameraMaxDistance: 30,
       bounds: { minX: -17, maxX: 17, minZ: -9.8, maxZ: 10 },
       entrance: { x: 0.6, z: 9.4 },
       water: [{ x: F.x, z: F.z, r: 1.7 }],
@@ -1479,16 +1483,42 @@
       update(t, camera) {
         anim.forEach((a) => a(t));
         // camera behind the shops? hide them so they don't block the view
-        if (camera) back.visible = camera.position.z > FZ - 1.5;
+        if (camera) {
+          const c = camera.position;
+          back.visible = c.z > FZ - 1.5;
+          // the same for the trees and buildings round the square: whichever side
+          // the camera has swung round to (or past) hides, so you always see the street
+          zones.behind.visible = c.z > FZ - 1.5;
+          zones.left.visible = c.x > -ZONE_X;
+          zones.right.visible = c.x < ZONE_X;
+          zones.front.visible = c.z < TZ + ZONE_FRONT;
+        }
       },
     };
   }
 
+  // Where the scenery round Café Street is split into zones (see cafeScenery).
+  const ZONE_X = 17.5, ZONE_FRONT = 5.5;
+
   // The rest of the town around the café street. Right around the square it's
-  // kept low (trees, a little park across the tram road), so the camera can
-  // spin round without bumping into anything; the buildings start further out.
+  // kept low (trees, a little park across the tram road), and the buildings
+  // start further out. Everything is split into zones (left, right, in front
+  // across the tram road, behind the shops): when you spin the camera round
+  // zoomed out, the zone it's in or behind hides, so nothing ever stands
+  // between the camera and the street. Returns the zone groups.
   function cafeScenery(root, anim, FZ, TZ) {
     const r = seeded(29);
+    const zones = { left: dynamic(group(root)), right: dynamic(group(root)), front: dynamic(group(root)), behind: dynamic(group(root)) };
+    const zoneOf = (x, z) => (z < FZ - 6 ? "behind" : x < -ZONE_X ? "left" : x > ZONE_X ? "right" : z > TZ + ZONE_FRONT ? "front" : null);
+    // scatter (or farScatter), one lot per zone
+    const zScatter = (geo, mat, items, castShadow, far) => {
+      const by = new Map();
+      for (const it of items) { const k = zoneOf(it.x, it.z); if (!by.has(k)) by.set(k, []); by.get(k).push(it); }
+      for (const [k, list] of by) {
+        const parent = k ? zones[k] : root;
+        if (far) farScatter(parent, geo, mat, list); else scatter(parent, geo, mat, list, castShadow);
+      }
+    };
     const winMat = windowMaterial({ glass: 0x8fcfee, w: 2.2, h: 3.0, minY: 3.8 });
     const farWinMat = windowMaterial({ glass: 0x8fcfee, w: 2.6, h: 3.4 });
     const pastel = [0xffd29a, 0xffb59a, 0xa9d0ff, 0xb5e3a0, 0xffb8d2, 0xc9b8ff, 0xf3dfb0, 0x9fd4ee, 0xffdc70, 0xf2f2f2];
@@ -1512,9 +1542,9 @@
     }
     for (let x = -28; x <= 28; x += 4.5) tree(x + (r() - 0.5) * 1.5, TZ + 9 + r() * 6, 1.0 + r() * 0.4);
     hedges.push({ x: 0, y: 0.35, z: TZ + 6.6, sx: 60, sy: 0.7, sz: 0.8, color: 0x4fae3f });
-    scatter(root, G.cyl(8), toon(0xffffff), trunks, true);
-    scatter(root, G.lowSphere(), toon(0xffffff), crowns, true);
-    scatter(root, G.rbox(1, 1, 1, 0.3), toon(0xffffff), hedges, true);
+    zScatter(G.cyl(8), toon(0xffffff), trunks, true);
+    zScatter(G.lowSphere(), toon(0xffffff), crowns, true);
+    zScatter(G.rbox(1, 1, 1, 0.3), toon(0xffffff), hedges, true);
 
     // ---------- the next streets: low shops and houses facing the square ----------
     const near = [], roofs = [], shopfronts = [], awnings = [];
@@ -1535,13 +1565,14 @@
       for (let z = -20; z <= 28; z += 8.4) building(side * 34, z, 8.2, 7 + Math.floor(r() * 3) * 1.5, side < 0 ? PI / 2 : -PI / 2);
     }
     for (let x = -25.2; x <= 25.2; x += 8.4) building(x, TZ + 23.5, 8.2, 7 + Math.floor(r() * 3) * 1.5, PI);
-    farScatter(root, G.box(), toon(0xffffff), shopfronts);
-    farScatter(root, G.box(), winMat, near);
-    farScatter(root, prismGeo(), toon(0xffffff), roofs);
-    farScatter(root, G.box(), toon(0xffffff), awnings);
-    // shop windows and doors on those buildings (one painted shape)
-    painted(root, bakeGeo((g) => {
+    zScatter(G.box(), toon(0xffffff), shopfronts, false, true);
+    zScatter(G.box(), winMat, near, false, true);
+    zScatter(prismGeo(), toon(0xffffff), roofs, false, true);
+    zScatter(G.box(), toon(0xffffff), awnings, false, true);
+    // shop windows and doors on those buildings (one painted shape per zone)
+    for (const k of Object.keys(zones)) painted(zones[k], bakeGeo((g) => {
       for (const F of fronts) {
+        if (zoneOf(F.fx, F.fz) !== k) continue;
         const s = group(g, F.fx, 0, F.fz, F.ry);
         bx(s, 0x5a4636, -1.6, 1.7, 0.02, 2.6, 2.2, 0.04);
         bx(s, 0xd8f2ff, -1.6, 1.7, 0.05, 2.4, 2.0, 0.02);
@@ -1572,9 +1603,9 @@
       far.push({ x, y: h / 2, z: FZ - 22, sx: 8.2, sy: h, sz: 6, color: pick(pastel) });
       farRoofs.push({ x, y: h, z: FZ - 22, sx: 8.4, sy: 2.6, sz: 6.3, color: pick(roofColors) });
     }
-    farScatter(root, G.box(), farWinMat, far);
-    farScatter(root, prismGeo(), toon(0xffffff), farRoofs);
-    farScatter(root, G.lowSphere(), toon(0xffffff), trees);
+    zScatter(G.box(), farWinMat, far, false, true);
+    zScatter(prismGeo(), toon(0xffffff), farRoofs, false, true);
+    zScatter(G.lowSphere(), toon(0xffffff), trees, false, true);
     // a church tower and a few hills far away (one painted shape)
     painted(root, bakeGeo((g) => {
       const ch = group(g, -18, 0, -48);
@@ -1636,6 +1667,7 @@
       b.mesh.position.set(x, Math.abs(Math.sin(t * 6 + i)) * 0.02, b.z);
       b.mesh.rotation.y = b.speed > 0 ? 0 : PI;
     }));
+    return zones;
   }
 
   root.World3D.addPlace({ id: "beach", name: "Beach", icon: "🏖️" }, buildBeach);

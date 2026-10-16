@@ -24,7 +24,7 @@
     { id: "apartments", name: "the courtyard", icon: "🏘️" },
     { id: "beach", name: "the beach", icon: "🏖️" },
     { id: "cafe", name: "Café Street", icon: "☕" },
-    { id: "school", name: "school", icon: "🏫" },
+    { id: "school", name: "college", icon: "🎓" }, // (the id stays "school" so saved games still work)
     { id: "stage", name: "the concert stage", icon: "🎤" },
     { id: "home", name: "home", icon: "🏠" },
   ];
@@ -46,7 +46,7 @@
       home: 0.3 + (1 - e) * 1.2 + (1 - s) * 0.4,  // lazy homebodies
       beach: 0.5 + e * 0.8 + h * 0.4,               // fun in the sun
       cafe: 0.4 + s * 0.7 + p.chatty / 100 * 0.6,   // chatty socialisers
-      school: 0.3 + (1 - h) * 0.8 + k * 0.3,        // curious, studious
+      school: 0.3 + (1 - h) * 0.8 + k * 0.3,        // curious, studious (the college)
       stage: 0.3 + h * 0.7 + e * 0.5 + s * 0.3,     // performers
     };
   }

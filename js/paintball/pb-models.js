@@ -5,8 +5,12 @@
  *     paintballs stacked inside (no hopper, so the view over the gun stays clear), air-tank stock,
  *     ported barrel, anodised accent parts.
  *   - "AWP": thumbhole sniper marker with a slim clear feed tube and a box mag.
+ *   - "Deagle": Desert Eagle sidearm: big angular slide with a clear chamber window, triangular
+ *     barrel, chunky raked grip with a clear window onto the paintball-filled mag.
  *   - Butterfly knife (balisong) with two handles that really rotate around their own pivot pins.
- *   - Mii arms: plain round sleeves with a ball for a hand (the grip goes through it).
+ *   - Mii arms: plain round sleeves with a ball for a hand (the grip goes through it). In first
+ *     person both hands hold the guns (left hand under the AK's handguard / the AWP's forend,
+ *     cupping the right hand on the Deagle); the knife stays one-handed.
  * Everything is built from merged, vertex-coloured BufferGeometry (few draw calls), no assets.
  * Classic script: uses the global THREE (r147) and exposes window.PBModels.
  *
@@ -126,6 +130,7 @@
   var SKIN_UV = {
     ak: { z0: 0.36, su: -1 / 1.0, y0: -0.226, H: 0.32, W: 1024, Hpx: 328 },
     awp: { z0: 0.375, su: -1 / 1.18, y0: -0.15, H: 0.31, W: 1024, Hpx: 269 },
+    deagle: { z0: 0.072, su: -1 / 0.33, y0: -0.016, H: 0.076, W: 1024, Hpx: 236 }, // slide, barrel and frame band
     blade: { z0: 0.013, su: -1 / 0.128, y0: -0.016, H: 0.032, W: 1024, Hpx: 256 },
     handle: { z0: -0.009, su: 1 / 0.14, y0: -0.016, H: 0.032 * 1.094, W: 1024, Hpx: 256 }
   };
@@ -583,6 +588,107 @@
   }
 
   // ---------------------------------------------------------------------------------------------
+  // "Paint Deagle" (Desert Eagle) geometry. Same gun space: origin = top of the grip, barrel -Z,
+  // bore at y = DG.boreY. Big angular slide (with a clear chamber window: two paintballs inside),
+  // the fixed triangular barrel with a top rib, a chunky raked grip with a clear window low on each
+  // side, through which the paintball-filled mag shows, and the big squared trigger guard with the
+  // hooked front. The slide (blowback) and the mag (drops down the grip axis) are separate parts.
+  // ---------------------------------------------------------------------------------------------
+  var DG_GD = new THREE.Vector2(0.287, -0.958).normalize(); // grip axis in the side view (z, y), top -> bottom
+  var DG_ROT = Math.atan2(-DG_GD.x, -DG_GD.y); // rotation about X that lines a box's +Y up the grip
+  var DG = {
+    boreY: 0.031,
+    gripTop: new THREE.Vector3(0, 0, 0.03), // top of the grip axis (= the mag pivot)
+    gripDir: new THREE.Vector3(0, DG_GD.y, DG_GD.x), // down the grip, gun space
+    muzzle: new THREE.Vector3(0, 0.031, -0.262),
+    slideTravel: 0.05
+  };
+  // point on the grip: s along its axis (down), o across it (+ = toward the back strap); [z, y] or Vector3
+  function dgGrip(s, o) { return [DG.gripTop.z + DG_GD.x * s - DG_GD.y * o, DG.gripTop.y + DG_GD.y * s + DG_GD.x * o]; }
+  function dgGripV(s, o, x) { var p = dgGrip(s, o || 0); return new THREE.Vector3(x || 0, p[1], p[0]); }
+  // a hole for sideShape(), wound against the outline (so ExtrudeGeometry cuts it out either way)
+  function holeFor(outer, pts) {
+    var V = function (a) { return a.map(function (p) { return new THREE.Vector2(p[0], p[1]); }); };
+    var hp = V(pts);
+    if (THREE.ShapeUtils.isClockWise(hp) === THREE.ShapeUtils.isClockWise(V(outer))) hp.reverse();
+    var path = new THREE.Path(); path.moveTo(hp[0].x, hp[0].y);
+    for (var i = 1; i < hp.length; i++) path.lineTo(hp[i].x, hp[i].y);
+    return path;
+  }
+  function stadiumPts(z0, z1, cy, r) { // a slot outline [[z, y], ...] (z0 < z1)
+    var pts = [], i, a;
+    for (i = 0; i <= 6; i++) { a = -PI / 2 + i / 6 * PI; pts.push([z1 + Math.cos(a) * r, cy + Math.sin(a) * r]); }
+    for (i = 0; i <= 6; i++) { a = PI / 2 + i / 6 * PI; pts.push([z0 + Math.cos(a) * r, cy + Math.sin(a) * r]); }
+    return pts;
+  }
+
+  // B = { poly, metal, slide, slideShell, slideBalls, mag, magShell, magBalls } (any can be shared)
+  function buildDeagle(B, pal) {
+    var poly = B.poly, metal = B.metal, sl = B.slide, i, by = DG.boreY, gp = dgGrip, s;
+    // ---- frame / dust cover + the big squared trigger guard with the hooked front (skinned) ----
+    poly.skin = 1;
+    poly.add(sideShape([[0.066, 0.013], [0.066, -0.004], [0.05, -0.012], [-0.236, -0.012], [-0.252, -0.003], [-0.252, 0.013]], 0.032, 0.003), pal.dark2);
+    poly.add(sideShape([[-0.004, -0.011], [0.004, -0.03], [-0.001, -0.047], [-0.008, -0.058], [-0.074, -0.058], [-0.086, -0.05], [-0.09, -0.036], [-0.098, -0.03],
+      [-0.094, -0.022], [-0.088, -0.011], [-0.078, -0.011], [-0.08, -0.044], [-0.07, -0.05], [-0.012, -0.05], [-0.008, -0.04], [-0.012, -0.011]], 0.012, 0.0015), pal.dark2);
+    poly.skin = 0;
+    for (i = -1; i <= 1; i += 2) {
+      poly.add(box(0.0025, 0.005, 0.2), pal.accent, mtx(i * 0.0162, 0.0, -0.13)); // accent stripe on the dust cover
+    }
+    poly.add(rbox(0.005, 0.009, 0.022, 0.003, 0.001), pal.accent, mtx(-0.0175, 0.003, -0.112)); // takedown lever
+    metal.add(cylX(0.0025, 0.0335, 8), pal.steel, mtx(0, -0.003, 0.042)); // frame pins
+    metal.add(cylX(0.0025, 0.0335, 8), pal.steel, mtx(0, 0.002, -0.07));
+    metal.add(sideShape([[-0.036, -0.01], [-0.042, -0.024], [-0.046, -0.04], [-0.04, -0.043], [-0.037, -0.028], [-0.03, -0.01]], 0.007, 0.001), pal.accentL); // trigger
+    poly.add(sideShape([[0.06, 0.012], [0.066, 0.03], [0.074, 0.034], [0.078, 0.028], [0.07, 0.023], [0.068, 0.012]], 0.012, 0.0015), pal.accent); // hammer
+    // ---- chunky raked grip (accent) with a clear window low on each side (the mag's balls show through) ----
+    var gOut = [gp(-0.004, -0.024), gp(0.125, -0.027), gp(0.134, -0.02), gp(0.134, 0.023), gp(0.124, 0.03), gp(0.012, 0.03), gp(-0.002, 0.037), gp(-0.008, 0.032), gp(-0.008, -0.024)];
+    var gWin = [gp(0.086, -0.012), gp(0.118, -0.012), gp(0.118, 0.014), gp(0.086, 0.014)];
+    poly.add(sideShape(gOut, 0.036, 0.004, [holeFor(gOut, gWin)]), pal.accent);
+    for (i = 0; i < 3; i++) { // grip grooves on the front strap
+      var gq = dgGripV(0.03 + i * 0.022, -0.025);
+      poly.add(rbox(0.037, 0.0035, 0.008, 0.0015, 0.0008), pal.accentD, mtx(0, gq.y, gq.z, DG_ROT));
+    }
+    // ---- slide: big and angular, rear serrations, safety levers, clear chamber window (skinned) ----
+    var sOut = [[0.064, 0.012], [0.066, 0.047], [0.057, 0.056], [-0.104, 0.056], [-0.113, 0.049], [-0.113, 0.012]];
+    sl.skin = 1;
+    sl.add(sideShape(sOut, 0.037, 0.003, [holeFor(sOut, stadiumPts(-0.073, -0.035, 0.033, 0.0105))]), pal.grey);
+    sl.skin = 0;
+    for (i = -1; i <= 1; i += 2) {
+      for (var k = 0; k < 7; k++) sl.add(box(0.0025, 0.03, 0.0028), pal.dark, mtx(i * 0.0186, 0.034, 0.022 + k * 0.0056, 0, 0, 0));
+      sl.add(rbox(0.006, 0.01, 0.018, 0.003, 0.001), pal.accent, mtx(i * 0.0205, 0.045, 0.045)); // ambidextrous safety
+      sl.add(box(0.0025, 0.0035, 0.16), pal.accent, mtx(i * 0.0186, 0.0175, -0.028)); // accent line under the window
+    }
+    sl.add(sideShape([[0.059, 0.055], [0.059, 0.067], [0.046, 0.067], [0.04, 0.055]], 0.03, 0.001), pal.dark); // rear sight
+    sl.add(box(0.008, 0.006, 0.003), pal.black, mtx(0, 0.065, 0.0595)); // its notch
+    B.slideShell.add(cylZ(0.0145, 0.0145, 0.064, 18), pal.white, mtx(0, 0.033, -0.054)); // clear chamber tube
+    var bGeo = sph(0.0132, 14, 10);
+    B.slideBalls.add(bGeo, pal.ball, mtx(0, 0.033, -0.0715)); B.slideBalls.add(bGeo, pal.ball, mtx(0, 0.033, -0.0455));
+    // ---- the fixed barrel: triangular profile with a top rib, side flutes, paintball in the bore ----
+    var tri = new THREE.Shape(); tri.moveTo(-0.0175, 0.012); tri.lineTo(0.0175, 0.012); tri.lineTo(0.0075, 0.0555); tri.lineTo(-0.0075, 0.0555); tri.closePath();
+    var bar = new THREE.ExtrudeGeometry(tri, { depth: 0.146, bevelEnabled: true, bevelThickness: 0.002, bevelSize: 0.0015, bevelSegments: 2 });
+    bar.translate(0, 0, -0.255);
+    metal.skin = 1;
+    metal.add(bar, pal.grey);
+    metal.skin = 0;
+    metal.add(box(0.002, 0.011, 0.12), pal.dark, mtx(0.0146, 0.03, -0.185, 0, 0, 0.214)); // side flutes
+    metal.add(box(0.002, 0.011, 0.12), pal.dark, mtx(-0.0146, 0.03, -0.185, 0, 0, -0.214));
+    metal.add(rbox(0.01, 0.004, 0.13, 0.0015, 0.001), pal.accent, mtx(0, 0.059, -0.183)); // top rib
+    metal.add(sideShape([[-0.236, 0.057], [-0.24, 0.068], [-0.25, 0.068], [-0.252, 0.057]], 0.006, 0.0008), pal.dark2); // front sight
+    metal.add(box(0.0065, 0.004, 0.003), pal.accentL, mtx(0, 0.066, -0.2365));
+    metal.add(cylZ(0.0095, 0.0095, 0.002, 16), pal.black, mtx(0, by, -0.2575)); // bore
+    poly.add(cylZ(0.008, 0.008, 0.003, 12), pal.ball, mtx(0, by, -0.2555)); // paintball in the bore
+    // ---- magazine (gun space; the mag builders are offset to the grip top): clear body full of balls ----
+    var mid = dgGripV(0.068, 0);
+    B.magShell.add(rbox(0.022, 0.128, 0.034, 0.005, 0.002), pal.white, mtx(0, mid.y, mid.z, DG_ROT));
+    for (i = -1; i <= 1; i += 2) { var sp = dgGripV(0.068, i * 0.0175); B.mag.add(rbox(0.024, 0.126, 0.005, 0.002, 0.001), pal.dark2, mtx(0, sp.y, sp.z, DG_ROT)); }
+    var fp = dgGripV(0.139, 0.001), fa = dgGripV(0.1455, 0.001), fl = dgGripV(0.006, 0);
+    B.mag.add(rbox(0.034, 0.011, 0.058, 0.004, 0.002), pal.dark2, mtx(0, fp.y, fp.z, DG_ROT)); // floor plate
+    B.mag.add(rbox(0.036, 0.004, 0.06, 0.0015, 0.001), pal.accent, mtx(0, fa.y, fa.z, DG_ROT));
+    B.mag.add(rbox(0.024, 0.01, 0.03, 0.003, 0.001), pal.dark, mtx(0, fl.y, fl.z, DG_ROT)); // feed lips
+    var hi = mix(pal.ball, new THREE.Color(1, 1, 1), 0.3), mb = sph(0.0094, 12, 9);
+    for (i = 0; i < 6; i++) { s = dgGripV(0.016 + i * 0.0196, i % 2 ? 0.0016 : -0.0016); B.magBalls.add(mb, i === 2 ? hi : pal.ball, mtx(0, s.y, s.z, i, i * 2, 0)); }
+  }
+
+  // ---------------------------------------------------------------------------------------------
   // Butterfly knife geometry. Knife frame: tang centre at origin, blade forward (-Z), spine +Y.
   // The two pivot pins run along X through the tang: the safe handle (A) on the spine-side pin at
   // y = +PIN, the bite handle (B) on the edge-side pin at y = -PIN.
@@ -834,7 +940,7 @@
   var _skinTex = {}, _skinMats = {};
   var HANDLE_PATTERNS = { web: 1, casehardened: 1, slaughter: 1, solid: 1, dragon: 1 }; // knife skins that cover the handles too
   function skinOf(id) { var S = root.PBSkins; return id && S && S.BY_ID ? S.BY_ID[id] || null : null; }
-  function skinLayout(skin) { return skin.weapon === "awp" ? SKIN_UV.awp : skin.weapon === "knife" ? SKIN_UV.blade : SKIN_UV.ak; }
+  function skinLayout(skin) { return SKIN_UV[skin.weapon === "knife" ? "blade" : skin.weapon] || SKIN_UV.ak; }
   function skinsHandles(skin) { if (typeof skin === "string") skin = skinOf(skin); return !!(skin && HANDLE_PATTERNS[skin.pattern]); }
   function canvasTex(c) {
     var t = new THREE.CanvasTexture(c);
@@ -929,8 +1035,9 @@
   function buildGunMeshes(kind, accent, mats) {
     var pal = akPalette(accent || "#ff3fa4");
     var poly = new Builder(), metal = new Builder(), shell = new Builder(), lens = kind === "awp" ? new Builder() : null;
-    withUV(SKIN_UV[kind === "awp" ? "awp" : "ak"], poly, metal);
+    withUV(SKIN_UV[kind === "awp" || kind === "deagle" ? kind : "ak"], poly, metal);
     if (kind === "awp") buildAWP({ poly: poly, metal: metal, mag: poly, bolt: metal, shell: shell, balls: poly, lens: lens }, pal);
+    else if (kind === "deagle") buildDeagle({ poly: poly, metal: metal, slide: metal, slideShell: shell, slideBalls: poly, mag: poly, magShell: shell, magBalls: poly }, pal);
     else buildAK({ poly: poly, metal: metal, mag: poly, magShell: shell, magBalls: poly, bolt: metal }, pal);
     var grp = new THREE.Group();
     var pm = poly.mesh(mats.poly), mm = metal.mesh(mats.metal);
@@ -1008,7 +1115,7 @@
     if (!s) return out;
     var tex = null, mats = [];
     try {
-      var pv = previewRig(), kind = s.weapon === "awp" ? "awp" : s.weapon === "knife" ? "knife" : "ak";
+      var pv = previewRig(), kind = s.weapon === "awp" || s.weapon === "knife" || s.weapon === "deagle" ? s.weapon : "ak";
       var o = previewModel(kind), ss = w * h > 300000 ? 1 : 2;
       // a half-resolution copy of the pattern is plenty for a small picture; freed right after
       var art = drawSkin(s, 0.5);
@@ -1038,6 +1145,7 @@
   // ---------------------------------------------------------------------------------------------
   function createWorldGun(accent, kind, skinId) {
     if (kind === "awp") return createWorldAWP(accent, skinId);
+    if (kind === "deagle") return createWorldDeagle(accent, skinId);
     var mats = worldMats(0.42), gm = buildGunMeshes("ak", accent, mats);
     var g = new THREE.Group();
     var inner = gm.group; inner.rotation.y = PI; inner.scale.setScalar(0.9); g.add(inner); // barrel -> +Z, ~0.88 m long
@@ -1058,6 +1166,24 @@
     g.name = "PBWorldAWP";
     g.userData.kind = "awp";
     g.userData.muzzle = new THREE.Vector3(-AWP.muzzle.x, AWP.muzzle.y, -AWP.muzzle.z).multiplyScalar(S);
+    g.userData.setSkin = function (id) { skinGun(gm, mats, id); };
+    skinGun(gm, mats, skinId);
+    return g;
+  }
+
+  // third-person Deagle (held in one hand): origin on the grip axis just under the top of the grip
+  // (where the hand closes, like the rifles' origin at the top of their pistol grip), barrel +Z,
+  // ~0.32 m long, 4 draw calls
+  function createWorldDeagle(accent, skinId) {
+    var mats = worldMats(0.4), gm = buildGunMeshes("deagle", accent, mats);
+    var S = 0.95, hold = dgGripV(0.03, 0);
+    var g = new THREE.Group();
+    var inner = gm.group; inner.rotation.y = PI; inner.scale.setScalar(S);
+    inner.position.set(0, -hold.y * S, hold.z * S); // (rotated half a turn: gun-space z -> -z)
+    g.add(inner);
+    g.name = "PBWorldDeagle";
+    g.userData.kind = "deagle";
+    g.userData.muzzle = new THREE.Vector3(-DG.muzzle.x, DG.muzzle.y, -DG.muzzle.z).multiplyScalar(S).add(inner.position);
     g.userData.setSkin = function (id) { skinGun(gm, mats, id); };
     skinGun(gm, mats, skinId);
     return g;
@@ -1150,8 +1276,9 @@
       rHandAK.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, up, Z));
       rHandAK.position.set(0.0, -0.05, 0.014);
     })();
-    // left-hand poses (in gun space)
-    var LH_GUARD = { p: new THREE.Vector3(0.0, 0.0, -0.31), q: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(-1, 0, 0))) };
+    // left-hand poses (in gun space). LH_GUARD = supporting the gun: wrapped around the lower left
+    // side of the handguard (low, so the hand never covers the sights)
+    var LH_GUARD = { p: new THREE.Vector3(-0.026, -0.016, -0.3), q: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(-1, 0, 0))) };
     LH_GUARD.q.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -0.35, 0)));
     var LH_MAG_LOCAL = { p: new THREE.Vector3(0, -0.075, -0.05), q: new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.2, 0, 0)) };
     var LH_BOLT = { p: new THREE.Vector3(0.05, 0.05, -0.15), q: new THREE.Quaternion().setFromEuler(new THREE.Euler(0.2, 0.6, 1.9)) };
@@ -1188,6 +1315,43 @@
     var LH_MAG_AWP = { p: new THREE.Vector3(0, -0.095, 0), q: new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.2, 0, 0)) };
     // scoped pose: the scope axis on the camera axis, eyepiece just ahead of the eye
     var AWP_SCOPE = { p: new THREE.Vector3(0, -AWP.scopeY, -0.24), r: new THREE.Euler(0, 0, 0) };
+    // left hand supporting the AWP: under the forend, ahead of the mag
+    var LH_SUP_AWP = new THREE.Vector3(-0.022, -0.042, -0.3);
+
+    // ------------------------------------------------------------------ Deagle rig
+    var dgRoot = new THREE.Group(); swayRoot.add(dgRoot);
+    var dgGun = new THREE.Group(); dgRoot.add(dgGun);
+    // the pistol itself is drawn a bit oversized next to the (big) Mii ball hands; dgModel holds the
+    // gun parts in gun space, hand targets are scaled by DG_VM_S
+    var DG_VM_S = 1.2;
+    var dgModel = new THREE.Group(); dgModel.scale.setScalar(DG_VM_S); dgGun.add(dgModel);
+    var gTop = DG.gripTop;
+    var dPoly = new Builder(), dMetal = new Builder(), dSlideB = new Builder(), dSlideShell = new Builder(), dSlideBalls = new Builder();
+    var dMag = withOffset(new Builder(), gTop.x, gTop.y, gTop.z), dMagShell = withOffset(new Builder(), gTop.x, gTop.y, gTop.z), dMagBalls = withOffset(new Builder(), gTop.x, gTop.y, gTop.z);
+    withUV(SKIN_UV.deagle, dPoly, dMetal, dSlideB, dMag);
+    buildDeagle({ poly: dPoly, metal: dMetal, slide: dSlideB, slideShell: dSlideShell, slideBalls: dSlideBalls, mag: dMag, magShell: dMagShell, magBalls: dMagBalls }, pal);
+    var dgPoly = dPoly.mesh(M.poly), dgMetal = dMetal.mesh(M.metal);
+    dgModel.add(dgPoly, dgMetal);
+    // the slide (blows back on every shot) carries its clear chamber window and the two balls in it
+    var dgSlide = new THREE.Group(); dgModel.add(dgSlide);
+    var dgSlideMesh = dSlideB.mesh(M.metal), dgWin = dSlideShell.mesh(M.shell); dgWin.renderOrder = 2;
+    dgSlide.add(dgSlideMesh, dSlideBalls.mesh(M.balls), dgWin);
+    // the mag slides out along the grip axis
+    var dgMag = new THREE.Group(); dgMag.position.copy(gTop); dgModel.add(dgMag);
+    var dgMagFrame = dMag.mesh(M.poly), dgMagShell = dMagShell.mesh(M.shell); dgMagShell.renderOrder = 2;
+    dgMag.add(dgMagFrame, dMagBalls.mesh(M.balls), dgMagShell);
+    var dgMuzzleNode = new THREE.Object3D(); dgMuzzleNode.position.copy(DG.muzzle); dgModel.add(dgMuzzleNode);
+    var dgPuff = new THREE.Sprite(puffMat); dgPuff.position.copy(DG.muzzle); dgPuff.visible = false; dgPuff.renderOrder = 3;
+    dgModel.add(dgPuff);
+    // two-handed pistol grip: the right ball on the grip, the left ball cupping it from below-left
+    var rHandDG = new THREE.Mesh(rHandAK.geometry, M.skin), lHandDG = new THREE.Mesh(rHandAK.geometry, M.skin);
+    rHandDG.frustumCulled = lHandDG.frustumCulled = false;
+    dgGun.add(rHandDG, lHandDG);
+    var RH_DG = dgGripV(0.05, 0.004).multiplyScalar(DG_VM_S);
+    rHandDG.position.copy(RH_DG);
+    var LH_DG_CUP = RH_DG.clone().add(new THREE.Vector3(-0.034, -0.032, -0.012));
+    var LH_DG_SLIDE = new THREE.Vector3(-0.004, 0.066, 0.036).multiplyScalar(DG_VM_S); // over the rear serrations (+ the slide's offset)
+    var LH_DG_OFF = new THREE.Vector3(-0.24, -0.32, 0.2); // let go (inspect): down and back toward the shoulder
 
     // ------------------------------------------------------------------ knife rig
     // knAll holds everything knife-related. Each ball hand has its own frame whose axes are the
@@ -1215,14 +1379,20 @@
     sleeveR.frustumCulled = sleeveL.frustumCulled = false;
     swayRoot.add(sleeveR, sleeveL);
     var wristR_AK = new THREE.Object3D(); wristR_AK.position.copy(WRIST(HR)); rHandAK.add(wristR_AK);
-    var wristL_AK = new THREE.Object3D(); wristL_AK.position.copy(WRIST(0.026)).multiply(new THREE.Vector3(-1, 1, 1)); lHandAK.add(wristL_AK);
     var wristR_AWP = new THREE.Object3D(); wristR_AWP.position.copy(WRIST(HR)); rHandAWP.add(wristR_AWP);
-    var wristL_AWP = new THREE.Object3D(); wristL_AWP.position.copy(WRIST(0.026)).multiply(new THREE.Vector3(-1, 1, 1)); lHandAWP.add(wristL_AWP);
+    // left arms (and both Deagle arms): the sleeve starts at the ball centre (hidden inside the ball),
+    // so it stays attached however the hand moves around the gun
+    var wristL_AK = new THREE.Object3D(); lHandAK.add(wristL_AK);
+    var wristL_AWP = new THREE.Object3D(); lHandAWP.add(wristL_AWP);
+    var wristR_DG = new THREE.Object3D(); rHandDG.add(wristR_DG);
+    var wristL_DG = new THREE.Object3D(); lHandDG.add(wristL_DG);
+    var SHOULDER_R_DG = new THREE.Vector3(0.32, -0.62, 0.0), SHOULDER_L_DG = new THREE.Vector3(-0.3, -0.75, -0.1);
+    var SLEEVE_L_LEN = 1.6; // the left sleeve is stretched while holding a gun so it always reaches out of the frame
     // knife arms: the sleeve starts at the ball centre (hidden inside the ball), so it stays attached in any pose
     var wristR_K = new THREE.Object3D(); kHand.add(wristR_K);
     var wristL_K = new THREE.Object3D(); kHandL.add(wristL_K);
     var SHOULDER_LK = new THREE.Vector3(-0.75, -0.35, 0.0);
-    var SHOULDER_RK = new THREE.Vector3(0.75, -0.32, 0.0), SHOULDER_R = new THREE.Vector3(0.3, -0.7, -0.05), SHOULDER_L = new THREE.Vector3(-0.2, -0.4, 0.12);
+    var SHOULDER_RK = new THREE.Vector3(0.75, -0.32, 0.0), SHOULDER_R = new THREE.Vector3(0.3, -0.7, -0.05), SHOULDER_L = new THREE.Vector3(-0.45, -0.8, -0.3); // (low: the forearm comes up from the lower left, under the hand)
 
     // ------------------------------------------------------------------ poses
     // (the gun points almost straight ahead, CS-style, rather than angled in toward the middle)
@@ -1241,10 +1411,12 @@
     var KN_LOFF = new THREE.Vector3(-0.32, -0.36, 0.1); // left hand offscreen offset (slides in along the arm)
     akRoot.position.copy(AK_BASE.p); akRoot.rotation.copy(AK_BASE.r);
     var AWP_BASE = { p: new THREE.Vector3(0.19, -0.17, -0.52), r: new THREE.Euler(0.03, -0.065, 0.0) };
+    var DG_BASE = { p: new THREE.Vector3(0.135, -0.14, -0.41), r: new THREE.Euler(0.03, 0.2, 0.05) }; // angled in a little: the left side shows
 
     // channel lists
     var AWP_CH = ["px", "py", "pz", "rx", "ry", "rz", "magY", "magZ", "magRX", "lhW", "lhX", "lhY", "lhZ", "rbW", "boltR", "boltZ"];
     var AK_CH = ["px", "py", "pz", "rx", "ry", "rz", "magY", "magZ", "magRX", "lhW", "lbW", "bolt", "lhX", "lhY", "lhZ"];
+    var DG_CH = ["px", "py", "pz", "rx", "ry", "rz", "magS", "hS", "hX", "lhW", "lsW", "lo", "slide"];
     var KN_CH = ["px", "py", "pz", "rx", "ry", "rz", "sw", "a", "b", "kx", "ky", "kz", "krx", "kry", "krz",
       "lw", "lpx", "lpy", "lpz", "lrx", "lry", "lrz", "lkrx", "lkry", "hw", "kh", "ksp"];
     var KN_ANG = { a: 1, b: 1, krx: 1, kry: 1, krz: 1, lkrx: 1, lkry: 1, ksp: 1 }; // blended the short way on cancel
@@ -1393,6 +1565,80 @@
       };
     }
 
+    // Deagle actions. Extra channels: magS = mag out along the grip axis (m), hS / hX = left hand
+    // below the grip (distance along the axis / sideways) while it handles the mag, lhW = left hand
+    // support (0) -> mag (1), lsW -> over the slide (1), lo = left hand let go (inspect), slide = slide
+    // pulled back (0..1). The shot kick is not an action (see dgShot), so it never blends or stalls.
+    // Timings match the game's sounds (reload 2.2 s: mag out ~0.32, mag in ~1.31, slide ~1.86 when empty).
+    function dgDrawAction() {
+      // swings up from below, the left hand racks the slide (slams home at 0.70 s), settles by 1.0 s
+      return {
+        name: "draw", dur: 1.0, ch: {
+          py: K([[0, -0.22], [0.36, 0.006, "o"], [0.46, 0]]),
+          pz: K([[0, 0.05], [0.36, 0, "o"]]),
+          rx: K([[0, -0.85], [0.36, 0.05, "o"], [0.46, 0], [0.6, 0.03], [0.7, 0.08, "o"], [0.86, 0]]),
+          ry: K([[0, 0.25], [0.4, 0, "o"]]),
+          rz: K([[0, 0.5], [0.38, 0, "o"], [0.5, 0.28], [0.72, 0.3], [0.94, 0]]),
+          px: K([[0, 0.03], [0.38, 0, "o"], [0.52, -0.015], [0.95, 0]]),
+          lsW: K([[0, 0], [0.4, 0], [0.53, 1, "o"], [0.72, 1], [0.9, 0]]),
+          slide: K([[0, 0], [0.55, 0], [0.63, 1, "o"], [0.66, 1], [0.7, 0, "i"]])
+        }
+      };
+    }
+    function dgReloadAction(empty) {
+      // the pistol comes up and cants left so the mag well is in view while the left hand works
+      var D = 2.2;
+      var up = [[0, 0], [0.25, 0.12], [1.28, 0.125], [1.32, 0.14, "o"], [1.55, 0.06]];
+      var ch = {
+        rz: K([[0, 0], [0.22, -0.6], [1.2, -0.55], [1.31, -0.64, "o"], [1.55, -0.26], [2.0, -0.02], [D, 0]]),
+        rx: K([[0, 0], [0.22, 0.2], [0.5, 0.24], [1.0, 0.18], [1.25, 0.2], [1.31, 0.28, "o"], [1.5, 0.1], [D, 0]]),
+        ry: K([[0, 0], [0.25, 0.1], [1.3, 0.1], [1.9, 0.02], [D, 0]]),
+        py: K(up.concat([[D, 0]])),
+        px: K([[0, 0], [0.25, -0.04], [1.4, -0.04], [2.0, -0.005], [D, 0]]),
+        pz: K([[0, 0], [0.25, -0.02], [1.5, -0.02], [D, 0]]),
+        // left hand: waits under the grip, the old mag drops past it, it fetches a new one from
+        // below the screen, pushes it up the grip, slaps it home and goes back to the grip
+        lhW: K([[0, 0], [0.06, 0], [0.28, 1, "o"], [1.34, 1], [1.6, 0]]),
+        hS: K([[0, 0.17], [0.4, 0.17], [0.5, 0.21], [0.78, 0.505, "i"], [0.82, 0.505], [1.12, 0.255, "o"], [1.31, 0.135, "o"]]), // = magS + 0.135 while it carries the mag
+        hX: K([[0, -0.05], [0.52, -0.05], [0.8, 0], [1.31, 0]]),
+        magS: K([[0, 0], [0.32, 0], [0.36, 0.02, "o"], [0.6, 0.6, "i"], [0.8, 0.6], [0.8001, 0.37, "l"], [0.82, 0.37], [1.12, 0.12, "o"], [1.31, 0, "o"]]),
+        lsW: K([[0, 0], [1, 0]]), slide: K([[0, 0], [1, 0]])
+      };
+      if (empty) { // then over the top: rack the slide and let it slam home (~1.86 s)
+        ch.lhW = K([[0, 0], [0.06, 0], [0.28, 1, "o"], [1.34, 1], [1.5, 0]]);
+        ch.lsW = K([[0, 0], [1.34, 0], [1.56, 1, "o"], [1.9, 1], [2.1, 0]]);
+        ch.slide = K([[0, 0], [1.64, 0], [1.76, 1, "o"], [1.82, 1], [1.86, 0, "i"]]);
+        ch.rz = K([[0, 0], [0.22, -0.6], [1.2, -0.55], [1.31, -0.64, "o"], [1.56, 0.15], [1.8, 0.25], [1.88, 0.2, "o"], [D, 0]]);
+        ch.rx = K([[0, 0], [0.22, 0.2], [0.5, 0.24], [1.0, 0.18], [1.25, 0.2], [1.31, 0.28, "o"], [1.5, 0.08], [1.84, 0.06], [1.88, 0.13, "o"], [D, 0]]);
+        ch.py = K(up.concat([[1.84, 0.04], [1.88, 0.055, "o"], [D, 0]]));
+        ch.px = K([[0, 0], [0.25, -0.04], [1.4, -0.04], [1.7, -0.05], [D, 0]]);
+      }
+      return { name: "reload", dur: D, ch: ch };
+    }
+    function dgInspectAction() {
+      // the left hand lets go; turn the pistol to show its left side, then roll it over to show the
+      // right side and the top, and bring it back into the two-handed grip
+      var D = 4.0;
+      return {
+        name: "inspect", dur: D, ch: {
+          lo: K([[0, 0], [0.4, 1], [3.3, 1], [3.85, 0, "o"]]),
+          px: K([[0, 0], [0.55, -0.055], [1.6, -0.06], [2.3, -0.12], [3.2, -0.125], [3.9, 0]]),
+          py: K([[0, 0], [0.55, 0.05], [1.6, 0.055], [2.3, 0.06], [3.2, 0.062], [3.9, 0]]),
+          pz: K([[0, 0], [0.55, 0.03], [1.6, 0.03], [2.3, 0.0], [3.2, -0.005], [3.9, 0]]),
+          ry: K([[0, 0], [0.55, 0.95], [1.6, 1.05], [2.3, -1.05], [3.2, -1.12], [3.9, 0]]),
+          rz: K([[0, 0], [0.55, 0.3], [1.6, 0.38], [2.3, -0.25], [3.2, -0.3], [3.9, 0]]),
+          rx: K([[0, 0], [0.55, 0.12], [1.6, 0.08], [2.3, 0.1], [3.2, 0.06], [3.9, 0]])
+        }
+      };
+    }
+    // shot kick: big flip up and back, slide blows back, settled within ~0.2 s (fire cycle 0.225 s)
+    var DG_KICK = {
+      rx: K([[0, 0], [0.035, 0.3, "o"], [0.11, 0.07, "s"], [0.2, 0, "s"]]),
+      pz: K([[0, 0], [0.03, 0.06, "o"], [0.12, 0.01], [0.2, 0]]),
+      py: K([[0, 0], [0.035, 0.018, "o"], [0.2, 0]]),
+      slide: K([[0, 0], [0.018, 1, "o"], [0.07, 0, "i"]])
+    };
+
     // Knife actions. Channels: px..rz = right hand offset (camera space), sw = blend toward the
     // inspect "show" pose, a/b = balisong handle angles, kx..krz = knife trick offset about the right
     // ball, lw = left hand slide-in, lpx..lrz = left hand offset, lkrx/lkry = knife trick about the
@@ -1477,7 +1723,7 @@
     }
 
     // ------------------------------------------------------------------ state
-    var weapon = "ak", skins = { ak: null, awp: null, knife: null };
+    var weapon = "ak", skins = { ak: null, awp: null, deagle: null, knife: null };
     var action = null, actT = 0, snap = null, snapT = 1;
     var cur = {}; // last evaluated channel values
     var kickZ = new Spring(520, 0.62), kickR = new Spring(520, 0.55), kickRoll = new Spring(380, 0.5), kickX = new Spring(420, 0.6);
@@ -1488,8 +1734,9 @@
     var puffT = 1, time = 0, recoilHeat = 0;
     var awpKZ = new Spring(150, 0.5), awpKR = new Spring(120, 0.42), awpKRoll = new Spring(140, 0.45), awpKX = new Spring(160, 0.5);
     var scoped = false, scopeW = 0;
+    var dgShot = { t: 9, k: 1, roll: 0 }; // time since the last Deagle shot (drives the kick)
 
-    function channels() { return weapon === "ak" ? AK_CH : weapon === "awp" ? AWP_CH : KN_CH; }
+    function channels() { return weapon === "ak" ? AK_CH : weapon === "awp" ? AWP_CH : weapon === "deagle" ? DG_CH : KN_CH; }
     function startAction(a) {
       // snapshot current values for a smooth blend into the new action
       snap = {}; var chs = channels();
@@ -1519,7 +1766,7 @@
             var d = out[cc] - sv; d = Math.atan2(Math.sin(d), Math.cos(d)); out[cc] = sv + d * w;
             continue;
           }
-          if (cc === "magY" && Math.abs(sv - out[cc]) > 0.2) continue; // mag offscreen: no visible blend
+          if ((cc === "magY" || cc === "magS" || cc === "hS") && Math.abs(sv - out[cc]) > 0.2) continue; // mag offscreen: no visible blend
           out[cc] = sv + (out[cc] - sv) * w;
         }
       }
@@ -1540,9 +1787,9 @@
       sleeve.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), _v);
     }
 
-    var leftBusy = false; // the left hand only shows up to swap the magazine / pull the bolt
+    // The left hand always supports the gun (AK: under the handguard, AWP: under the forend, Deagle:
+    // cupping the right hand); it leaves only to swap the mag / work the bolt or slide.
     function updateAK(dt, c) {
-      leftBusy = c.lhW > 0.01 || c.lbW > 0.01;
       akRoot.position.set(AK_BASE.p.x + c.px, AK_BASE.p.y + c.py, AK_BASE.p.z + c.pz);
       akRoot.rotation.set(AK_BASE.r.x + c.rx, AK_BASE.r.y + c.ry, AK_BASE.r.z + c.rz);
       // recoil springs
@@ -1584,10 +1831,8 @@
       }
     }
 
-    var awpLeftBusy = false;
     var _wp = new THREE.Vector3(), _wq = new THREE.Quaternion(), _wq2 = new THREE.Quaternion(), _we = new THREE.Euler();
     function updateAWP(dt, c) {
-      awpLeftBusy = c.lhW > 0.01;
       // scope raise: 0.12 s ease toward the eye
       scopeW = Math.max(0, Math.min(1, scopeW + (scoped ? 1 : -1) * dt / 0.12));
       var sw = EASE.s(scopeW);
@@ -1615,17 +1860,14 @@
         p.lerp(tmpP2, c.rbW); q.slerp(RH_BOLT_Q, c.rbW);
       }
       rHandAWP.position.copy(p); rHandAWP.quaternion.copy(q);
-      // left hand: only for the magazine swap
-      lHandAWP.visible = awpLeftBusy;
-      if (awpLeftBusy) {
+      // left hand: under the forend, over to the mag for the magazine swap
+      var lp = tmpP2.copy(LH_SUP_AWP);
+      if (c.lhW > 0.001) {
         magQ.copy(awpMag.quaternion);
         magP.copy(LH_MAG_AWP.p).applyQuaternion(magQ).add(awpMag.position);
-        // slides in from below-left when appearing
-        var w = c.lhW;
-        magP.x += c.lhX - (1 - w) * 0.12; magP.y += c.lhY - (1 - w) * 0.18; magP.z += c.lhZ + (1 - w) * 0.05;
-        lHandAWP.position.copy(magP);
-        lHandAWP.quaternion.copy(magQ).multiply(LH_MAG_AWP.q);
+        lp.lerp(magP, c.lhW);
       }
+      lHandAWP.position.set(lp.x + c.lhX, lp.y + c.lhY, lp.z + c.lhZ);
       // muzzle puff (bigger and longer than the AK's)
       if (puffT < 1) {
         puffT += dt / 0.13;
@@ -1635,6 +1877,41 @@
         var sc = 0.2 + Math.sqrt(u) * 0.3;
         awpPuff.scale.set(sc, sc, sc);
         awpPuff.position.z = AWP.muzzle.z - 0.07 - u * 0.12;
+      }
+    }
+
+    var _dp = new THREE.Vector3();
+    function updateDeagle(dt, c) {
+      dgRoot.position.set(DG_BASE.p.x + c.px, DG_BASE.p.y + c.py, DG_BASE.p.z + c.pz);
+      dgRoot.rotation.set(DG_BASE.r.x + c.rx, DG_BASE.r.y + c.ry, DG_BASE.r.z + c.rz);
+      // shot kick (keyframed envelope, scaled a little per shot) + dry-fire twitch
+      dgShot.t += dt;
+      var on = dgShot.t < 0.25, k = dgShot.k, dz = dryS.step(dt);
+      var krx = on ? DG_KICK.rx(dgShot.t) * k : 0;
+      dgGun.position.set(0, on ? DG_KICK.py(dgShot.t) * k : 0, (on ? DG_KICK.pz(dgShot.t) * k : 0) + dz * 0.004);
+      dgGun.rotation.set(krx, krx * dgShot.roll * 0.15, krx * dgShot.roll * 0.3);
+      // slide: blowback on the shot, or worked by hand
+      var sl = Math.max(c.slide, on ? DG_KICK.slide(dgShot.t) : 0);
+      dgSlide.position.z = sl * DG.slideTravel;
+      // mag: along the grip axis
+      dgMag.position.copy(DG.gripTop).addScaledVector(DG.gripDir, c.magS);
+      dgMag.visible = c.magS < 0.4;
+      // left hand: cupping the right -> under the grip (mag work) -> over the slide; or let go
+      var p = _dp.copy(LH_DG_CUP);
+      if (c.lhW > 0.001) { tmpP2.copy(DG.gripTop).addScaledVector(DG.gripDir, c.hS).multiplyScalar(DG_VM_S); tmpP2.x += c.hX; p.lerp(tmpP2, c.lhW); }
+      if (c.lsW > 0.001) { tmpP2.copy(LH_DG_SLIDE); tmpP2.z += sl * DG.slideTravel * DG_VM_S; p.lerp(tmpP2, c.lsW); }
+      if (c.lo > 0.001) p.addScaledVector(LH_DG_OFF, EASE.s(c.lo));
+      lHandDG.position.copy(p);
+      lHandDG.visible = c.lo < 0.995;
+      // muzzle puff (between the AK's and the AWP's)
+      if (puffT < 1) {
+        puffT += dt / 0.1;
+        dgPuff.visible = puffT < 1;
+        var u = Math.min(puffT, 1);
+        puffMat.opacity = Math.pow(1 - u, 1.4);
+        var sc = 0.12 + Math.sqrt(u) * 0.18;
+        dgPuff.scale.set(sc, sc, sc);
+        dgPuff.position.z = DG.muzzle.z - 0.05 - u * 0.09;
       }
     }
 
@@ -1703,18 +1980,24 @@
       var c = evalChannels(dt);
       akRoot.visible = weapon === "ak";
       awpRoot.visible = weapon === "awp";
+      dgRoot.visible = weapon === "deagle";
       knAll.visible = weapon === "knife";
-      if (weapon === "ak") updateAK(dt, c); else if (weapon === "awp") updateAWP(dt, c); else updateKnife(dt, c);
+      if (weapon === "ak") updateAK(dt, c); else if (weapon === "awp") updateAWP(dt, c); else if (weapon === "deagle") updateDeagle(dt, c); else updateKnife(dt, c);
       // sleeves follow the wrists
       swayRoot.updateMatrixWorld(true);
+      sleeveL.scale.y = weapon === "knife" ? 1 : SLEEVE_L_LEN;
       if (weapon === "ak") {
         placeSleeve(sleeveR, wristR_AK, SHOULDER_R);
         placeSleeve(sleeveL, wristL_AK, SHOULDER_L);
-        sleeveL.visible = lHandAK.visible = leftBusy;
+        sleeveL.visible = true;
       } else if (weapon === "awp") {
         placeSleeve(sleeveR, wristR_AWP, SHOULDER_R);
-        sleeveL.visible = awpLeftBusy;
-        if (awpLeftBusy) placeSleeve(sleeveL, wristL_AWP, SHOULDER_L);
+        placeSleeve(sleeveL, wristL_AWP, SHOULDER_L);
+        sleeveL.visible = true;
+      } else if (weapon === "deagle") {
+        placeSleeve(sleeveR, wristR_DG, SHOULDER_R_DG);
+        placeSleeve(sleeveL, wristL_DG, SHOULDER_L_DG);
+        sleeveL.visible = lHandDG.visible;
       } else {
         placeSleeve(sleeveR, wristR_K, SHOULDER_RK);
         sleeveL.visible = knLRoot.visible;
@@ -1725,12 +2008,12 @@
     var api = {
       group: group,
       setWeapon: function (w) {
-        weapon = w === "knife" ? "knife" : w === "awp" ? "awp" : "ak";
+        weapon = w === "knife" || w === "awp" || w === "deagle" ? w : "ak";
         cur = {}; snap = null; snapT = 1;
         action = null;
-        puffT = 1; puff.visible = false; awpPuff.visible = false;
-        scoped = false; scopeW = 0;
-        startAction(weapon === "ak" ? akDrawAction() : weapon === "awp" ? awpDrawAction() : knDrawAction());
+        puffT = 1; puff.visible = false; awpPuff.visible = false; dgPuff.visible = false;
+        scoped = false; scopeW = 0; dgShot.t = 9;
+        startAction(weapon === "ak" ? akDrawAction() : weapon === "awp" ? awpDrawAction() : weapon === "deagle" ? dgDrawAction() : knDrawAction());
         snapT = 1; // no blend on draw
         update(0, {});
       },
@@ -1744,6 +2027,12 @@
           puffT = 0; awpPuff.visible = true; puffMat.rotation = Math.random() * TAU;
           return;
         }
+        if (weapon === "deagle") {
+          if (action && action.name === "inspect") cancelAction();
+          dgShot.t = 0; dgShot.k = 0.9 + Math.random() * 0.2; dgShot.roll = Math.random() * 2 - 1;
+          puffT = 0; dgPuff.visible = true; puffMat.rotation = Math.random() * TAU;
+          return;
+        }
         if (weapon !== "ak") return;
         if (action && action.name === "inspect") cancelAction();
         kickZ.v += 9 + Math.random() * 2;
@@ -1755,12 +2044,13 @@
         puffT = 0; puff.visible = true; puffMat.rotation = Math.random() * TAU;
       },
       dryFire: function () {
-        if (weapon !== "ak" && weapon !== "awp") return;
+        if (weapon === "knife") return;
         if (action && action.name === "inspect") cancelAction();
         dryS.v += 4;
       },
       reload: function (empty) {
         if (weapon === "awp") { scoped = false; startAction(awpReloadAction(!!empty)); return; }
+        if (weapon === "deagle") { startAction(dgReloadAction(!!empty)); return; }
         if (weapon !== "ak") return;
         startAction(akReloadAction(!!empty));
       },
@@ -1775,7 +2065,7 @@
       inspect: function () {
         if (action && action.name !== "inspect") return; // don't interrupt draw/reload/attacks
         if (action && action.name === "inspect" && actT < action.dur * 0.5) return;
-        startAction(weapon === "ak" ? akInspectAction() : weapon === "awp" ? awpInspectAction() : knInspectAction());
+        startAction(weapon === "ak" ? akInspectAction() : weapon === "awp" ? awpInspectAction() : weapon === "deagle" ? dgInspectAction() : knInspectAction());
       },
       // AWP scope: quick raise toward the eye (the game hides the group once scoped)
       setScoped: function (on) { scoped = !!on && weapon === "awp"; },
@@ -1784,13 +2074,14 @@
         target = target || new THREE.Vector3();
         group.updateMatrixWorld(true);
         // muzzle position expressed in the group's parent space (= camera space)
-        tmpM.copy(group.matrixWorld).invert().multiply((weapon === "awp" ? awpMuzzleNode : muzzleNode).matrixWorld);
+        tmpM.copy(group.matrixWorld).invert().multiply((weapon === "awp" ? awpMuzzleNode : weapon === "deagle" ? dgMuzzleNode : muzzleNode).matrixWorld);
         target.setFromMatrixPosition(tmpM).applyMatrix4(group.matrix);
         return target;
       },
-      _tune: { AK_BASE: AK_BASE, KN_BASE: KN_BASE, KN_SHOW: KN_SHOW, KN_LEFT: KN_LEFT, SHOULDER_LK: SHOULDER_LK, SHOULDER_R: SHOULDER_R, SHOULDER_RK: SHOULDER_RK, SHOULDER_L: SHOULDER_L, LH_GUARD: LH_GUARD, LH_MAG_LOCAL: LH_MAG_LOCAL, LH_BOLT: LH_BOLT, kHand: kHand, bali: bali, rHandAK: rHandAK, lHandAK: lHandAK, AWP_BASE: AWP_BASE, AWP_SCOPE: AWP_SCOPE, RH_GRIP_AWP: RH_GRIP_AWP, RH_BOLT_OFF: RH_BOLT_OFF, RH_BOLT_Q: RH_BOLT_Q, LH_MAG_AWP: LH_MAG_AWP, rHandAWP: rHandAWP, lHandAWP: lHandAWP },
+      _tune: { AK_BASE: AK_BASE, KN_BASE: KN_BASE, KN_SHOW: KN_SHOW, KN_LEFT: KN_LEFT, SHOULDER_LK: SHOULDER_LK, SHOULDER_R: SHOULDER_R, SHOULDER_RK: SHOULDER_RK, SHOULDER_L: SHOULDER_L, LH_GUARD: LH_GUARD, LH_MAG_LOCAL: LH_MAG_LOCAL, LH_BOLT: LH_BOLT, kHand: kHand, bali: bali, rHandAK: rHandAK, lHandAK: lHandAK, AWP_BASE: AWP_BASE, AWP_SCOPE: AWP_SCOPE, RH_GRIP_AWP: RH_GRIP_AWP, RH_BOLT_OFF: RH_BOLT_OFF, RH_BOLT_Q: RH_BOLT_Q, LH_MAG_AWP: LH_MAG_AWP, rHandAWP: rHandAWP, lHandAWP: lHandAWP,
+        LH_SUP_AWP: LH_SUP_AWP, DG_BASE: DG_BASE, RH_DG: RH_DG, LH_DG_CUP: LH_DG_CUP, LH_DG_SLIDE: LH_DG_SLIDE, LH_DG_OFF: LH_DG_OFF, SHOULDER_R_DG: SHOULDER_R_DG, SHOULDER_L_DG: SHOULDER_L_DG, rHandDG: rHandDG, lHandDG: lHandDG },
       current: function () { return { weapon: weapon, action: action ? action.name : null, t: actT }; },
-      // Re-skin the held weapons at any time: { ak: skinId|null, awp: skinId|null, knife: skinId|null }
+      // Re-skin the held weapons at any time: { ak, awp, deagle, knife: skinId|null }
       // (a missing key leaves that weapon as it is, null = the default look). Skin materials are
       // cached and shared, so this is cheap to call again.
       setSkins: function (o) {
@@ -1805,12 +2096,17 @@
           awpPoly.material = awpMag.material = wp || M.poly; awpMetal.material = wm || M.metal;
           skins.awp = wp ? o.awp : null;
         }
+        if ("deagle" in o) {
+          var dp = o.deagle ? skinMaterial(o.deagle, "poly") : null, dm = o.deagle ? skinMaterial(o.deagle, "metal") : null;
+          dgPoly.material = dp || M.poly; dgMetal.material = dgSlideMesh.material = dm || M.metal;
+          skins.deagle = dp ? o.deagle : null;
+        }
         if ("knife" in o) {
           skinKnife(bali, { metal: M.kmetal, steel: M.ksteel }, o.knife || null);
           skins.knife = o.knife && skinOf(o.knife) ? o.knife : null;
         }
       },
-      skins: function () { return { ak: skins.ak, awp: skins.awp, knife: skins.knife }; },
+      skins: function () { return { ak: skins.ak, awp: skins.awp, deagle: skins.deagle, knife: skins.knife }; },
       dispose: function () {
         group.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
         for (var i = 0; i < disposables.length; i++) disposables[i].dispose();

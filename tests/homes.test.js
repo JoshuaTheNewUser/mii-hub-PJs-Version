@@ -49,4 +49,24 @@ for (let i = 0; i < 300; i++) {
   const plan = D.buildInteraction(A, { personality: calm, facts: {} }, { id: "park" }, 5);
   for (const s of plan.steps) assert(!/beard|top|hair|tall/i.test(s.say || "") || !/love your|suits you|hair looks|so tall/i.test(s.say || ""), "made-up compliment: " + s.say);
 }
+// every piece of furniture has a 3D model, and every wallpaper / floor pattern is drawn
+// (homes3d.js needs a browser, so this reads its source)
+{
+  const src = require("fs").readFileSync(require("path").join(__dirname, "../js/homes3d.js"), "utf8");
+  const furn = src.slice(src.indexOf("const FURNITURE = {"), src.indexOf("// A computer screen full of code"));
+  for (const it of H.ITEMS) {
+    if (it.slot === "wallpaper" || it.slot === "floor") {
+      const pat = it.pattern || "plain";
+      assert(pat === "plain" || src.includes('pat === "' + pat + '"'), it.id + ": pattern " + pat + " is not drawn");
+      assert(/^#[0-9a-f]{6}$/i.test(it.color) && /^#[0-9a-f]{6}$/i.test(it.accent), it.id + " needs a colour and an accent");
+    } else {
+      assert(furn.includes('"' + it.id + '": {'), it.id + " has no 3D model");
+    }
+    assert(it.starter ? it.price === 0 : it.price > 0, it.id + " price");
+    assert(Array.isArray(it.tags) && (it.starter || it.tags.length), it.id + " needs tags");
+    if (it.use) assert(it.use.activity && it.use.emoji && it.use.lines.length >= 2, it.id + " use needs an activity, emoji and lines");
+  }
+  // there's plenty to choose from in every slot
+  for (const s of H.SLOTS) assert(H.ITEMS.filter((i) => i.slot === s.id && !i.starter).length >= 4, s.id + " needs more things to buy");
+}
 console.log("All home and conversation tests passed. Items: " + H.ITEMS.length + ", foods: " + H.FOODS.length);

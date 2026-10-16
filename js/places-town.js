@@ -2,11 +2,13 @@
  * places-town.js
  * Two more places for Miis to hang out in around town:
  *
- *   "school"  a cheerful school classroom (a "dollhouse" like the office: the
- *             wall nearest the camera hides itself so you can see inside).
- *             Desks, a blackboard, a reading corner, a science corner, an art
- *             corner, a piano and a class hamster. Out of the windows you can
- *             see the schoolyard, a playground, the sports field and the town.
+ *   "school"  the College: a lecture room on a little campus (a "dollhouse"
+ *             like the office: the wall nearest the camera hides itself so
+ *             you can see inside). Lecture desks, a chalkboard full of maths,
+ *             a projector screen, a lab bench, an art studio, a piano, a study
+ *             lounge, a coffee bar and the biology lab's fish tank. Out of the
+ *             windows you can see the campus quad, the sports field and the town.
+ *             (The id stays "school" so saved games still work.)
  *   "stage"   an outdoor concert in the park at golden hour: a big stage with
  *             coloured spotlights, a drum kit, a keyboard and a mic, a big
  *             screen, food stands, benches, string lights and confetti.
@@ -455,141 +457,144 @@
   }
 
   // =====================================================================
-  // SCHOOL — a cheerful classroom
+  // COLLEGE — a lecture room on a little university campus
   // =====================================================================
 
-  // the pictures for the school (posters, the blackboard, paintings...)
-  function schoolAtlas() {
+  // the pictures for the college (the chalkboard, the slides, posters, banners...)
+  function collegeAtlas() {
     return makeAtlas(1024, {
       blackboard: [1020, 330, (ctx, w, h) => {
-        ctx.fillStyle = "#2f6b55"; ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = "#2c5a4a"; ctx.fillRect(0, 0, w, h);
         const r = seeded(5);
         for (let i = 0; i < 45; i++) {
           ctx.fillStyle = "rgba(255,255,255," + (0.025 + r() * 0.04) + ")";
           ctx.beginPath(); ctx.ellipse(r() * w, r() * h, 30 + r() * 90, 8 + r() * 20, r() * 3, 0, TAU); ctx.fill();
         }
-        const chalk = "#f6f6ea";
-        text(ctx, "Welcome, Class!", 230, 52, 50, chalk);
-        ctx.strokeStyle = "#ffd36b"; ctx.lineWidth = 5; ctx.lineCap = "round";
-        ctx.beginPath(); ctx.moveTo(50, 86); ctx.quadraticCurveTo(230, 104, 410, 84); ctx.stroke();
-        text(ctx, "1 + 1 = 2", 40, 140, 38, chalk, "left");
-        text(ctx, "3 x 4 = 12", 40, 192, 38, chalk, "left");
-        text(ctx, "7 + 5 = ?", 40, 244, 38, "#ffd36b", "left");
-        text(ctx, "A  B  C", 300, 168, 44, "#9fe0ff", "left");
-        text(ctx, "a  b  c", 306, 222, 38, "#ffb3d1", "left");
-        // a sun
-        ctx.strokeStyle = "#ffd36b"; ctx.lineWidth = 5;
-        ctx.beginPath(); ctx.arc(560, 80, 34, 0, TAU); ctx.stroke();
-        for (let i = 0; i < 10; i++) { const a = (i / 10) * TAU; ctx.beginPath(); ctx.moveTo(560 + Math.cos(a) * 44, 80 + Math.sin(a) * 44); ctx.lineTo(560 + Math.cos(a) * 60, 80 + Math.sin(a) * 60); ctx.stroke(); }
-        ctx.fillStyle = "#ffd36b"; ctx.beginPath(); ctx.arc(549, 74, 4, 0, TAU); ctx.arc(571, 74, 4, 0, TAU); ctx.fill();
-        ctx.beginPath(); ctx.arc(560, 84, 14, 0.3, PI - 0.3); ctx.stroke();
-        // a little house with a tree
-        ctx.strokeStyle = chalk; ctx.lineWidth = 5;
-        ctx.strokeRect(500, 190, 90, 70);
-        ctx.beginPath(); ctx.moveTo(490, 192); ctx.lineTo(545, 145); ctx.lineTo(600, 192); ctx.stroke();
-        ctx.strokeRect(532, 222, 26, 38);
-        ctx.strokeStyle = "#8fe08a"; ctx.beginPath(); ctx.arc(640, 196, 28, 0, TAU); ctx.stroke();
-        ctx.strokeStyle = "#e0b080"; ctx.beginPath(); ctx.moveTo(640, 224); ctx.lineTo(640, 262); ctx.stroke();
-        // a big smiling Mii face in chalk
-        ctx.strokeStyle = chalk; ctx.lineWidth = 6;
-        ctx.beginPath(); ctx.arc(800, 130, 70, 0, TAU); ctx.stroke();
-        ctx.beginPath(); ctx.arc(800, 112, 74, PI * 1.08, PI * 1.92); ctx.stroke();
-        ctx.fillStyle = chalk; ctx.beginPath(); ctx.arc(776, 128, 7, 0, TAU); ctx.arc(824, 128, 7, 0, TAU); ctx.fill();
-        ctx.beginPath(); ctx.arc(800, 150, 28, 0.25, PI - 0.25); ctx.stroke();
-        ctx.fillStyle = "#ff9ec7"; heart(ctx, 900, 50, 40);
-        ctx.fillStyle = "#ffd36b"; star(ctx, 950, 180, 26); ctx.fill();
-        star(ctx, 700, 60, 16); ctx.fill();
-        text(ctx, "Homework: be kind!", 800, 262, 34, chalk);
-        text(ctx, "+ have fun :)", 800, 304, 30, "#9fe0ff");
+        const chalk = "#f3f3e6", yellow = "#ffd97a", blue = "#a8dcff", pink = "#ffb8cf";
+        text(ctx, "Calculus II  —  Lecture 7", 40, 40, 38, chalk, "left");
+        ctx.strokeStyle = yellow; ctx.lineWidth = 4; ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(40, 66); ctx.lineTo(470, 66); ctx.stroke();
+        text(ctx, "∫₀^∞ e^(−x²) dx = √π / 2", 40, 112, 34, chalk, "left");
+        text(ctx, "d/dx [ sin x ] = cos x", 40, 160, 32, chalk, "left");
+        text(ctx, "lim (1 + 1/n)ⁿ = e", 40, 208, 32, blue, "left");
+        text(ctx, "n→∞", 62, 236, 18, blue, "left");
+        text(ctx, "e^(iπ) + 1 = 0", 40, 284, 34, yellow, "left");
+        // a graph: a parabola and a sine wave
+        const gx = 560, gy = 200;
+        ctx.strokeStyle = chalk; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(gx - 120, gy); ctx.lineTo(gx + 130, gy); ctx.moveTo(gx, gy + 100); ctx.lineTo(gx, gy - 150); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(gx + 130, gy); ctx.lineTo(gx + 118, gy - 7); ctx.moveTo(gx + 130, gy); ctx.lineTo(gx + 118, gy + 7); ctx.stroke();
+        text(ctx, "x", gx + 146, gy, 22, chalk); text(ctx, "y", gx, gy - 166, 22, chalk);
+        ctx.strokeStyle = pink; ctx.lineWidth = 4; ctx.beginPath();
+        for (let x = -100; x <= 100; x += 4) { const y = (x * x) / 80; x === -100 ? ctx.moveTo(gx + x, gy - y) : ctx.lineTo(gx + x, gy - y); }
+        ctx.stroke();
+        ctx.strokeStyle = blue; ctx.beginPath();
+        for (let x = -110; x <= 120; x += 3) { const y = Math.sin(x / 22) * 40; x === -110 ? ctx.moveTo(gx + x, gy - y) : ctx.lineTo(gx + x, gy - y); }
+        ctx.stroke();
+        text(ctx, "y = x²", gx + 70, gy - 140, 22, pink, "left");
+        text(ctx, "y = sin x", gx + 70, gy + 66, 22, blue, "left");
+        // a matrix and its determinant
+        const mx = 730;
+        ctx.strokeStyle = chalk; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(mx + 10, 30); ctx.lineTo(mx, 30); ctx.lineTo(mx, 120); ctx.lineTo(mx + 10, 120);
+        ctx.moveTo(mx + 90, 30); ctx.lineTo(mx + 100, 30); ctx.lineTo(mx + 100, 120); ctx.lineTo(mx + 90, 120); ctx.stroke();
+        text(ctx, "a   b", mx + 50, 56, 28, chalk); text(ctx, "c   d", mx + 50, 96, 28, chalk);
+        text(ctx, "det = ad − bc", mx + 114, 76, 24, chalk, "left");
+        text(ctx, "E = mc²", 860, 170, 36, yellow);
+        text(ctx, "Σ 1/n² = π²/6", 860, 226, 28, chalk);
+        ctx.fillStyle = "rgba(255,217,122,0.9)"; roundRect(ctx, 760, 258, 220, 50, 10); ctx.fill();
+        text(ctx, "Midterm: Oct 28!", 870, 284, 26, "#2c5a4a");
       }],
-      alphabet: [1020, 64, (ctx, w, h) => {
-        const cols = ["#ff6b6b", "#ffb84d", "#ffe15a", "#6fd36a", "#4fb7ff", "#a58cff", "#ff8ad8"];
-        const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        const cw = w / letters.length;
-        for (let i = 0; i < letters.length; i++) {
-          ctx.fillStyle = cols[i % cols.length];
-          roundRect(ctx, i * cw + 2, 4, cw - 4, h - 8, 8); ctx.fill();
-          text(ctx, letters[i] + letters[i].toLowerCase(), i * cw + cw / 2, h / 2 + 2, 26, "#ffffff");
-        }
+      hallPlaque: [1020, 64, (ctx, w, h) => {
+        ctx.fillStyle = "#6e4527"; roundRect(ctx, 0, 0, w, h, 10); ctx.fill();
+        ctx.strokeStyle = "#d9b26a"; ctx.lineWidth = 3; roundRect(ctx, 6, 6, w - 12, h - 12, 8); ctx.stroke();
+        text(ctx, "LECTURE HALL 101  ·  DEPARTMENT OF MATHEMATICS & SCIENCE", w / 2, h / 2 + 2, 28, "#f5e2b0");
       }],
-      readPoster: [200, 270, (ctx, w, h) => {
-        ctx.fillStyle = "#4fb7ff"; ctx.fillRect(0, 0, w, h);
-        ctx.fillStyle = "#ffffff"; roundRect(ctx, 10, 10, w - 20, h - 20, 16); ctx.fill();
-        text(ctx, "READING", w / 2, 46, 32, "#2f6f9f");
-        text(ctx, "IS MAGIC!", w / 2, 82, 30, "#ff6b6b");
-        // an open book with stars
-        ctx.fillStyle = "#ffb84d";
-        ctx.beginPath(); ctx.moveTo(30, 170); ctx.quadraticCurveTo(65, 150, 100, 172); ctx.lineTo(100, 232); ctx.quadraticCurveTo(65, 212, 30, 230); ctx.fill();
-        ctx.fillStyle = "#ff8a5c";
-        ctx.beginPath(); ctx.moveTo(170, 170); ctx.quadraticCurveTo(135, 150, 100, 172); ctx.lineTo(100, 232); ctx.quadraticCurveTo(135, 212, 170, 230); ctx.fill();
-        ctx.fillStyle = "#ffe15a"; star(ctx, 70, 130, 16); ctx.fill(); star(ctx, 130, 118, 20); ctx.fill(); star(ctx, 100, 140, 10); ctx.fill();
-      }],
-      kindPoster: [200, 270, (ctx, w, h) => {
-        ctx.fillStyle = "#ff8ad8"; ctx.fillRect(0, 0, w, h);
-        ctx.fillStyle = "#fff4fb"; roundRect(ctx, 10, 10, w - 20, h - 20, 16); ctx.fill();
-        text(ctx, "BE KIND", w / 2, 50, 38, "#e0408f");
-        ctx.fillStyle = "#ff6b8a"; heart(ctx, w / 2, 90, 90);
-        smiley(ctx, 60, 225, 26, "#ffd9b0", "#5a3a22");
-        smiley(ctx, 140, 225, 26, "#f2c49b", "#222");
-      }],
-      rulesPoster: [260, 300, (ctx, w, h) => {
-        ctx.fillStyle = "#6fd36a"; ctx.fillRect(0, 0, w, h);
-        ctx.fillStyle = "#fffef4"; roundRect(ctx, 10, 10, w - 20, h - 20, 16); ctx.fill();
-        text(ctx, "CLASS RULES", w / 2, 44, 30, "#2f8f3a");
-        ["1. Be kind", "2. Raise your hand", "3. Share", "4. Do your best", "5. Have fun!"].forEach((s, i) => text(ctx, s, 26, 96 + i * 42, 24, "#333", "left"));
-      }],
-      sciencePoster: [220, 270, (ctx, w, h) => {
-        ctx.fillStyle = "#3a3f8f"; ctx.fillRect(0, 0, w, h);
-        text(ctx, "SCIENCE", w / 2, 40, 34, "#ffe15a");
-        text(ctx, "ROCKS!", w / 2, 76, 30, "#7fe0ff");
-        ctx.strokeStyle = "#7fe0ff"; ctx.lineWidth = 5;
-        for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.ellipse(w / 2, 172, 76, 26, (i * PI) / 3, 0, TAU); ctx.stroke(); }
-        ctx.fillStyle = "#ff6b8a"; ctx.beginPath(); ctx.arc(w / 2, 172, 14, 0, TAU); ctx.fill();
-      }],
-      calendar: [200, 200, (ctx, w, h) => {
+      slide: [512, 320, (ctx, w, h) => {
+        // what the projector is showing: an economics slide
         ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
-        ctx.fillStyle = "#ff6b6b"; ctx.fillRect(0, 0, w, 44);
-        text(ctx, "OCTOBER", w / 2, 24, 26, "#fff");
-        for (let i = 0; i < 30; i++) {
-          const cx = 16 + (i % 6) * 32, cy = 64 + Math.floor(i / 6) * 28;
-          text(ctx, String(i + 1), cx + 8, cy, 16, i === 14 ? "#ff6b6b" : "#555");
-        }
-        ctx.strokeStyle = "#ff6b6b"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(120 - 32 + 8, 92, 13, 0, TAU); ctx.stroke();
+        ctx.fillStyle = "#2f4f8f"; ctx.fillRect(0, 0, w, 56);
+        text(ctx, "Intro to Economics: Supply & Demand", w / 2, 29, 24, "#ffffff");
+        const ox = 90, oy = 270, ax = 250, ay = 180;
+        ctx.strokeStyle = "#333"; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(ox, oy - ay); ctx.lineTo(ox, oy); ctx.lineTo(ox + ax, oy); ctx.stroke();
+        text(ctx, "Price", ox - 44, oy - ay / 2, 18, "#555");
+        text(ctx, "Quantity", ox + ax / 2, oy + 22, 18, "#555");
+        ctx.lineWidth = 5;
+        ctx.strokeStyle = "#e2574c"; ctx.beginPath(); ctx.moveTo(ox + 20, oy - 160); ctx.lineTo(ox + ax - 20, oy - 20); ctx.stroke();
+        ctx.strokeStyle = "#3a8fd9"; ctx.beginPath(); ctx.moveTo(ox + 20, oy - 20); ctx.lineTo(ox + ax - 20, oy - 160); ctx.stroke();
+        ctx.fillStyle = "#ffb000"; ctx.beginPath(); ctx.arc(ox + ax / 2, oy - 90, 8, 0, TAU); ctx.fill();
+        text(ctx, "Demand", ox + ax - 4, oy - 30, 18, "#e2574c", "left");
+        text(ctx, "Supply", ox + ax - 4, oy - 160, 18, "#3a8fd9", "left");
+        ctx.fillStyle = "#333";
+        ["• Price goes up:", "   people buy less", "• Where they meet:", "   the market price"].forEach((s, i) => text(ctx, s, 372, 110 + i * 34, 18, i % 2 ? "#555" : "#222", "left"));
+        text(ctx, "Prof. Mii  ·  ECON 101", w - 16, h - 16, 14, "#888", "right");
       }],
-      drawings: [440, 220, (ctx, w, h) => {
-        // a cork board covered in the class's drawings
-        ctx.fillStyle = "#d9a86a"; ctx.fillRect(0, 0, w, h);
+      noticeBoard: [440, 220, (ctx, w, h) => {
+        // a cork board with club flyers and notices
+        ctx.fillStyle = "#c99a62"; ctx.fillRect(0, 0, w, h);
         const r = seeded(9);
         for (let i = 0; i < 200; i++) { ctx.fillStyle = "rgba(120,70,30," + (0.1 + r() * 0.15) + ")"; ctx.fillRect(r() * w, r() * h, 2, 2); }
-        const paper = (x, y, pw, ph, rot, draw) => {
+        const flyer = (x, y, pw, ph, rot, bg, draw) => {
           ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
-          ctx.fillStyle = "#ffffff"; ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
+          ctx.fillStyle = bg; ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
           draw(pw, ph);
           ctx.fillStyle = "#e23b3b"; ctx.beginPath(); ctx.arc(0, -ph / 2 + 6, 5, 0, TAU); ctx.fill();
           ctx.restore();
         };
-        paper(70, 60, 110, 90, -0.08, () => { smiley(ctx, 0, 6, 28, "#ffd9b0", "#e2574c"); });
-        paper(200, 64, 110, 90, 0.06, () => {
-          ctx.fillStyle = "#6fd36a"; ctx.fillRect(-50, 20, 100, 20);
-          ctx.fillStyle = "#ffe15a"; ctx.beginPath(); ctx.arc(30, -18, 14, 0, TAU); ctx.fill();
-          ctx.fillStyle = "#ff8ad8"; for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(-30 + i * 22, 12, 7, 0, TAU); ctx.fill(); }
+        flyer(72, 58, 120, 92, -0.06, "#ffffff", () => { text(ctx, "CHESS CLUB", 0, -14, 17, "#222"); text(ctx, "Thu 7pm", 0, 10, 15, "#666"); text(ctx, "♞", 0, 34, 22, "#222"); });
+        flyer(210, 60, 128, 96, 0.05, "#fff2a8", () => { text(ctx, "STUDY GROUP", 0, -18, 16, "#7a4a12"); text(ctx, "Organic Chem", 0, 4, 15, "#7a4a12"); text(ctx, "Library rm 3", 0, 26, 13, "#7a4a12"); });
+        flyer(352, 58, 118, 92, -0.04, "#d6ecff", () => { text(ctx, "CAREER FAIR", 0, -14, 16, "#2f4f8f"); text(ctx, "Nov 3 · Gym", 0, 10, 14, "#2f4f8f"); });
+        flyer(112, 160, 140, 92, 0.04, "#ffffff", () => {
+          text(ctx, "ROOM FOR RENT", 0, -24, 15, "#222"); text(ctx, "near campus", 0, -4, 13, "#666");
+          ctx.strokeStyle = "#bbb"; ctx.lineWidth = 1;
+          for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(-60 + i * 22, 18); ctx.lineTo(-60 + i * 22, 44); ctx.stroke(); }
         });
-        paper(330, 58, 110, 90, -0.04, () => {
-          ctx.fillStyle = "#4fb7ff"; ctx.fillRect(-50, 0, 100, 40);
-          ctx.fillStyle = "#ff8a5c"; ctx.beginPath(); ctx.ellipse(0, -6, 26, 12, 0, 0, TAU); ctx.fill();
-          ctx.beginPath(); ctx.moveTo(22, -6); ctx.lineTo(40, -18); ctx.lineTo(40, 6); ctx.fill();
-          ctx.fillStyle = "#222"; ctx.beginPath(); ctx.arc(-12, -9, 3, 0, TAU); ctx.fill();
+        flyer(262, 162, 120, 88, -0.07, "#ffd6e2", () => { text(ctx, "LOST:", 0, -14, 16, "#a0304f"); text(ctx, "my calculator!", 0, 10, 14, "#a0304f"); });
+        flyer(380, 160, 92, 88, 0.08, "#e4ffd6", () => { text(ctx, "YOGA", 0, -12, 16, "#3f7a2a"); text(ctx, "on the quad", 0, 12, 12, "#3f7a2a"); });
+      }],
+      library: [200, 270, (ctx, w, h) => {
+        ctx.fillStyle = "#7a2f3a"; ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = "#f6efe2"; roundRect(ctx, 10, 10, w - 20, h - 20, 10); ctx.fill();
+        text(ctx, "LIBRARY", w / 2, 44, 30, "#7a2f3a");
+        text(ctx, "open 24/7", w / 2, 76, 20, "#555");
+        text(ctx, "during finals", w / 2, 100, 20, "#555");
+        const cols = ["#7a2f3a", "#2f4f8f", "#3f7a2a", "#c98b2a", "#555"];
+        for (let i = 0; i < 9; i++) { ctx.fillStyle = cols[i % 5]; ctx.fillRect(30 + i * 16, 140 + (i % 3) * 8, 13, 90 - (i % 3) * 8); }
+        ctx.fillStyle = "#6e4527"; ctx.fillRect(24, 230, 152, 8);
+      }],
+      studyAbroad: [200, 270, (ctx, w, h) => {
+        ctx.fillStyle = "#2f8f9f"; ctx.fillRect(0, 0, w, h);
+        text(ctx, "STUDY", w / 2, 40, 32, "#ffffff");
+        text(ctx, "ABROAD", w / 2, 76, 32, "#ffe08a");
+        ctx.fillStyle = "#bfe8ff"; ctx.beginPath(); ctx.arc(w / 2, 170, 56, 0, TAU); ctx.fill();
+        ctx.fillStyle = "#6fc36a";
+        ctx.beginPath(); ctx.ellipse(w / 2 - 18, 156, 22, 16, 0.4, 0, TAU); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(w / 2 + 24, 186, 18, 12, -0.3, 0, TAU); ctx.fill();
+        ctx.fillStyle = "#ffffff"; ctx.save(); ctx.translate(w / 2 + 40, 120); ctx.rotate(-0.5);
+        ctx.fillRect(-22, -3, 44, 6); ctx.fillRect(-4, -16, 8, 32); ctx.fillRect(-20, -8, 5, 16); ctx.restore();
+        text(ctx, "Apply by Dec 1", w / 2, 248, 18, "#ffffff");
+      }],
+      examSchedule: [260, 300, (ctx, w, h) => {
+        ctx.fillStyle = "#2f4f8f"; ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = "#fffef4"; roundRect(ctx, 10, 10, w - 20, h - 20, 10); ctx.fill();
+        text(ctx, "FINAL EXAMS", w / 2, 42, 28, "#2f4f8f");
+        [["Mon", "Calculus II"], ["Tue", "Economics"], ["Wed", "Chemistry"], ["Thu", "Art History"], ["Fri", "Philosophy"]].forEach(([d, s], i) => {
+          text(ctx, d, 26, 92 + i * 40, 20, "#c0392b", "left");
+          text(ctx, s, 80, 92 + i * 40, 20, "#333", "left");
         });
-        paper(110, 160, 120, 90, 0.05, () => {
-          ctx.fillStyle = "#e2574c"; ctx.fillRect(-26, -4, 52, 36);
-          ctx.fillStyle = "#9a6a3c"; ctx.beginPath(); ctx.moveTo(-34, -2); ctx.lineTo(0, -32); ctx.lineTo(34, -2); ctx.fill();
-          ctx.fillStyle = "#ffe15a"; ctx.fillRect(-8, 10, 16, 22);
+      }],
+      periodic: [220, 270, (ctx, w, h) => {
+        ctx.fillStyle = "#1f2a44"; ctx.fillRect(0, 0, w, h);
+        text(ctx, "PERIODIC", w / 2, 30, 24, "#ffe08a");
+        text(ctx, "TABLE", w / 2, 58, 24, "#ffe08a");
+        const els = "H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Fe Cu Ag Au".split(" ");
+        const cols = ["#ff8a7a", "#ffc46b", "#8fd38a", "#7fc6ff", "#c8a8ff"];
+        els.forEach((e, i) => {
+          const cx = 14 + (i % 6) * 32, cy = 82 + Math.floor(i / 6) * 44;
+          ctx.fillStyle = cols[(i * 7) % 5]; ctx.fillRect(cx, cy, 30, 40);
+          text(ctx, e, cx + 15, cy + 22, 16, "#1f2a44");
         });
-        paper(250, 162, 110, 90, -0.07, () => {
-          const cols = ["#ff6b6b", "#ffb84d", "#ffe15a", "#6fd36a", "#4fb7ff", "#a58cff"];
-          cols.forEach((c, i) => { ctx.strokeStyle = c; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(0, 30, 46 - i * 6, PI, TAU); ctx.stroke(); });
-        });
-        paper(372, 160, 100, 90, 0.08, () => { ctx.fillStyle = "#ffe15a"; star(ctx, 0, 4, 32); ctx.fill(); });
       }],
       painting1: [220, 180, (ctx, w, h) => {
         ctx.fillStyle = "#bfe6ff"; ctx.fillRect(0, 0, w, h);
@@ -604,10 +609,14 @@
         }
       }],
       painting2: [220, 180, (ctx, w, h) => {
-        ctx.fillStyle = "#fff4d6"; ctx.fillRect(0, 0, w, h);
-        smiley(ctx, w / 2, 92, 58, "#ffd9b0", "#2a2a2a");
-        ctx.fillStyle = "#4fb7ff"; ctx.fillRect(w / 2 - 70, 152, 140, 40);
-        ctx.strokeStyle = "#ff6b8a"; ctx.lineWidth = 6; ctx.strokeRect(6, 6, w - 12, h - 12);
+        // a still life: a bowl of fruit on a table
+        ctx.fillStyle = "#e9dcc4"; ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = "#a8774a"; ctx.fillRect(0, 128, w, h);
+        ctx.fillStyle = "#e2574c"; ctx.beginPath(); ctx.arc(84, 100, 22, 0, TAU); ctx.fill();
+        ctx.fillStyle = "#ffcf3a"; ctx.beginPath(); ctx.ellipse(124, 96, 30, 14, -0.4, 0, TAU); ctx.fill();
+        ctx.fillStyle = "#7a3f8f"; for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.arc(100 + (i % 3) * 12, 84 + Math.floor(i / 3) * 12, 7, 0, TAU); ctx.fill(); }
+        ctx.fillStyle = "#3f6fa8"; ctx.beginPath(); ctx.ellipse(110, 118, 58, 22, 0, 0, PI); ctx.fill();
+        ctx.strokeStyle = "#6e4527"; ctx.lineWidth = 8; ctx.strokeRect(4, 4, w - 8, h - 8);
       }],
       keys: [256, 40, (ctx, w, h) => {
         ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
@@ -616,58 +625,72 @@
         ctx.fillStyle = "#222";
         for (let i = 0; i < n - 1; i++) if ([0, 1, 3, 4, 5].includes(i % 7)) ctx.fillRect((i + 1) * kw - kw * 0.3, 0, kw * 0.6, h * 0.6);
       }],
-      petSign: [200, 60, (ctx, w, h) => {
-        ctx.fillStyle = "#ffe15a"; roundRect(ctx, 2, 2, w - 4, h - 4, 14); ctx.fill();
-        text(ctx, "Mr. Nibbles", w / 2, h / 2 + 2, 30, "#7a4a12");
+      fishSign: [200, 60, (ctx, w, h) => {
+        ctx.fillStyle = "#2f4f8f"; roundRect(ctx, 2, 2, w - 4, h - 4, 10); ctx.fill();
+        text(ctx, "BIOLOGY LAB", w / 2, 22, 20, "#ffffff");
+        text(ctx, "please don't tap the glass", w / 2, 44, 13, "#bfe0ff");
       }],
-      readSign: [300, 64, (ctx, w, h) => {
-        ctx.fillStyle = "#ff8a5c"; roundRect(ctx, 2, 2, w - 4, h - 4, 18); ctx.fill();
-        text(ctx, "Reading Corner", w / 2, h / 2 + 2, 34, "#ffffff");
+      loungeSign: [300, 64, (ctx, w, h) => {
+        ctx.fillStyle = "#6e4527"; roundRect(ctx, 2, 2, w - 4, h - 4, 12); ctx.fill();
+        text(ctx, "Study Lounge", w / 2, h / 2 + 2, 34, "#f5e2b0");
       }],
-      worldMap: [260, 160, (ctx, w, h) => {
-        ctx.fillStyle = "#7fd0f5"; ctx.fillRect(0, 0, w, h);
-        ctx.fillStyle = "#7fd36a";
-        const blob = (pts) => { ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.fill(); };
-        blob([[30, 30], [80, 24], [92, 54], [70, 70], [60, 100], [44, 70], [26, 54]]);
-        blob([[66, 96], [86, 100], [80, 140], [66, 130]]);
-        blob([[120, 30], [180, 24], [230, 40], [220, 70], [180, 64], [160, 80], [130, 60]]);
-        blob([[128, 74], [156, 80], [150, 120], [134, 112]]);
-        blob([[200, 110], [232, 112], [228, 132], [204, 130]]);
-        ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 5; ctx.strokeRect(2, 2, w - 4, h - 4);
-      }],
-      schoolSign: [400, 120, (ctx, w, h) => {
-        ctx.fillStyle = "#2f6f9f"; roundRect(ctx, 2, 2, w - 4, h - 4, 22); ctx.fill();
-        ctx.strokeStyle = "#ffe15a"; ctx.lineWidth = 6; roundRect(ctx, 10, 10, w - 20, h - 20, 16); ctx.stroke();
-        text(ctx, "Mii Elementary", w / 2, 50, 46, "#ffffff");
-        text(ctx, "SCHOOL", w / 2, 92, 28, "#ffe15a");
+      collegeSign: [400, 120, (ctx, w, h) => {
+        ctx.fillStyle = "#7a2f3a"; roundRect(ctx, 2, 2, w - 4, h - 4, 16); ctx.fill();
+        ctx.strokeStyle = "#e0b65a"; ctx.lineWidth = 5; roundRect(ctx, 10, 10, w - 20, h - 20, 12); ctx.stroke();
+        text(ctx, "Mii College", w / 2, 50, 48, "#ffffff");
+        text(ctx, "EST. 2026  ·  KNOWLEDGE & FRIENDSHIP", w / 2, 92, 18, "#e0b65a");
       }],
       flag: [160, 100, (ctx, w, h) => {
-        ctx.fillStyle = "#4fb7ff"; ctx.fillRect(0, 0, w, h);
-        ctx.fillStyle = "#ffffff"; ctx.fillRect(0, h / 3, w, h / 3);
-        ctx.fillStyle = "#ff6b6b"; star(ctx, w / 2, h / 2, 26); ctx.fill();
+        ctx.fillStyle = "#7a2f3a"; ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = "#e0b65a"; ctx.fillRect(0, h - 16, w, 6);
+        ctx.fillStyle = "#e0b65a"; ctx.beginPath();
+        ctx.moveTo(w / 2 - 22, 22); ctx.lineTo(w / 2 + 22, 22); ctx.lineTo(w / 2 + 22, 52); ctx.quadraticCurveTo(w / 2, 76, w / 2 - 22, 52); ctx.closePath(); ctx.fill();
+        text(ctx, "M", w / 2, 42, 24, "#7a2f3a");
       }],
       bus: [300, 60, (ctx, w, h) => {
-        ctx.fillStyle = "#ffc93c"; ctx.fillRect(0, 0, w, h);
-        text(ctx, "SCHOOL BUS", w / 2, h / 2 + 2, 40, "#222");
+        ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
+        text(ctx, "CAMPUS SHUTTLE", w / 2, h / 2 + 2, 32, "#2f4f8f");
       }],
-      yard: [510, 170, (ctx, w, h) => {
-        // painted games on the playground tarmac
-        ctx.fillStyle = "#b9b6c6"; ctx.fillRect(0, 0, w, h);
+      bannerA: [120, 320, (ctx, w, h) => {
+        // a hanging university banner (with a pointed bottom)
+        ctx.fillStyle = "#7a2f3a";
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(w, 0); ctx.lineTo(w, h - 40); ctx.lineTo(w / 2, h); ctx.lineTo(0, h - 40); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = "#e0b65a"; ctx.fillRect(0, 0, w, 12);
+        ctx.beginPath(); ctx.moveTo(w / 2 - 30, 60); ctx.lineTo(w / 2 + 30, 60); ctx.lineTo(w / 2 + 30, 110); ctx.quadraticCurveTo(w / 2, 146, w / 2 - 30, 110); ctx.closePath(); ctx.fill();
+        text(ctx, "M", w / 2, 92, 34, "#7a2f3a");
+        text(ctx, "MII", w / 2, 190, 30, "#ffffff");
+        text(ctx, "COLLEGE", w / 2, 226, 22, "#ffffff");
+      }],
+      bannerB: [120, 320, (ctx, w, h) => {
+        ctx.fillStyle = "#2f4f8f";
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(w, 0); ctx.lineTo(w, h - 40); ctx.lineTo(w / 2, h); ctx.lineTo(0, h - 40); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = "#e0b65a"; ctx.fillRect(0, 0, w, 12);
+        star(ctx, w / 2, 96, 34); ctx.fill();
+        text(ctx, "GO", w / 2, 190, 30, "#ffffff");
+        text(ctx, "MIIS!", w / 2, 226, 26, "#e0b65a");
+      }],
+      rug: [384, 256, (ctx, w, h) => {
+        // a patterned rug for the study area
+        ctx.fillStyle = "#7a2f3a"; ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = "#e9d6b0"; ctx.fillRect(16, 16, w - 32, h - 32);
+        ctx.fillStyle = "#2f4f8f"; ctx.fillRect(30, 30, w - 60, h - 60);
+        ctx.strokeStyle = "#e0b65a"; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(w / 2, 46); ctx.lineTo(w - 70, h / 2); ctx.lineTo(w / 2, h - 46); ctx.lineTo(70, h / 2); ctx.closePath(); ctx.stroke();
+        ctx.fillStyle = "#e0b65a"; ctx.beginPath(); ctx.arc(w / 2, h / 2, 22, 0, TAU); ctx.fill();
+      }],
+      yard: [508, 170, (ctx, w, h) => {
+        // the campus plaza: red brick paving with the college seal in the middle
+        ctx.fillStyle = "#b8775f"; ctx.fillRect(0, 0, w, h);
+        ctx.strokeStyle = "rgba(255,240,220,0.45)"; ctx.lineWidth = 1;
+        for (let y = 0; y < h; y += 10) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+          for (let x = (y / 10) % 2 ? 0 : 10; x < w; x += 20) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 10); ctx.stroke(); }
+        }
         const r = seeded(4);
-        for (let i = 0; i < 300; i++) { ctx.fillStyle = "rgba(255,255,255," + r() * 0.08 + ")"; ctx.fillRect(r() * w, r() * h, 2, 2); }
-        // hopscotch
-        ctx.strokeStyle = "#ffe15a"; ctx.lineWidth = 3;
-        const hx = 150, hy = 40;
-        const sq = (x, y, n) => { ctx.strokeRect(x, y, 22, 22); text(ctx, String(n), x + 11, y + 12, 14, "#ffe15a"); };
-        sq(hx, hy + 88, 1); sq(hx, hy + 66, 2); sq(hx - 11, hy + 44, 3); sq(hx + 11, hy + 44, 4); sq(hx, hy + 22, 5); sq(hx - 11, hy, 6); sq(hx + 11, hy, 7);
-        // four square
-        ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 3;
-        ctx.strokeRect(250, 50, 70, 70); ctx.beginPath(); ctx.moveTo(285, 50); ctx.lineTo(285, 120); ctx.moveTo(250, 85); ctx.lineTo(320, 85); ctx.stroke();
-        ctx.fillStyle = "rgba(255,107,107,0.6)"; ctx.fillRect(252, 52, 32, 32);
-        ctx.fillStyle = "rgba(79,183,255,0.6)"; ctx.fillRect(287, 87, 32, 32);
-        // a big painted snail and circle
-        ctx.strokeStyle = "#7fe0a0"; ctx.lineWidth = 4;
-        ctx.beginPath(); for (let a = 0; a < 16; a += 0.1) ctx.lineTo(400 + Math.cos(a) * a * 3.2, 85 + Math.sin(a) * a * 3.2); ctx.stroke();
+        for (let i = 0; i < 300; i++) { ctx.fillStyle = "rgba(80,30,20," + r() * 0.12 + ")"; ctx.fillRect(r() * w, r() * h, 3, 3); }
+        ctx.fillStyle = "#e9dcc4"; ctx.beginPath(); ctx.arc(w / 2, h / 2, 56, 0, TAU); ctx.fill();
+        ctx.strokeStyle = "#7a2f3a"; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(w / 2, h / 2, 48, 0, TAU); ctx.stroke();
+        ctx.fillStyle = "#7a2f3a"; star(ctx, w / 2, h / 2, 26); ctx.fill();
         // basketball key
         ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 3;
         ctx.strokeRect(20, 0, 60, 60); ctx.beginPath(); ctx.arc(50, 60, 30, 0, PI); ctx.stroke();
@@ -680,41 +703,45 @@
         ctx.beginPath(); ctx.arc(w / 2, h / 2, 34, 0, TAU); ctx.stroke();
         ctx.strokeRect(10, h / 2 - 50, 60, 100); ctx.strokeRect(w - 70, h / 2 - 50, 60, 100);
       }],
-      abcRug: [384, 256, (ctx, w, h) => {
-        // a play mat of big coloured squares with letters and numbers
-        const cols = ["#ff6b6b", "#ffb84d", "#ffe15a", "#6fd36a", "#4fb7ff", "#a58cff"];
-        const marks = "ABC123DEF456GHI789JKL0";
-        for (let r = 0; r < 4; r++) for (let c = 0; c < 6; c++) {
-          ctx.fillStyle = cols[(r * 2 + c) % 6]; ctx.fillRect(c * 64, r * 64, 64, 64);
-          text(ctx, marks[(r * 6 + c) % marks.length], c * 64 + 32, r * 64 + 34, 40, "#ffffff");
-        }
-        ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 8; ctx.strokeRect(4, 4, w - 8, h - 8);
-      }],
     }, 2048);
   }
 
-  // a school desk with its chair (the pupil sits on the +z side, facing -z)
-  function studentDesk(p, x, z, rnd) {
-    const d = group(p, x, 0, z);
-    const wood = 0xf2d3a0, metal = 0x8f9bb0;
-    block(d, wood, 0, 1.0, 0, 1.3, 0.08, 0.85, 0.03);
-    bx(d, 0x7ab8e8, 0, 0.82, -0.05, 1.18, 0.22, 0.7);
-    for (const sx of [-0.58, 0.58]) for (const sz of [-0.36, 0.36]) bx(d, metal, sx, 0.47, sz, 0.06, 0.94, 0.06);
-    // things on the desk: a notebook, a pencil, sometimes a pencil case or an apple
-    const nb = [0xff6b6b, 0x4fb7ff, 0x6fd36a, 0xffb84d, 0xa58cff][Math.floor(rnd() * 5)];
-    bx(d, nb, -0.15, 1.06, 0.05, 0.5, 0.04, 0.36, { ry: (rnd() - 0.5) * 0.4 });
-    bx(d, 0xffffff, -0.15, 1.085, 0.05, 0.46, 0.012, 0.32, { ry: (rnd() - 0.5) * 0.4 });
-    cylinder(d, 0xffd23f, 0.3, 1.07, 0.1, 0.022, 0.32, { rz: PI / 2, ry: 0.4, seg: 6 });
-    if (rnd() < 0.5) block(d, [0xff8ad8, 0x6fd36a, 0x4fb7ff][Math.floor(rnd() * 3)], 0.38, 1.1, -0.2, 0.42, 0.12, 0.14, 0.05);
-    else ball(d, 0xe23b3b, 0.4, 1.13, -0.18, 0.09);
-    // the chair
-    const seatC = [0xff6b6b, 0x4fb7ff, 0xffd23f, 0x6fd36a][Math.floor(rnd() * 4)];
-    const c = group(d, 0, 0, 0.85);
-    block(c, seatC, 0, 0.56, 0, 0.72, 0.08, 0.62, 0.04);
-    block(c, seatC, 0, 1.05, 0.31, 0.72, 0.5, 0.07, 0.04);
-    for (const sx of [-0.3, 0.3]) {
-      for (const sz of [-0.26, 0.26]) bx(c, metal, sx, 0.28, sz, 0.05, 0.56, 0.05);
-      bx(c, metal, sx, 0.82, 0.3, 0.05, 0.5, 0.05);
+  // A row of lecture desks: one long desk with four chairs behind it (the
+  // students sit on the +z side, facing -z, towards the chalkboard).
+  function lectureRow(p, z, xs, rnd) {
+    const x0 = xs[0] - 0.9, x1 = xs[xs.length - 1] + 0.9;
+    const d = group(p, (x0 + x1) / 2, 0, z);
+    const len = x1 - x0;
+    const wood = 0xc28a55, dark = 0x7a4e2c, metal = 0x6b7280;
+    block(d, wood, 0, 1.0, 0, len, 0.08, 0.85, 0.03);                         // the desk top
+    block(d, dark, 0, 0.62, -0.38, len - 0.1, 0.72, 0.06, 0.02);               // modesty panel at the front
+    for (const sx of [-len / 2 + 0.12, 0, len / 2 - 0.12]) block(d, dark, sx, 0.5, 0, 0.1, 1.0, 0.8, 0.02);
+    for (const x of xs) {
+      const lx = x - (x0 + x1) / 2;
+      const kind = rnd();
+      if (kind < 0.55) {
+        // an open laptop (the screen faces the student)
+        const lc = [0xc9ced6, 0x3a3f4a, 0xd8c3a8][Math.floor(rnd() * 3)];
+        block(d, lc, lx - 0.1, 1.06, 0.08, 0.6, 0.03, 0.4, 0.01);
+        block(d, lc, lx - 0.1, 1.27, -0.12, 0.6, 0.4, 0.03, 0.01, { rx: -0.25 });
+        bx(d, [0x7fc6ff, 0xbfe3ff, 0x9fd8c8][Math.floor(rnd() * 3)], lx - 0.1, 1.27, -0.103, 0.52, 0.32, 0.005, { rx: -0.25, shadow: false });
+      } else {
+        // a notebook and a thick textbook
+        bx(d, 0xffffff, lx - 0.15, 1.055, 0.1, 0.46, 0.012, 0.32, { ry: (rnd() - 0.5) * 0.4 });
+        block(d, [0x7a2f3a, 0x2f4f8f, 0x3f7a2a][Math.floor(rnd() * 3)], lx - 0.2, 1.1, -0.2, 0.46, 0.14, 0.34, 0.02, { ry: (rnd() - 0.5) * 0.3 });
+        cylinder(d, 0x2a2f38, lx + 0.12, 1.07, 0.1, 0.018, 0.3, { rz: PI / 2, ry: 0.5, seg: 6 });
+      }
+      // a coffee cup (or a water bottle)
+      if (rnd() < 0.6) { cylinder(d, 0xffffff, lx + 0.42, 1.14, -0.05, 0.07, 0.2); cylinder(d, 0x8a5a3a, lx + 0.42, 1.25, -0.05, 0.072, 0.04); }
+      else cylinder(d, 0x4fb7ff, lx + 0.42, 1.2, -0.05, 0.06, 0.34);
+      // the chair: padded, on a single post
+      const c = group(d, lx, 0, 0.85);
+      const seatC = 0x2f3f5f;
+      block(c, seatC, 0, 0.58, 0, 0.72, 0.12, 0.62, 0.05);
+      block(c, seatC, 0, 1.08, 0.3, 0.72, 0.62, 0.1, 0.06);
+      bx(c, metal, 0, 0.75, 0.33, 0.06, 0.4, 0.05);
+      cylinder(c, metal, 0, 0.3, 0, 0.05, 0.5);
+      for (let i = 0; i < 4; i++) { const a = (i / 4) * TAU + 0.4; bx(c, metal, Math.cos(a) * 0.18, 0.05, Math.sin(a) * 0.18, 0.38, 0.05, 0.06, { ry: -a }); }
     }
     return d;
   }
@@ -724,9 +751,9 @@
     const anim = [];
     addLights(root, { sky: 0xffffff, ground: 0xd9cfa8, hemi: 0.55, sun: 0.75, ambient: 0.34, fill: 0.35 });
     skyDome(root, 0x4aa8f2, 0xd6efff, 0xa9d98a);
-    const atlas = schoolAtlas();
+    const atlas = collegeAtlas();
     const A = atlas.pic;
-    const books = []; // every book in the school, drawn in one go at the end
+    const books = []; // every book in the college, drawn in one go at the end
 
     schoolGrounds(root, anim, atlas);
 
@@ -737,7 +764,7 @@
     // ---------- walls (each hides when the camera is behind it) ----------
     const W = { back: -11, front: 11, side: 18 };
     const WALL_H = 8;
-    const style = { H: WALL_H, wallC: 0xfff1d0, panelC: 0x7fcfb0, trimC: 0xffffff, frameC: 0xffffff, topC: 0xe0a060, panelH: 1.9, glass: glassMaterial() };
+    const style = { H: WALL_H, wallC: 0xf4ead6, panelC: 0x9a6a44, trimC: 0xf8f1e2, frameC: 0xffffff, topC: 0x8a5a3a, panelH: 1.9, glass: glassMaterial() };
     const backWall = group(root), leftWall = group(root), rightWall = group(root), frontWall = group(root);
     const backWindows = [{ c: -15.0, w: 4.2, y0: 1.3, y1: 6.3 }, { c: 8.4, w: 4.2, y0: 3.2, y1: 6.3 }, { c: 14.7, w: 4.2, y0: 1.3, y1: 6.3 }];
     const leftWindows = [{ c: -6.2, w: 4.6, y0: 1.3, y1: 6.3 }];
@@ -748,7 +775,7 @@
     buildWall(rightWall, style, "z", W.side, -1, -11.25, 11.25, rightWindows);
     // the front doors, each with a round window and a handle
     for (const sx of [-1, 1]) {
-      block(frontWall, 0xff8a5c, sx * 0.66, 2.4, W.front + 0.1, 1.28, 4.75, 0.14, 0.06);
+      block(frontWall, 0x7a4e2c, sx * 0.66, 2.4, W.front + 0.1, 1.28, 4.75, 0.14, 0.06);
       disc(frontWall, toon(0xcfeeff), sx * 0.66, 3.5, W.front + 0.02, 0.36, { rx: PI });
       put(frontWall, G.torus(0.36, 0.05), toon(0xffffff), { x: sx * 0.66, y: 3.5, z: W.front + 0.02 });
       block(frontWall, 0xffd23f, sx * 0.18, 2.3, W.front + 0.0, 0.1, 0.5, 0.1, 0.04);
@@ -764,62 +791,85 @@
     sillPlant(leftWall, -W.side + 0.32, 1.36, -7.6, 0xffd23f);
     sillPlant(leftWall, -W.side + 0.32, 1.36, -4.8, 0xff6b6b);
 
-    // ---------- the blackboard (back wall) ----------
+    // ---------- the chalkboard (back wall) ----------
     const BB = { x: -5, y: 3.45, w: 9.4, h: 3.1 };
     const bbZ = W.back + 0.25;
     block(backWall, 0xb07a45, BB.x, BB.y, bbZ + 0.04, BB.w + 0.4, BB.h + 0.4, 0.1, 0.05);
     A(backWall, "blackboard", BB.w, BB.h, { x: BB.x, y: BB.y, z: bbZ + 0.1 });
     block(backWall, 0xb07a45, BB.x, BB.y - BB.h / 2 - 0.2, bbZ + 0.2, BB.w, 0.08, 0.3, 0.02); // chalk tray
-    for (let i = 0; i < 5; i++) cylinder(backWall, [0xffffff, 0xffd36b, 0xff9ec7, 0x9fe0ff, 0xffffff][i], BB.x - 3 + i * 0.25, BB.y - BB.h / 2 - 0.13, bbZ + 0.24, 0.03, 0.22, { rz: PI / 2, seg: 6 });
+    for (let i = 0; i < 3; i++) cylinder(backWall, [0xffffff, 0xffd36b, 0xffffff][i], BB.x - 3 + i * 0.25, BB.y - BB.h / 2 - 0.13, bbZ + 0.24, 0.03, 0.22, { rz: PI / 2, seg: 6 });
     block(backWall, 0x7a8ca8, BB.x + 2.5, BB.y - BB.h / 2 - 0.1, bbZ + 0.24, 0.4, 0.12, 0.16, 0.03); // board eraser
-    A(backWall, "alphabet", BB.w, 0.6, { x: BB.x, y: BB.y + BB.h / 2 + 0.6, z: bbZ + 0.03 });
-    // bulletin board with the calendar and drawings, and the clock above it
-    block(backWall, 0xc98b4a, 4.0, 3.5, bbZ + 0.03, 3.2, 2.0, 0.06, 0.04);
-    A(backWall, "calendar", 1.2, 1.2, { x: 3.2, y: 3.5, z: bbZ + 0.08, rz: 0.04 });
-    A(backWall, "worldMap", 1.7, 1.05, { x: 4.75, y: 3.6, z: bbZ + 0.08, rz: -0.03 });
-    const clock = group(backWall, 4.0, 5.8, bbZ + 0.05);
-    cylinder(clock, 0xffffff, 0, 0, 0, 0.62, 0.1, { rx: PI / 2 });
-    put(clock, G.torus(0.62, 0.08), toon(0xff6b6b), {});
-    for (let i = 0; i < 12; i++) ball(clock, 0x555555, Math.sin((i / 12) * TAU) * 0.48, Math.cos((i / 12) * TAU) * 0.48, 0.06, 0.03);
+    A(backWall, "hallPlaque", BB.w, 0.6, { x: BB.x, y: BB.y + BB.h / 2 + 0.6, z: bbZ + 0.03 });
+    // the projector screen (it shows today's slides) and the clock above it
+    const SCR = { x: 3.7, y: 4.2, w: 4.4, h: 2.75 };
+    cylinder(backWall, 0xe8e8ee, SCR.x, SCR.y + SCR.h / 2 + 0.12, bbZ + 0.18, 0.12, SCR.w + 0.5, { rz: PI / 2 }); // the roller
+    block(backWall, 0x2a2f38, SCR.x, SCR.y, bbZ + 0.05, SCR.w + 0.16, SCR.h + 0.16, 0.04, 0.01);
+    A(backWall, "slide", SCR.w, SCR.h, { x: SCR.x, y: SCR.y, z: bbZ + 0.08 });
+    bx(backWall, 0x2a2f38, SCR.x, SCR.y - SCR.h / 2 - 0.12, bbZ + 0.1, 0.9, 0.05, 0.05);
+    const clock = group(backWall, SCR.x, 6.75, bbZ + 0.05);
+    cylinder(clock, 0xffffff, 0, 0, 0, 0.55, 0.1, { rx: PI / 2 });
+    put(clock, G.torus(0.55, 0.07), toon(0x2a2f38), {});
+    for (let i = 0; i < 12; i++) ball(clock, 0x555555, Math.sin((i / 12) * TAU) * 0.42, Math.cos((i / 12) * TAU) * 0.42, 0.06, 0.03);
     const hourHand = dynamic(group(clock, 0, 0, 0.08));
     const minHand = dynamic(group(clock, 0, 0, 0.1));
-    block(hourHand, 0x333333, 0, 0.17, 0, 0.07, 0.36, 0.02, 0.02);
-    block(minHand, 0x333333, 0, 0.25, 0, 0.05, 0.52, 0.02, 0.02);
+    block(hourHand, 0x333333, 0, 0.15, 0, 0.07, 0.32, 0.02, 0.02);
+    block(minHand, 0x333333, 0, 0.22, 0, 0.05, 0.46, 0.02, 0.02);
     anim.push(() => {
       const now = new Date();
       hourHand.rotation.z = -((now.getHours() % 12) + now.getMinutes() / 60) / 12 * TAU;
       minHand.rotation.z = -(now.getMinutes() + now.getSeconds() / 60) / 60 * TAU;
     });
-    A(backWall, "sciencePoster", 1.4, 1.72, { x: 11.55, y: 4.5, z: bbZ + 0.04 });
-    A(leftWall, "kindPoster", 1.5, 2.0, { x: -W.side + 0.28, y: 4.4, z: 2.2, ry: PI / 2 });
-    A(leftWall, "readPoster", 1.5, 2.0, { x: -W.side + 0.28, y: 4.4, z: -1.4, ry: PI / 2 });
-    A(frontWall, "rulesPoster", 2.0, 2.3, { x: -4.5, y: 4.0, z: W.front - 0.28, ry: PI });
-    A(rightWall, "drawings", 3.6, 1.8, { x: W.side - 0.28, y: 4.4, z: -6.4, ry: -PI / 2 });
-    A(rightWall, "readSign", 2.6, 0.55, { x: W.side - 0.28, y: 2.95, z: 6.3, ry: -PI / 2 });
+    A(backWall, "periodic", 1.4, 1.72, { x: 11.55, y: 4.5, z: bbZ + 0.04 });
+    A(leftWall, "studyAbroad", 1.5, 2.0, { x: -W.side + 0.28, y: 4.4, z: 2.2, ry: PI / 2 });
+    A(leftWall, "library", 1.5, 2.0, { x: -W.side + 0.28, y: 4.4, z: -1.4, ry: PI / 2 });
+    A(frontWall, "examSchedule", 2.0, 2.3, { x: -4.5, y: 4.0, z: W.front - 0.28, ry: PI });
+    A(rightWall, "noticeBoard", 3.6, 1.8, { x: W.side - 0.28, y: 4.4, z: -6.4, ry: -PI / 2 });
+    A(rightWall, "loungeSign", 2.6, 0.55, { x: W.side - 0.28, y: 2.95, z: 6.3, ry: -PI / 2 });
+    // college banners hanging high up on the walls
+    const banner = (wall, name, x, z, ry) => {
+      A(wall, name, 1.0, 2.67, { x, y: 5.75, z, ry });
+      cylinder(wall, 0xd9b26a, x - (ry === 0 ? 0 : 0), 7.12, z, 0.04, 1.2, { rz: ry === 0 ? PI / 2 : 0, rx: ry === 0 ? 0 : PI / 2 });
+    };
+    banner(backWall, "bannerA", -11.4, bbZ + 0.06, 0);
+    banner(leftWall, "bannerB", -W.side + 0.3, 9.2, PI / 2);
+    banner(leftWall, "bannerA", -W.side + 0.3, -10.0, PI / 2);
+    banner(rightWall, "bannerB", W.side - 0.3, 2.4, -PI / 2);
+    banner(rightWall, "bannerA", W.side - 0.3, -9.9, -PI / 2);
 
-    // ---------- the pupils' desks: 3 rows of 4, facing the blackboard ----------
+    // ---------- the lecture desks: 3 long rows of 4 seats, facing the chalkboard ----------
     const RZ = [-4.6, -1.3, 2.0];
     const CX = [-9.8, -6.6, -3.4, -0.2];
     const drnd = seeded(11);
-    for (const z of RZ) for (const x of CX) studentDesk(root, x, z, drnd);
+    for (const z of RZ) lectureRow(root, z, CX, drnd);
 
-    // ---------- the teacher's desk ----------
+    // ---------- the professor's desk, with the projector ----------
     const TD = { x: 1.0, z: -8.1 };
     const td = group(root, TD.x, 0, TD.z);
     block(td, 0xb8743a, 0, 0.55, 0, 3.0, 1.1, 1.15, 0.08);
     block(td, 0xd99a5a, 0, 1.13, 0, 3.15, 0.1, 1.3, 0.04);
     block(td, 0x9a5e2c, 0, 0.6, 0.58, 2.6, 0.7, 0.04, 0.02, { shadow: false });
-    ball(td, 0xe23b3b, -1.1, 1.3, 0.25, 0.14);                                   // the apple for the teacher
-    cylinder(td, 0x6b4a2a, -1.1, 1.46, 0.25, 0.015, 0.1, { seg: 5 });
-    ball(td, 0x5cc84a, -1.05, 1.46, 0.25, 0.05, { sx: 1.6, sy: 0.5 });
-    for (let i = 0; i < 4; i++) block(td, [0x4fb7ff, 0xff6b6b, 0x6fd36a, 0xffd23f][i], -0.45, 1.24 + i * 0.1, -0.1, 0.62, 0.09, 0.44, 0.02, { ry: i * 0.12 });
-    cylinder(td, 0x6fd36a, 0.4, 1.33, 0.2, 0.1, 0.3);                              // pencil cup
-    for (let i = 0; i < 4; i++) cylinder(td, [0xffd23f, 0xff6b6b, 0x4fb7ff, 0xffd23f][i], 0.4 + Math.cos(i * 1.6) * 0.04, 1.55, 0.2 + Math.sin(i * 1.6) * 0.04, 0.018, 0.35, { rz: (i - 1.5) * 0.12, seg: 6 });
-    bx(td, 0xffffff, 0.95, 1.2, 0.05, 0.6, 0.03, 0.45, { ry: -0.2 });             // marking papers
-    bx(td, 0xffffff, 0.97, 1.23, 0.08, 0.6, 0.03, 0.45, { ry: 0.1 });
-    cylinder(td, 0xd8d8d8, 1.25, 1.2, -0.3, 0.1, 0.04);                            // the bell
-    ball(td, 0xffcf3a, 1.25, 1.24, -0.3, 0.09, { sy: 0.8 });
-    // the teacher's chair (behind the desk)
+    // the laptop running the slides
+    block(td, 0x3a3f4a, -0.9, 1.21, 0.1, 0.62, 0.03, 0.42, 0.01);
+    block(td, 0x3a3f4a, -0.9, 1.42, 0.31, 0.62, 0.42, 0.03, 0.01, { rx: 0.25 });
+    bx(td, 0x7fc6ff, -0.9, 1.42, 0.292, 0.54, 0.34, 0.005, { rx: 0.25, shadow: false });
+    for (let i = 0; i < 3; i++) block(td, [0x7a2f3a, 0x2f4f8f, 0x3f7a2a][i], -0.15, 1.24 + i * 0.12, 0.25, 0.62, 0.11, 0.44, 0.02, { ry: i * 0.12 }); // textbooks
+    cylinder(td, 0xffffff, 0.3, 1.3, 0.35, 0.09, 0.22);                            // a coffee mug
+    put(td, G.torus(0.06, 0.018), toon(0xffffff), { x: 0.4, y: 1.31, z: 0.35, ry: PI / 2 });
+    bx(td, 0xffffff, 0.95, 1.2, 0.25, 0.6, 0.03, 0.45, { ry: -0.2 });             // essays to mark
+    bx(td, 0xffffff, 0.97, 1.23, 0.28, 0.6, 0.03, 0.45, { ry: 0.1 });
+    bx(td, 0xe2574c, 1.0, 1.25, 0.3, 0.02, 0.02, 0.32, { ry: 0.5 });               // red pen
+    // the projector, shining onto the screen on the back wall
+    const PJ = { x: TD.x + 1.05, y: 1.36, z: TD.z - 0.15 };
+    block(td, 0xe8e8ee, 1.05, 1.27, -0.15, 0.6, 0.2, 0.45, 0.05);
+    cylinder(td, 0x2a2f38, 1.05, 1.28, -0.39, 0.08, 0.06, { rx: PI / 2 });
+    ball(td, glow(0x9fe0ff, 0.7), 1.05, 1.28, -0.42, 0.06, { sz: 0.3 });
+    const beamLen = Math.hypot(SCR.x - PJ.x, SCR.y - PJ.y, (bbZ + 0.1) - PJ.z);
+    const beam = put(root, new THREE.ConeGeometry(Math.SQRT1_2, 1, 4, 1, true).rotateY(PI / 4), new THREE.MeshBasicMaterial({ color: 0xfff6d8, transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide }),
+      { x: (SCR.x + PJ.x) / 2, y: (SCR.y + PJ.y) / 2, z: (bbZ + 0.1 + PJ.z) / 2, shadow: false, receive: false });
+    beam.scale.set(SCR.w * 0.98, beamLen, SCR.h * 0.98); // (the wide end covers the screen)
+    beam.lookAt(PJ.x, PJ.y, PJ.z);
+    beam.rotateX(PI / 2); // the cone's point at the projector
+    // the professor's chair (behind the desk)
     const tch = group(root, TD.x, 0, TD.z - 1.15);
     block(tch, 0x2f6f9f, 0, 0.58, 0, 0.8, 0.12, 0.75, 0.06);
     block(tch, 0x2f6f9f, 0, 1.1, -0.36, 0.8, 0.9, 0.1, 0.06);
@@ -848,7 +898,7 @@
     const globeBall = put(globeSpin, G.sphere(), toon(0xffffff, { map: globeTex }), { s: 0.56 });
     anim.push((t) => { globeBall.rotation.y = t * 0.6; });
 
-    // ---------- science corner (back right) ----------
+    // ---------- the lab bench (back right) ----------
     const SC = { x: 8.4, z: -10.1 };
     const sci = group(root, SC.x, 0, SC.z);
     block(sci, 0x4f8fd0, 0, 0.5, 0, 5.4, 1.0, 1.0, 0.06);
@@ -875,7 +925,7 @@
       cylinder(sci, [0xff6b6b, 0xffd23f, 0x6fd36a, 0xa58cff][i], 0.36 + i * 0.16, 1.28, 0.3, 0.035, 0.14);
       cylinder(sci, glassy, 0.36 + i * 0.16, 1.36, 0.3, 0.045, 0.32);
     }
-    // plant experiment: three pots, the one in the sun grew the most
+    // a plant growth study: three pots, the one in the sun grew the most
     for (let i = 0; i < 3; i++) {
       const px = 1.25 + i * 0.42;
       put(sci, G.taper(0.15, 0.11), toon(0xe0784a), { x: px, y: 1.25, z: -0.1, sy: 0.26 });
@@ -885,36 +935,22 @@
       ball(sci, 0x6fd36a, px - 0.06, 1.33 + hgt, -0.1, 0.05 + i * 0.03, { sy: 0.5 });
       bx(sci, 0xffffff, px, 1.22, 0.06, 0.18, 0.1, 0.01, { shadow: false });
     }
-    // the volcano model (it bubbles!)
+    // a ball-and-stick molecule model (it slowly turns)
     const VO = { x: SC.x + 2.25, y: 1.1, z: SC.z + 0.1 };
-    block(sci, 0x6fd36a, 2.25, 1.13, 0.1, 0.9, 0.05, 0.8, 0.02);
-    put(sci, G.taper(0.09, 0.4, 14), toon(0x9a6a3c), { x: 2.25, y: 1.42, z: 0.1, sy: 0.55 });
-    put(sci, G.taper(0.1, 0.16, 14), toon(0xff5a3a), { x: 2.25, y: 1.62, z: 0.1, sy: 0.14 });
-    for (let i = 0; i < 4; i++) put(sci, G.capsule(), toon(0xff7a2a), { x: 2.25 + Math.cos(i * 1.7) * 0.18, y: 1.5, z: 0.1 + Math.sin(i * 1.7) * 0.18, sx: 0.07, sy: 0.25, sz: 0.07, rx: Math.sin(i * 1.7) * 0.5, rz: -Math.cos(i * 1.7) * 0.5 });
-    const lava = dynamic(new THREE.InstancedMesh(G.lowSphere(), glow(0xff6a2a, 0.6), 7));
-    lava.frustumCulled = false;
-    root.add(lava);
-    const smoke = dynamic(new THREE.InstancedMesh(G.lowSphere(), toon(0xf2f2f2, { transparent: true, opacity: 0.55 }), 4));
-    smoke.frustumCulled = false;
-    root.add(smoke);
-    const tmp = new THREE.Object3D();
-    anim.push((t) => {
-      for (let i = 0; i < 7; i++) {
-        const k = (t * 0.8 + i / 7) % 1;
-        const a = i * 2.4;
-        tmp.position.set(VO.x + Math.cos(a) * k * 0.25, VO.y + 0.62 + Math.sin(k * PI) * 0.3, VO.z + Math.sin(a) * k * 0.25);
-        tmp.scale.setScalar(0.05 * (1 - k * 0.6));
-        tmp.updateMatrix(); lava.setMatrixAt(i, tmp.matrix);
-      }
-      lava.instanceMatrix.needsUpdate = true;
-      for (let i = 0; i < 4; i++) {
-        const k = (t * 0.25 + i / 4) % 1;
-        tmp.position.set(VO.x + Math.sin(t + i) * 0.1, VO.y + 0.75 + k * 1.2, VO.z);
-        tmp.scale.setScalar(0.08 + k * 0.2);
-        tmp.updateMatrix(); smoke.setMatrixAt(i, tmp.matrix);
-      }
-      smoke.instanceMatrix.needsUpdate = true;
+    block(sci, 0x2a2f38, 2.25, 1.14, 0.1, 0.5, 0.06, 0.4, 0.02);
+    cylinder(sci, 0x9aa3b0, 2.25, 1.4, 0.1, 0.02, 0.5);
+    const mol = dynamic(group(root, VO.x, VO.y + 0.95, VO.z));
+    ball(mol, 0x2a2f38, 0, 0, 0, 0.16);
+    const arms = [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]];
+    arms.forEach(([ax, ay, az], i) => {
+      const v = new THREE.Vector3(ax, ay, az).normalize();
+      ball(mol, i === 0 ? 0xe2574c : 0xffffff, v.x * 0.42, v.y * 0.42, v.z * 0.42, 0.1);
+      const stick = cylinder(mol, 0xbfc4cc, v.x * 0.21, v.y * 0.21, v.z * 0.21, 0.025, 0.3);
+      stick.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v);
     });
+    mergeStatic(mol);
+    const tmp = new THREE.Object3D();
+    anim.push((t) => { mol.rotation.set(0.3, t * 0.5, 0); });
     // a big leafy plant in the corner
     const bigPlant = group(root, 16.7, 0, -9.9, 0, 0.9);
     cylinder(bigPlant, 0xffffff, 0, 0.45, 0, 0.45, 0.9);
@@ -934,7 +970,7 @@
     for (const sx of [-1.15, 1.15]) block(pn, 0xb8352f, sx, 0.55, 0.62, 0.12, 1.1, 0.4, 0.03);
     bx(pn, 0xffffff, 0, 1.65, 0.49, 0.8, 0.5, 0.03, { rx: -0.2 });          // sheet music
     for (let i = 0; i < 4; i++) bx(pn, 0x333333, 0, 1.52 + i * 0.1, 0.505, 0.7, 0.012, 0.01, { rx: -0.2, shadow: false });
-    ball(pn, 0xffd23f, 0.9, 2.5, 0.0, 0.14);                                // a little metronome... no, a duck
+    put(pn, G.taper(0.05, 0.16, 4), toon(0x6e4527), { x: 0.9, y: 2.6, z: 0.0, sy: 0.4, ry: PI / 4 }); // a metronome
     block(pn, 0x8a5a3a, 0, 0.3, 1.35, 1.5, 0.08, 0.6, 0.04);                // bench
     block(pn, 0xff8ad8, 0, 0.6, 1.35, 1.4, 0.12, 0.55, 0.06);
     for (const sx of [-0.6, 0.6]) bx(pn, 0x8a5a3a, sx, 0.28, 1.35, 0.08, 0.56, 0.5);
@@ -960,7 +996,7 @@
       notes.instanceMatrix.needsUpdate = true;
     });
 
-    // ---------- art corner: easels and a messy art table ----------
+    // ---------- art studio: easels and a messy art table ----------
     const easel = (x, z, ry, picName) => {
       const e = group(root, x, 0, z, ry);
       const wood = 0xc98b4a;
@@ -978,24 +1014,24 @@
     easel(E2.x, E2.z, E2.ry, "painting2");
     const AT = { x: 10.2, z: -0.4 };
     const art = group(root, AT.x, 0, AT.z, 0.1);
-    block(art, 0xffd23f, 0, 0.78, 0, 2.4, 0.08, 1.2, 0.04);
-    for (const sx of [-1.05, 1.05]) for (const sz of [-0.5, 0.5]) bx(art, 0x4fb7ff, sx, 0.38, sz, 0.08, 0.76, 0.08);
+    block(art, 0xd9c09a, 0, 0.78, 0, 2.4, 0.08, 1.2, 0.04);
+    for (const sx of [-1.05, 1.05]) for (const sz of [-0.5, 0.5]) bx(art, 0x6e4527, sx, 0.38, sz, 0.08, 0.76, 0.08);
     bx(art, 0xffffff, -0.5, 0.83, 0.1, 0.8, 0.02, 0.6, { ry: 0.2 });
     bx(art, 0xffffff, 0.3, 0.84, -0.1, 0.7, 0.02, 0.55, { ry: -0.3 });
     ball(art, 0xff6b8a, -0.6, 0.85, 0.15, 0.1, { sy: 0.1 });
     ball(art, 0x4fb7ff, 0.4, 0.86, -0.05, 0.12, { sy: 0.1 });
     for (let i = 0; i < 6; i++) cylinder(art, [0xff6b6b, 0xffb84d, 0xffe15a, 0x6fd36a, 0x4fb7ff, 0xa58cff][i], 0.6 + (i % 3) * 0.17, 0.9, -0.3 + Math.floor(i / 3) * 0.2, 0.07, 0.14);
-    block(art, 0x2f3542, -0.95, 0.87, -0.35, 0.4, 0.1, 0.25, 0.03);             // crayon box
-    for (let i = 0; i < 5; i++) cylinder(art, [0xff6b6b, 0x4fb7ff, 0x6fd36a, 0xffd23f, 0xa58cff][i], -1.1 + i * 0.07, 0.98, -0.35, 0.02, 0.18, { seg: 5 });
+    block(art, 0x2f3542, -0.95, 0.87, -0.35, 0.4, 0.1, 0.25, 0.03);             // a jar of brushes
+    for (let i = 0; i < 5; i++) cylinder(art, 0x9a6a3c, -1.1 + i * 0.07, 1.0, -0.35, 0.015, 0.24, { seg: 5, rz: (i - 2) * 0.08 });
     // a little stool on each side
     for (const sx of [-0.7, 0.7]) {
-      cylinder(root, 0xff6b6b, AT.x + sx, 0.45, AT.z + 1.05, 0.25, 0.08);
+      cylinder(root, 0x6e4527, AT.x + sx, 0.45, AT.z + 1.05, 0.25, 0.08);
       for (let i = 0; i < 3; i++) bx(root, 0x9aa3b0, AT.x + sx + Math.cos(i * 2.1) * 0.15, 0.22, AT.z + 1.05 + Math.sin(i * 2.1) * 0.15, 0.05, 0.44, 0.05);
     }
 
-    // ---------- reading corner (front right) ----------
+    // ---------- study lounge (front right) ----------
     const rugTex = canvasTexture(256, 256, (ctx, w, h) => {
-      const cols = ["#ff6b6b", "#ffb84d", "#ffe15a", "#6fd36a", "#4fb7ff", "#a58cff", "#ffffff"];
+      const cols = ["#7a2f3a", "#e9d6b0", "#2f4f8f", "#e9d6b0", "#7a2f3a", "#e0b65a", "#e9d6b0"];
       for (let i = 0; i < cols.length; i++) { ctx.fillStyle = cols[i]; ctx.beginPath(); ctx.arc(w / 2, h / 2, w / 2 - i * 17, 0, TAU); ctx.fill(); }
     });
     disc(root, toon(0xffffff, { map: rugTex }), 13.4, 0.02, 6.6, 2.9);
@@ -1014,61 +1050,55 @@
           if (r() < 0.08) { x += 0.2; continue; }
           // the shelf is turned to face -x, so its local x runs along world z
           books.push({ x: W.side - 0.6 + 0.02, y: 0.08 + row * 0.62 + bh / 2, z: sz - x - bw / 2, sx: 0.5, sy: bh, sz: bw,
-            rx: r() < 0.1 ? 0.25 : 0, color: [0xff6b6b, 0x4fb7ff, 0x6fd36a, 0xffd23f, 0xa58cff, 0xff8ad8, 0xffffff, 0x2f6f9f][Math.floor(r() * 8)] });
+            rx: r() < 0.1 ? 0.25 : 0, color: [0x7a2f3a, 0x2f4f8f, 0x3f7a2a, 0xc98b2a, 0x5a3a6a, 0x2a2f38, 0xe9d6b0, 0x9a3b3b][Math.floor(r() * 8)] });
           x += bw + 0.01;
         }
       }
       bx(sh, wood, 0, 2.43, 0, 3.0, 0.06, 0.78);
     }
-    // a low book box on wheels
+    // a library cart on wheels
     const bcart = group(root, 15.4, 0, 9.0);
-    block(bcart, 0x6fd36a, 0, 0.45, 0, 1.3, 0.7, 0.6, 0.06);
+    block(bcart, 0x6e4527, 0, 0.45, 0, 1.3, 0.7, 0.6, 0.06);
     for (const sx of [-0.5, 0.5]) for (const sz of [-0.2, 0.2]) ball(bcart, 0x333333, sx, 0.08, sz, 0.08);
-    for (let i = 0; i < 8; i++) books.push({ x: 15.4 - 0.5 + i * 0.13, y: 0.95, z: 9.0, sx: 0.09, sy: 0.4, sz: 0.4, rz: (i - 4) * 0.05, color: [0xff6b6b, 0x4fb7ff, 0xffd23f, 0xa58cff][i % 4] });
+    for (let i = 0; i < 8; i++) books.push({ x: 15.4 - 0.5 + i * 0.13, y: 0.95, z: 9.0, sx: 0.09, sy: 0.4, sz: 0.4, rz: (i - 4) * 0.05, color: [0x7a2f3a, 0x2f4f8f, 0xc98b2a, 0x3f7a2a][i % 4] });
     // squishy beanbags
     const beanbag = (x, z, color) => {
       ball(root, color, x, 0.32, z, 0.7, { sy: 0.5 });
       ball(root, color, x, 0.5, z - 0.32, 0.55, { sy: 0.55, sz: 0.6 });
     };
     const BB1 = { x: 13.0, z: 7.4 };
-    beanbag(BB1.x, BB1.z, 0xffd23f);
-    beanbag(14.9, 4.8, 0x4fb7ff);
-    beanbag(11.2, 5.2, 0xff8ad8);
+    beanbag(BB1.x, BB1.z, 0xc98b2a);
+    beanbag(14.9, 4.8, 0x2f4f8f);
+    beanbag(11.2, 5.2, 0x9a3b3b);
     // an open book on the blue beanbag
     bx(root, 0xffffff, 14.9, 0.62, 5.0, 0.5, 0.04, 0.34, { ry: 0.3, rx: -0.1 });
 
-    // ---------- a play mat in the middle, with building blocks ----------
-    A(root, "abcRug", 6, 4, { x: 5.4, y: 0.02, z: 5.2, rx: -PI / 2 });
-    const toyR = seeded(8);
-    for (let i = 0; i < 7; i++) {
-      const s = 0.32;
-      const tx = i < 4 ? 7.6 + (i % 2) * 0.36 : 7.78, ty = i < 4 ? s / 2 + Math.floor(i / 2) * s : s / 2 + (2 + (i - 4)) * s;
-      block(root, [0xff6b6b, 0x4fb7ff, 0xffd23f, 0x6fd36a, 0xa58cff, 0xff8a5c, 0xff8ad8][i], tx, ty, 6.3 + (toyR() - 0.5) * 0.05, s, s, s, 0.05, { ry: (toyR() - 0.5) * 0.3 });
+    // ---------- a group study table in the middle ----------
+    A(root, "rug", 6, 4, { x: 5.4, y: 0.02, z: 5.2, rx: -PI / 2 });
+    const ST = { x: 5.4, z: 5.2 };
+    const stab = group(root, ST.x, 0, ST.z);
+    cylinder(stab, 0xc28a55, 0, 1.0, 0, 1.15, 0.1);
+    cylinder(stab, 0x6b7280, 0, 0.5, 0, 0.09, 1.0);
+    cylinder(stab, 0x6b7280, 0, 0.04, 0, 0.5, 0.08);
+    // laptops, a pile of notes, coffee and a shared snack
+    block(stab, 0xc9ced6, -0.45, 1.07, 0.3, 0.55, 0.03, 0.38, 0.01, { ry: 0.5 });
+    block(stab, 0xc9ced6, -0.55, 1.26, 0.48, 0.55, 0.36, 0.03, 0.01, { ry: 0.5, rx: 0.25 });
+    block(stab, 0x3a3f4a, 0.45, 1.07, -0.25, 0.55, 0.03, 0.38, 0.01, { ry: 2.6 });
+    block(stab, 0x3a3f4a, 0.56, 1.26, -0.42, 0.55, 0.36, 0.03, 0.01, { ry: 2.6, rx: -0.25 });
+    for (let i = 0; i < 3; i++) bx(stab, 0xffffff, 0.1 + i * 0.05, 1.07 + i * 0.012, 0.35, 0.42, 0.01, 0.3, { ry: i * 0.4 });
+    for (const [cx, cz] of [[-0.2, -0.45], [0.55, 0.4]]) { cylinder(stab, 0xffffff, cx, 1.15, cz, 0.07, 0.2); cylinder(stab, 0x8a5a3a, cx, 1.26, cz, 0.072, 0.03); }
+    cylinder(stab, 0xe2574c, -0.6, 1.08, -0.2, 0.18, 0.05);
+    for (let i = 0; i < 5; i++) ball(stab, 0xf2c06a, -0.6 + Math.cos(i * 1.3) * 0.08, 1.13, -0.2 + Math.sin(i * 1.3) * 0.08, 0.05);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * TAU + PI / 4;
+      const sx = Math.cos(a) * 1.55, sz = Math.sin(a) * 1.55;
+      cylinder(root, 0x2f3f5f, ST.x + sx, 0.62, ST.z + sz, 0.26, 0.1);
+      cylinder(root, 0x6b7280, ST.x + sx, 0.3, ST.z + sz, 0.04, 0.6);
+      cylinder(root, 0x6b7280, ST.x + sx, 0.03, ST.z + sz, 0.2, 0.05);
     }
-    block(root, 0x4fb7ff, 3.4, 0.17, 6.4, 0.34, 0.34, 0.34, 0.05, { ry: 0.5 });
-    ball(root, 0xff6b6b, 3.0, 0.25, 3.9, 0.25);
-
-    // paper bunting along the top of the walls
-    const wallBunting = (wall, a, b) => painted(wall, bakeGeo((g) => {
-      const line = sagLine(a, b, 0.5, 40);
-      const curve = new THREE.CatmullRomCurve3(line);
-      const fc = [0xff6b6b, 0xffd23f, 0x4fb7ff, 0x6fd36a, 0xff8ad8, 0xa58cff];
-      const n = Math.round(a.distanceTo(b) / 0.8);
-      const along = b.clone().sub(a).normalize();
-      for (let i = 1; i < n; i++) {
-        const p = curve.getPoint(i / n);
-        const f = put(g, triangleGeo([-0.25, 0, 0, 0.25, 0, 0, 0, -0.55, 0]), toon(fc[i % fc.length]), { x: p.x, y: p.y, z: p.z });
-        f.rotation.y = -Math.atan2(along.z, along.x);
-      }
-      cable(g, toon(0xffffff), line, 0.015);
-    }));
-    wallBunting(backWall, new THREE.Vector3(-17.6, 7.5, W.back + 0.4), new THREE.Vector3(-10.4, 7.5, W.back + 0.4));
-    wallBunting(backWall, new THREE.Vector3(0.3, 7.5, W.back + 0.4), new THREE.Vector3(17.6, 7.5, W.back + 0.4));
-    wallBunting(leftWall, new THREE.Vector3(-W.side + 0.4, 7.5, -10.6), new THREE.Vector3(-W.side + 0.4, 7.5, 10.6));
-    wallBunting(rightWall, new THREE.Vector3(W.side - 0.4, 7.5, -10.6), new THREE.Vector3(W.side - 0.4, 7.5, 10.6));
 
     // ---------- lockers and cubbies (left wall) ----------
-    const lockerC = [0xff6b6b, 0xffb84d, 0xffd23f, 0x6fd36a, 0x4fb7ff, 0xa58cff];
+    const lockerC = [0x5a7fa8, 0x52769e, 0x5a7fa8, 0x52769e, 0x5a7fa8, 0x52769e];
     for (let i = 0; i < 6; i++) {
       const lz = -0.1 + i * 1.0;
       const l = group(root, -W.side + 0.65, 0, lz, PI / 2);
@@ -1076,71 +1106,72 @@
       for (let k = 0; k < 4; k++) bx(l, 0x333333, 0, 2.5 + k * 0.1, 0.405, 0.5, 0.03, 0.01, { shadow: false });
       bx(l, 0xdfe4ea, 0.3, 1.5, 0.41, 0.06, 0.3, 0.04);
       bx(l, 0xffffff, 0, 2.05, 0.405, 0.3, 0.18, 0.01, { shadow: false });
-      if (i % 2 === 0) ball(l, [0xff8ad8, 0xffe15a, 0x7fe0ff][i / 2], -0.2, 1.1, 0.42, 0.08, { sz: 0.2 }); // stickers
     }
-    // cubbies with bags and lunch boxes, and coat hooks above
+    // the coffee bar: a counter with a coffee machine, cups and a menu board
     const cub = group(root, -W.side + 0.6, 0, 7.95, PI / 2);
-    block(cub, 0xf2d3a0, 0, 0.75, 0, 3.3, 1.5, 0.75, 0.05);
-    for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) {
-      bx(cub, 0x9a6a3c, -1.07 + c * 1.07, 0.42 + r * 0.66, 0.34, 0.95, 0.56, 0.1, { shadow: false });
-      block(cub, [0xff6b6b, 0x4fb7ff, 0x6fd36a, 0xffd23f, 0xa58cff, 0xff8ad8][r * 3 + c], -1.07 + c * 1.07, 0.38 + r * 0.66, 0.36, 0.6, 0.4, 0.2, 0.08);
-    }
-    for (let i = 0; i < 4; i++) {
-      const hz = -1.2 + i * 0.8;
-      ball(cub, 0xdfe4ea, hz, 2.3, -0.3, 0.06);
-      const bag = [0xff6b6b, 0x4fb7ff, 0xffd23f, 0x6fd36a][i];
-      block(cub, bag, hz, 1.95, -0.18, 0.55, 0.65, 0.28, 0.12);
-      block(cub, bag, hz, 1.8, -0.02, 0.4, 0.25, 0.08, 0.05);
-    }
+    block(cub, 0x7a4e2c, 0, 0.55, 0, 3.3, 1.1, 0.75, 0.05);
+    block(cub, 0x2a2f38, 0, 1.13, 0.02, 3.4, 0.07, 0.82, 0.02);
+    for (let c = 0; c < 3; c++) bx(cub, 0x5a3a22, -1.07 + c * 1.07, 0.55, 0.38, 0.95, 0.85, 0.02, { shadow: false });
+    block(cub, 0x3a3f4a, -0.8, 1.6, -0.1, 0.8, 0.9, 0.5, 0.06);               // the coffee machine
+    block(cub, 0x9aa3b0, -0.8, 1.32, 0.12, 0.5, 0.06, 0.25, 0.02);
+    ball(cub, glow(0xff5a3a, 0.8), -0.55, 1.85, 0.16, 0.04);
+    cylinder(cub, 0x2a2f38, -0.8, 1.42, 0.12, 0.05, 0.12);
+    cylinder(cub, 0xffffff, -0.8, 1.27, 0.14, 0.06, 0.13);
+    for (let i = 0; i < 4; i++) cylinder(cub, 0xffffff, 0.2, 1.22 + i * 0.1, 0.0, 0.07, 0.1);   // a stack of cups
+    for (let i = 0; i < 3; i++) { cylinder(cub, [0x7a2f3a, 0x2f4f8f, 0xc98b2a][i], 0.7 + i * 0.28, 1.24, 0.1, 0.07, 0.17); }
+    cylinder(cub, 0xe9d6b0, 1.4, 1.26, -0.15, 0.12, 0.2);                       // sugar jar
+    const menu = canvasTexture(256, 160, (ctx, w, h) => {
+      ctx.fillStyle = "#2a2f38"; ctx.fillRect(0, 0, w, h);
+      text(ctx, "COFFEE BAR", w / 2, 28, 26, "#e0b65a");
+      [["Espresso", "1"], ["Latte", "2"], ["Tea", "1"], ["Cocoa", "2"]].forEach(([n, pr], i) => {
+        text(ctx, n, 24, 64 + i * 24, 18, "#f3f3e6", "left"); text(ctx, pr + " \uD83E\uDE99", w - 24, 64 + i * 24, 16, "#f3f3e6", "right");
+      });
+    });
+    put(cub, new THREE.PlaneGeometry(1.6, 1.0), toon(0xffffff, { map: menu }), { y: 2.75, z: -0.34, shadow: false });
 
-    // ---------- class pet: Mr. Nibbles the hamster ----------
+    // ---------- the biology lab's fish tank ----------
     const PT = { x: -7.5, z: 10.1 };
     const pet = group(root, PT.x, 0, PT.z);
-    block(pet, 0xc98b4a, 0, 0.45, 0, 2.2, 0.9, 0.9, 0.06);
-    block(pet, 0xe0a060, 0, 0.92, 0, 2.3, 0.06, 1.0, 0.03);
-    A(pet, "petSign", 0.9, 0.27, { y: 0.6, z: -0.46, ry: PI });
-    // the cage: a coloured tray, wire bars and a roof
-    block(pet, 0x4fb7ff, -0.2, 1.05, 0, 1.3, 0.2, 0.75, 0.05);
-    bx(pet, 0xf6e7b8, -0.2, 1.16, 0, 1.2, 0.02, 0.65);
-    const bars = [];
-    for (let i = 0; i <= 12; i++) {
-      const bxp = -0.82 + i * 0.104;
-      bars.push({ x: PT.x + bxp, y: 1.5, z: PT.z - 0.36, sx: 0.012, sy: 0.7, sz: 0.012 });
-      bars.push({ x: PT.x + bxp, y: 1.5, z: PT.z + 0.36, sx: 0.012, sy: 0.7, sz: 0.012 });
-    }
-    for (let i = 0; i <= 6; i++) for (const sx of [-0.82, 0.42]) bars.push({ x: PT.x + sx, y: 1.5, z: PT.z - 0.36 + i * 0.12, sx: 0.012, sy: 0.7, sz: 0.012 });
-    scatter(root, G.cyl(5), toon(0xdfe4ea), bars);
-    block(pet, 0xff6b6b, -0.2, 1.88, 0, 1.36, 0.08, 0.8, 0.04);
-    // food bowl, water bottle and a little house
-    cylinder(pet, 0xffd23f, 0.15, 1.2, 0.15, 0.12, 0.06);
-    for (let i = 0; i < 4; i++) ball(pet, 0xc98b4a, 0.12 + (i % 2) * 0.06, 1.24, 0.12 + (i >> 1) * 0.06, 0.03);
-    cylinder(pet, toon(0x9fe0ff, { transparent: true, opacity: 0.7 }), 0.35, 1.55, -0.3, 0.06, 0.4);
-    put(pet, G.taper(0.25, 0.25, 4), toon(0xff8ad8), { x: -0.65, y: 1.32, z: 0.05, sy: 0.3, ry: PI / 4 });
-    put(pet, G.cone(4), toon(0xff6b8a), { x: -0.65, y: 1.57, z: 0.05, s: 0.3, sy: 0.22, ry: PI / 4 });
-    // the hamster wheel (spins) and the hamster (runs!)
-    const wheel = dynamic(group(pet, -0.2, 1.5, 0.05));
-    put(wheel, G.torus(0.28, 0.025), toon(0xa58cff), { shadow: false });
-    for (let i = 0; i < 6; i++) block(wheel, 0xa58cff, Math.cos((i / 6) * TAU) * 0.14, Math.sin((i / 6) * TAU) * 0.14, 0, 0.28, 0.02, 0.02, 0.01, { rz: (i / 6) * TAU, shadow: false });
-    mergeStatic(wheel);
-    cylinder(pet, 0xa58cff, -0.2, 1.33, 0.05, 0.03, 0.3);
-    const ham = dynamic(group(pet, -0.2, 1.27, 0.05));
-    ball(ham, 0xffb766, 0, 0.1, 0, 0.12, { sx: 1.25 });
-    ball(ham, 0xfff1dc, 0.05, 0.07, 0.05, 0.08);
-    ball(ham, 0xffb766, 0.13, 0.15, 0, 0.08);
-    ball(ham, 0xff9ec7, 0.11, 0.24, -0.06, 0.03);
-    ball(ham, 0xff9ec7, 0.11, 0.24, 0.06, 0.03);
-    ball(ham, 0x222222, 0.2, 0.17, -0.04, 0.015);
-    ball(ham, 0x222222, 0.2, 0.17, 0.04, 0.015);
-    ball(ham, 0xff9ec7, 0.21, 0.13, 0, 0.012);
-    mergeStatic(ham);
-    // it runs for a while, then stops for a snack
+    block(pet, 0x7a4e2c, 0, 0.45, 0, 2.2, 0.9, 0.9, 0.06);
+    block(pet, 0x8a5a3a, 0, 0.92, 0, 2.3, 0.06, 1.0, 0.03);
+    A(pet, "fishSign", 0.9, 0.27, { y: 0.6, z: -0.46, ry: PI });
+    // the tank: gravel, water, plants and a frame
+    const TK = { w: 1.9, h: 0.95, d: 0.7, y: 0.95 };
+    bx(pet, 0xd9c09a, 0, TK.y + 0.06, 0, TK.w - 0.04, 0.1, TK.d - 0.04);
+    put(pet, G.box(), toon(0x6fc6e8, { transparent: true, opacity: 0.35, depthWrite: false }), { y: TK.y + TK.h / 2, sx: TK.w - 0.04, sy: TK.h - 0.08, sz: TK.d - 0.04, shadow: false });
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) bx(pet, 0x2a2f38, sx * TK.w / 2, TK.y + TK.h / 2, sz * TK.d / 2, 0.04, TK.h, 0.04);
+    for (const y of [TK.y, TK.y + TK.h]) { bx(pet, 0x2a2f38, 0, y, -TK.d / 2, TK.w, 0.04, 0.04); bx(pet, 0x2a2f38, 0, y, TK.d / 2, TK.w, 0.04, 0.04); }
+    for (let i = 0; i < 5; i++) put(pet, G.capsule(), toon(i % 2 ? 0x3f9a3a : 0x5cc84a), { x: -0.75 + i * 0.36, y: TK.y + 0.35, z: 0.15 - (i % 2) * 0.25, sx: 0.05, sy: 0.3 + (i % 3) * 0.08, sz: 0.05, rz: (i - 2) * 0.12 });
+    ball(pet, 0x9aa3b0, 0.5, TK.y + 0.15, 0.1, 0.12, { sy: 0.7 });
+    // the fish (they swim round and round)
+    const fishC = [0xff8a2a, 0xffd23f, 0x4fb7ff, 0xff6b8a];
+    const fish = fishC.map((c) => {
+      const f = dynamic(group(pet, 0, TK.y + 0.5, 0));
+      ball(f, c, 0, 0, 0, 0.08, { sx: 1.5, sz: 0.6 });
+      put(f, G.cone(4), toon(c), { x: -0.14, s: 0.07, sy: 0.08, rz: PI / 2 });
+      ball(f, 0x222222, 0.08, 0.02, 0.035, 0.015);
+      mergeStatic(f);
+      return f;
+    });
     anim.push((t) => {
-      const k = t % 12;
-      const running = k < 7;
-      wheel.rotation.z = running ? -t * 6 : -Math.floor(t / 12) * 42;
-      ham.position.set(running ? -0.2 : 0.02, 1.27 + (running ? Math.abs(Math.sin(t * 12)) * 0.03 : 0), running ? 0.05 : 0.12);
-      ham.rotation.y = running ? 0 : -0.5 + Math.sin(t * 2) * 0.2;
-      ham.scale.y = running ? 1 : 1 + Math.sin(t * 8) * 0.05;
+      fish.forEach((f, i) => {
+        const a = t * (0.5 + i * 0.12) + i * 1.7;
+        f.position.set(Math.cos(a) * 0.7, TK.y + 0.3 + i * 0.13 + Math.sin(t * 1.3 + i) * 0.05, Math.sin(a) * 0.18);
+        f.rotation.y = -a - PI / 2;
+      });
+    });
+    // bubbles rising from the pump
+    const bubbles = dynamic(new THREE.InstancedMesh(G.lowSphere(), toon(0xffffff, { transparent: true, opacity: 0.6 }), 5));
+    bubbles.frustumCulled = false;
+    root.add(bubbles);
+    anim.push((t) => {
+      for (let i = 0; i < 5; i++) {
+        const k = (t * 0.5 + i / 5) % 1;
+        tmp.position.set(PT.x + 0.5 + Math.sin(t * 3 + i) * 0.03, TK.y + 0.25 + k * (TK.h - 0.35), PT.z + 0.1);
+        tmp.scale.setScalar(0.025 + k * 0.02);
+        tmp.updateMatrix(); bubbles.setMatrixAt(i, tmp.matrix);
+      }
+      bubbles.instanceMatrix.needsUpdate = true;
     });
 
     // plants by the door
@@ -1151,8 +1182,8 @@
         put(root, G.sphere(), toon(i % 2 ? 0x46b04a : 0x5cc84a), { x: px + Math.cos(a) * 0.3, y: 1.4 + (i % 3) * 0.25, z: 10.0 + Math.sin(a) * 0.3, sx: 0.2, sy: 0.7, sz: 0.2, rx: Math.sin(a) * 0.6, rz: -Math.cos(a) * 0.6 });
       }
     }
-    // a waste paper basket by the teacher's desk
-    put(root, G.taper(0.3, 0.24), toon(0x4fb7ff), { x: TD.x + 2.0, y: 0.3, z: TD.z - 0.2, sy: 0.6 });
+    // a waste paper basket by the professor's desk
+    put(root, G.taper(0.3, 0.24), toon(0x6b7280), { x: TD.x + 2.0, y: 0.3, z: TD.z - 0.2, sy: 0.6 });
     ball(root, 0xffffff, TD.x + 2.05, 0.62, TD.z - 0.2, 0.1);
 
     // every book in one go
@@ -1170,12 +1201,12 @@
 
     // ---------- spots ----------
     const studyLines = [
-      ["*scribble scribble*", "What's 7 + 5 again?", "I know the answer!", "Can I borrow an eraser?"],
-      ["Spelling is hard...", "Psst! Pass me a note!", "*doodles in notebook*", "Is it lunchtime yet?"],
-      ["I finished my homework!", "*raises hand*", "Ooh, a pop quiz?!", "My pencil broke!"],
+      ["*types notes*", "Is this going to be on the exam?", "I think I get it now!", "Can I borrow your charger?"],
+      ["Need... more... coffee...", "*highlights everything*", "My essay is due Friday!", "Wait, which chapter are we on?"],
+      ["I finished the reading!", "*raises hand*", "A pop quiz?! Already?", "These notes are a mess..."],
     ];
     const studySpot = (col, row, i) => ({
-      x: CX[col], z: RZ[row] + 2.0, yaw: PI, arms: "type", emoji: ["✏️", "📓", "📝"][i], activity: "studying at a desk",
+      x: CX[col], z: RZ[row] + 2.0, yaw: PI, arms: "type", emoji: ["💻", "📓", "📝"][i], activity: "taking notes in a lecture",
       seat: { x: CX[col], z: RZ[row] + 0.85, y: 0.0 },
       lines: studyLines[i],
     });
@@ -1185,15 +1216,17 @@
       background: 0xd6efff,
       fog: [0xd6efff, 90, 300],
       cameraTilt: 0.5,
+      // zoomed right out, the camera stays inside the ring of trees round the campus
+      cameraMaxDistance: 30,
       bounds: { minX: -17.3, maxX: 17.3, minZ: -10.3, maxZ: 10 },
       water: [],
       obstacles: RZ.map((z) => ({ x: -5, z: z + 0.35, w: 11.0, d: 1.75 }))           // the rows of desks and chairs
         .concat([
-          { x: BB.x, z: W.back + 0.55, w: BB.w + 0.4, d: 0.5 },                         // the blackboard's chalk tray
-          { x: TD.x, z: TD.z - 0.5, w: 3.4, d: 2.4 },                                   // teacher's desk + chair
+          { x: BB.x, z: W.back + 0.55, w: BB.w + 0.4, d: 0.5 },                         // the chalkboard's chalk tray
+          { x: TD.x, z: TD.z - 0.5, w: 3.4, d: 2.4 },                                   // professor's desk + chair
           { x: TD.x + 2.0, z: TD.z - 0.2, r: 0.35 },                                    // waste paper basket
           { x: GL.x, z: GL.z, r: 0.6 },                                                 // globe
-          { x: SC.x, z: SC.z, w: 5.7, d: 1.3 },                                         // science bench
+          { x: SC.x, z: SC.z, w: 5.7, d: 1.3 },                                         // lab bench
           { x: 16.7, z: -9.9, r: 0.65 },                                                // big plant
           { x: 16.45, z: PN.z, w: 2.6, d: 2.9 },                                        // piano + bench
           { x: E1.x, z: E1.z, r: 0.6 }, { x: E2.x, z: E2.z, r: 0.6 },                   // easels
@@ -1202,37 +1235,43 @@
           { x: 15.4, z: 9.0, w: 1.4, d: 0.7 },                                          // book box
           { x: BB1.x, z: BB1.z - 0.1, r: 0.65 }, { x: 14.9, z: 4.7, r: 0.65 }, { x: 11.2, z: 5.1, r: 0.65 }, // beanbags
           { x: -W.side + 0.65, z: 2.4, w: 1.0, d: 6.2 },                                // lockers
-          { x: -W.side + 0.6, z: 7.95, w: 1.0, d: 3.4 },                                // cubbies
-          { x: PT.x, z: PT.z, w: 2.4, d: 1.1 },                                         // hamster table
+          { x: -W.side + 0.6, z: 7.95, w: 1.0, d: 3.4 },                                // coffee bar
+          { x: PT.x, z: PT.z, w: 2.4, d: 1.1 },                                         // fish tank table
+          { x: ST.x, z: ST.z, r: 1.95 },                                                // study table + stools
           { x: -3.4, z: 10.0, r: 0.5 }, { x: 3.4, z: 10.0, r: 0.5 },                    // plants by the door
         ]),
       spots: [
         studySpot(1, 0, 0), studySpot(2, 1, 1), studySpot(0, 2, 2),
-        { x: BB.x, z: -9.45, yaw: 0, arms: "out", emoji: "👩‍🏫", activity: "teaching the class",
-          lines: ["Good morning, class!", "Who knows the answer?", "Eyes on the board, please!", "Today we learn fractions!", "Great job, everyone!"] },
+        { x: BB.x, z: -9.45, yaw: 0, arms: "out", emoji: "🧑‍🏫", activity: "giving a lecture",
+          lines: ["Good morning, everyone!", "Any questions so far?", "This WILL be on the exam.", "Let's derive this together.", "Office hours are at three!"] },
         { x: GL.x, z: -9.95, yaw: 0, emoji: "🌍", activity: "looking at the globe",
-          lines: ["Where do I live again?", "*spins the globe*", "So much ocean!", "I want to go there someday!"] },
+          lines: ["I'm studying abroad here next year!", "*spins the globe*", "So much ocean!", "I want to do fieldwork there someday."] },
         { x: -15.2, z: -9.85, yaw: PI, lookUp: 0.1, emoji: "🪟", activity: "gazing out the window",
-          lines: ["The playground looks fun...", "Is it break time yet?", "I can see the sports field!", "*daydreaming*"] },
-        { x: SC.x - 0.3, z: -8.5, yaw: PI, arms: "type", emoji: "🔬", activity: "doing a science experiment",
-          lines: ["Whoa, the volcano bubbles!", "Look at the tiny cells!", "Hypothesis: it'll explode!", "Science is awesome!"] },
+          lines: ["The quad looks nice today...", "Is this lecture over yet?", "I can see the sports field!", "*daydreaming*"] },
+        { x: SC.x - 0.3, z: -8.5, yaw: PI, arms: "type", emoji: "🔬", activity: "running a lab experiment",
+          lines: ["Titrating... very... carefully...", "Look at these cells!", "The data supports my hypothesis!", "My lab report is due tomorrow..."] },
         { x: E1.x + Math.sin(E1.ry) * 1.3, z: E1.z + Math.cos(E1.ry) * 1.3, yaw: E1.ry + PI, arms: "wave", emoji: "🎨", activity: "painting at an easel",
           lines: ["A little more blue...", "It's a masterpiece!", "Oops, paint on my nose!", "Happy little trees~"] },
-        { x: PN.x - 2.75, z: PN.z, yaw: PI / 2, arms: "type", emoji: "🎹", activity: "playing the piano",
-          lines: ["Do re mi fa so~", "♪ La la la ♪", "I practised all week!", "Chopsticks, anyone?"],
+        { x: PN.x - 2.75, z: PN.z, yaw: PI / 2, arms: "type", emoji: "🎹", activity: "practising for a recital",
+          lines: ["Do re mi fa so~", "♪ La la la ♪", "My recital is next week!", "A little Chopin, anyone?"],
           seat: { x: PN.x - 1.4, z: PN.z, y: 0.06 } },
-        { x: BB1.x, z: BB1.z + 1.5, yaw: 0, emoji: "📖", activity: "reading in the reading corner",
-          lines: ["Just one more chapter...", "This book is so good!", "Shh, I'm reading.", "Once upon a time..."],
+        { x: BB1.x, z: BB1.z + 1.5, yaw: 0, emoji: "📖", activity: "studying in the lounge",
+          lines: ["Just one more chapter...", "Cramming for finals...", "Shh, I'm studying.", "This textbook weighs a ton!"],
           seat: { x: BB1.x, z: BB1.z - 0.05, y: -0.12 } },
-        { x: PT.x, z: PT.z - 1.5, yaw: 0, arms: "out", emoji: "🐹", activity: "feeding the class hamster",
-          lines: ["Here you go, Mr. Nibbles!", "He's running so fast!", "Who's a cute hamster?", "Sunflower seeds, yum!"] },
+        { x: PT.x, z: PT.z - 1.5, yaw: 0, arms: "out", emoji: "🐠", activity: "watching the lab's fish",
+          lines: ["Hello, little fish!", "That one's called Professor Bubbles.", "Biology is fascinating.", "So relaxing..."] },
         { x: -W.side + 2.1, z: 2.4, yaw: -PI / 2, emoji: "🎒", activity: "checking the lockers",
-          lines: ["Where's my gym bag?", "Found my lunch!", "Who put a frog in here?!", "My locker is so messy..."] },
+          lines: ["Where did I put my textbook?", "Found my notes!", "Who left a sandwich in here?!", "My locker is so messy..."] },
+        { x: -W.side + 2.1, z: 7.95, yaw: -PI / 2, arms: "out", emoji: "☕", activity: "getting a coffee",
+          lines: ["One latte, please!", "Coffee is my fuel.", "*sips* Ahh, much better.", "Third cup today..."] },
+        { x: ST.x + 1.68, z: ST.z + 1.68, yaw: -3 * PI / 4, arms: "type", emoji: "📚", activity: "at a study group",
+          lines: ["Okay, who's got question 4?", "Let's quiz each other!", "We've got this, team!", "Snack break?"],
+          seat: { x: ST.x + 1.1, z: ST.z + 1.1, y: 0.07 } },
       ],
       lines: [
-        "Did you do the homework?", "I love school!", "What's for lunch today?", "Let's play at break time!",
-        "Shh, the teacher's coming!", "I got a gold star!", "Can I sharpen my pencil?", "School is fun!",
-        "Who wants to be my partner?", "Ding ding! The bell!",
+        "Did you do the reading?", "I love college!", "Coffee before class!", "Want to form a study group?",
+        "Shh, the professor's here!", "I aced the midterm!", "Can I borrow your notes?", "College life is great!",
+        "Who wants to be my lab partner?", "Is this lecture recorded?",
       ],
       entrance: { x: 0, z: 9.4 },
       update(t, camera) {
@@ -1249,7 +1288,7 @@
   }
 
   // ---------------------------------------------------------------------
-  // Outside the school: the schoolyard, playground, sports field and town
+  // Outside the college: the plaza, the campus quad, sports field and town
   // ---------------------------------------------------------------------
   function schoolGrounds(root, anim, atlas) {
     const A = atlas.pic;
@@ -1258,7 +1297,7 @@
     block(root, 0xe6dccb, 0, -0.15, 0, 37.4, 0.3, 23.4, 0.05, { shadow: false });
     bx(root, 0xeae3d6, 0, -0.025, 0, 41, 0.01, 27, { shadow: false });
 
-    // ----- behind the school: tarmac with painted games, playground, field -----
+    // ----- behind the college: a brick plaza, the quad, the sports field -----
     A(root, "yard", 30, 10, { x: -9, y: -0.015, z: -18.5, rx: -PI / 2 });
     // basketball hoop
     const hoop = group(root, -21, 0, -23.2);
@@ -1266,44 +1305,59 @@
     block(hoop, 0xffffff, 0, 3.4, 0.3, 1.6, 1.0, 0.08, 0.03);
     bx(hoop, 0xff6b3a, 0, 3.25, 0.35, 0.6, 0.45, 0.02, { shadow: false });
     put(hoop, G.torus(0.28, 0.03), toon(0xff6b3a), { y: 3.0, z: 0.7, rx: PI / 2 });
-    // playground on soft wood chips
-    disc(root, toon(0xe7c48f), 14, -0.01, -21, 1, { sx: 8, sy: 6.5 });
+    // the campus quad: a lawn crossed by paths, with a fountain, the founder's
+    // statue, benches, picnic tables and lamp posts with banners
     const PG = { x: 14, z: -21 };
-    // slide
-    const sl = group(root, PG.x - 3.5, 0, PG.z + 0.5);
-    for (const sx of [-0.55, 0.55]) for (const sz of [-0.55, 0.55]) cylinder(sl, 0xff6b6b, sx, 1.6, sz, 0.08, 3.2);
-    block(sl, 0x4fb7ff, 0, 2.2, 0, 1.3, 0.12, 1.3, 0.04);
-    put(sl, G.cone(4), toon(0xffd23f), { y: 3.6, s: 1.1, sy: 0.8, ry: PI / 4 });
-    for (let i = 0; i < 6; i++) bx(sl, 0x4fb7ff, 0, 0.35 + i * 0.35, -0.95, 0.8, 0.06, 0.08);
-    for (const sx of [-0.42, 0.42]) bx(sl, 0x4fb7ff, sx, 1.1, -0.95, 0.07, 2.3, 0.07);
-    block(sl, 0xffd23f, 1.9, 1.2, 0, 3.2, 0.1, 0.8, 0.04, { rz: -0.6 });
-    for (const sz of [-0.42, 0.42]) block(sl, 0xffb84d, 1.9, 1.35, sz, 3.2, 0.25, 0.06, 0.03, { rz: -0.6 });
-    // swings (they swing!)
-    const sw = group(root, PG.x + 3.0, 0, PG.z - 1.5);
-    for (const sx of [-1.8, 1.8]) for (const sz of [-0.8, 0.8]) block(sw, 0x4fb7ff, sx, 1.65, sz * 0.5, 0.12, 3.5, 0.12, 0.04, { rx: -sz * 0.25 });
-    cylinder(sw, 0x4fb7ff, 0, 3.3, 0, 0.08, 3.8, { rz: PI / 2 });
-    [-0.85, 0.85].forEach((sx, i) => {
-      const seat = movingThing(sw, sx, 3.3, 0, (g) => {
-        for (const dx of [-0.25, 0.25]) cylinder(g, 0x9aa3b0, dx, -1.3, 0, 0.015, 2.6, { seg: 4 });
-        block(g, [0xff6b6b, 0xffd23f][i], 0, -2.6, 0, 0.65, 0.08, 0.32, 0.03);
-      });
-      anim.push((t) => { seat.rotation.x = Math.sin(t * 1.9 + i * 1.7) * 0.45; });
-    });
-    // climbing dome
-    const dome = group(root, PG.x - 0.5, 0, PG.z - 4.0);
-    for (let i = 0; i < 4; i++) put(dome, G.torus(1.6, 0.05), toon([0xff6b6b, 0xffd23f, 0x6fd36a, 0x4fb7ff][i]), { ry: (i / 4) * PI });
-    for (const y of [0.6, 1.2]) put(dome, G.torus(Math.sqrt(1.6 * 1.6 - y * y), 0.05), toon(0xa58cff), { y, rx: PI / 2 });
-    // seesaw (goes up and down)
-    cylinder(root, 0x9aa3b0, PG.x + 4.2, 0.3, PG.z + 2.8, 0.15, 0.6);
-    const seesaw = movingThing(root, PG.x + 4.2, 0.6, PG.z + 2.8, (g) => {
-      block(g, 0x6fd36a, 0, 0, 0, 3.4, 0.1, 0.4, 0.04);
-      for (const sx of [-1.5, 1.5]) cylinder(g, 0xff6b6b, sx, 0.25, 0, 0.04, 0.45);
-    });
-    anim.push((t) => { seesaw.rotation.z = Math.sin(t * 1.2) * 0.22; });
-    // sandbox
-    block(root, 0xc98b4a, PG.x + 4.5, 0.15, PG.z - 4.0, 2.8, 0.3, 2.4, 0.06);
-    bx(root, 0xf2dc9c, PG.x + 4.5, 0.27, PG.z - 4.0, 2.5, 0.06, 2.1);
-    put(root, G.taper(0.15, 0.2), toon(0xff6b6b), { x: PG.x + 4.0, y: 0.4, z: PG.z - 4.2, sy: 0.25 });
+    disc(root, toon(0x86d36a), PG.x, -0.012, PG.z, 1, { sx: 9, sy: 7 });
+    bx(root, 0xe9dcc4, PG.x, -0.006, PG.z, 18, 0.01, 1.6, { shadow: false });
+    bx(root, 0xe9dcc4, PG.x, -0.006, PG.z, 1.6, 0.01, 14, { shadow: false });
+    // the fountain
+    const fnt = group(root, PG.x, 0, PG.z);
+    cylinder(fnt, 0xdfe4ea, 0, 0.3, 0, 2.3, 0.6);
+    cylinder(fnt, 0x5fb8e8, 0, 0.56, 0, 2.05, 0.06);
+    cylinder(fnt, 0xdfe4ea, 0, 1.1, 0, 0.25, 1.2);
+    cylinder(fnt, 0xdfe4ea, 0, 1.7, 0, 0.9, 0.18);
+    cylinder(fnt, 0x5fb8e8, 0, 1.8, 0, 0.78, 0.04);
+    const spray = dynamic(ball(root, toon(0xbfe8ff, { transparent: true, opacity: 0.7 }), PG.x, 2.1, PG.z, 0.25));
+    anim.push((t) => { const k = 1 + Math.sin(t * 6) * 0.12; spray.scale.set(0.25 * k, 0.45 / k, 0.25 * k); });
+    // the founder's statue (in a graduation cap, naturally)
+    const stt = group(root, PG.x - 5.5, 0, PG.z + 0.2, PI / 2);
+    block(stt, 0xcfc8bb, 0, 0.7, 0, 1.4, 1.4, 1.4, 0.05);
+    const bronze = 0xb08a4a;
+    ball(stt, bronze, 0, 2.05, 0, 0.42, { sy: 1.3, sx: 0.85 });
+    ball(stt, bronze, 0, 2.85, 0, 0.42);
+    block(stt, 0x2a2f38, 0, 3.24, 0, 0.8, 0.06, 0.8, 0.01, { ry: PI / 4 });
+    cylinder(stt, 0x2a2f38, 0, 3.15, 0, 0.24, 0.14);
+    cylinder(stt, 0xe0b65a, 0.3, 3.05, 0.0, 0.015, 0.35, { seg: 4 });
+    block(stt, bronze, 0.35, 2.1, 0.25, 0.3, 0.4, 0.1, 0.03, { rx: -0.3 }); // holding a book
+    // benches and picnic tables around the fountain
+    parkBench(root, PG.x, PG.z + 4.4, PI);
+    parkBench(root, PG.x + 4.5, PG.z - 3.2, -PI / 2);
+    const picnic = (x, z, ry) => {
+      const pt = group(root, x, 0, z, ry);
+      block(pt, 0xa8774a, 0, 0.95, 0, 2.2, 0.1, 0.9, 0.03);
+      for (const sz of [-0.8, 0.8]) block(pt, 0xa8774a, 0, 0.55, sz, 2.2, 0.08, 0.35, 0.03);
+      for (const sx of [-0.8, 0.8]) bx(pt, 0x7a4e2c, sx, 0.45, 0, 0.1, 0.9, 1.9, { rx: 0 });
+    };
+    picnic(PG.x + 5.5, PG.z + 3.2, 0.2);
+    picnic(PG.x - 3.5, PG.z - 4.6, -0.15);
+    for (const [lx, lz, b] of [[PG.x - 2, PG.z + 3, "bannerA"], [PG.x + 2, PG.z - 3, "bannerB"]]) {
+      lampPost(root, lx, lz);
+      A(root, b, 0.5, 1.33, { x: lx + 0.32, y: 2.6, z: lz, ry: PI / 2 });
+      A(root, b, 0.5, 1.33, { x: lx + 0.33, y: 2.6, z: lz, ry: -PI / 2 });
+    }
+    // the clock tower on the far side of the campus
+    const tw = group(root, 27, 0, -40, -0.4);
+    block(tw, 0xb8664f, 0, 6, 0, 3.4, 12, 3.4, 0.05);
+    block(tw, 0xe9dcc4, 0, 12.6, 0, 3.8, 1.4, 3.8, 0.05);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * TAU;
+      disc(tw, toon(0xffffff), Math.sin(a) * 1.92, 12.6, Math.cos(a) * 1.92, 0.55, { rx: 0, ry: a });
+      bx(tw, 0x2a2f38, Math.sin(a) * 1.95, 12.75, Math.cos(a) * 1.95, 0.06, 0.4, 0.02, { ry: a });
+      bx(tw, 0x2a2f38, Math.sin(a) * 1.95 + Math.cos(a) * 0.12, 12.6, Math.cos(a) * 1.95 - Math.sin(a) * 0.12, 0.3, 0.05, 0.02, { ry: a });
+    }
+    put(tw, G.cone(4), toon(0x2f4f5f), { y: 15.0, sx: 3.0, sy: 3.4, sz: 3.0, ry: PI / 4 });
+    for (let i = 0; i < 4; i++) bx(tw, 0xe9dcc4, 0, 2.5 + i * 2.6, 1.72, 0.7, 1.2, 0.04);
 
     // sports field with a running track
     const F = { x: -6, z: -37 };
@@ -1332,7 +1386,7 @@
     }
     ball(root, 0xffffff, F.x + 2, 0.25, F.z + 1, 0.25);
 
-    // ----- in front of the school -----
+    // ----- in front of the college -----
     bx(root, 0xf0dcb4, 0, -0.012, 17.5, 3.4, 0.01, 13, { shadow: false });   // path to the gate
     // flower beds along the front of the building
     const flowers = [];
@@ -1362,12 +1416,12 @@
       flagGeo.computeVertexNormals();
     });
     void flag;
-    // the school sign
+    // the college sign (on a brick base)
     const sign = group(root, -7, 0, 15.6, 0.15);
-    block(sign, 0xc9a07a, 0, 0.4, 0, 3.6, 0.8, 0.6, 0.08);
-    block(sign, 0xffffff, 0, 1.55, 0, 3.4, 1.15, 0.14, 0.08);
-    A(sign, "schoolSign", 3.2, 0.96, { y: 1.55, z: 0.08 });
-    A(sign, "schoolSign", 3.2, 0.96, { y: 1.55, z: -0.08, ry: PI });
+    block(sign, 0xb8664f, 0, 0.4, 0, 3.6, 0.8, 0.6, 0.08);
+    block(sign, 0xe9dcc4, 0, 1.55, 0, 3.4, 1.15, 0.14, 0.08);
+    A(sign, "collegeSign", 3.2, 0.96, { y: 1.55, z: 0.08 });
+    A(sign, "collegeSign", 3.2, 0.96, { y: 1.55, z: -0.08, ry: PI });
     // bike rack with bikes (one baked shape for all the bikes)
     const bikeGeo = bakeGeo((b) => {
       for (const sz of [-0.55, 0.55]) put(b, G.torus(0.32, 0.04), toon(0x333333), { y: 0.36, z: sz, ry: PI / 2 });
@@ -1415,11 +1469,11 @@
     put(shed, G.cone(4), toon(0xe2574c), { y: 3.0, sx: 2.6, sy: 1.2, sz: 2.2, ry: PI / 4 });
     bx(shed, 0x9a6a3c, 0, 0.85, 1.31, 1.0, 1.7, 0.06);
 
-    // ----- the right side: parking with a yellow school bus -----
+    // ----- the right side: parking with the campus shuttle -----
     bx(root, 0x9ea3b2, 27.5, -0.02, 2, 12, 0.01, 22, { shadow: false });
     const bus = group(root, 27.5, 0, 1.5);
-    block(bus, 0xffc93c, 0, 1.75, 0, 2.6, 2.4, 9.0, 0.3);
-    block(bus, 0xffc93c, 0, 1.2, 5.0, 2.5, 1.4, 1.4, 0.3);
+    block(bus, 0x3f6fb8, 0, 1.75, 0, 2.6, 2.4, 9.0, 0.3);
+    block(bus, 0x3f6fb8, 0, 1.2, 5.0, 2.5, 1.4, 1.4, 0.3);
     bx(bus, 0x9fd3f0, 0, 2.35, 0, 2.64, 0.8, 8.2);
     bx(bus, 0x9fd3f0, 0, 2.35, 4.51, 2.2, 0.8, 0.04);
     for (const y of [1.3, 1.6]) bx(bus, 0x333333, 0, y, 0, 2.64, 0.08, 8.6);
@@ -1428,15 +1482,15 @@
     ball(bus, glow(0xfff1b0, 0.8), 0.8, 1.2, 5.72, 0.15);
     A(bus, "bus", 3.4, 0.6, { x: -1.32, y: 2.9, z: 0, ry: -PI / 2 });
     A(bus, "bus", 3.4, 0.6, { x: 1.32, y: 2.9, z: 0, ry: PI / 2 });
-    put(bus, G.cyl(8), toon(0xe23b3b), { x: -1.45, y: 1.9, z: 3.2, s: 0.35, sy: 0.04, rz: PI / 2 });
     // a couple of parked cars
     [[0xff6b6b, 24, -6], [0x6fd36a, 31, -6], [0xffffff, 31, 9]].forEach(([c, x, z]) => {
       put(root, carGeo, new THREE.MeshToonMaterial({ color: c, gradientMap, vertexColors: true }), { x, z, s: 1.1, shadow: true });
     });
 
-    // ----- trees around the school (kept away from the walls so they don't block the view) -----
-    const trees = [[-23, -15, 1.1], [-31, -26, 1.2], [22, -31, 1.1], [27, -17, 1.0], [-22, 18, 1.0], [21, 19, 1.1],
-      [-33, 12, 1.2], [34, -8, 1.0], [6, -30, 0.9], [-30, -42, 1.2], [18, -44, 1.1]];
+    // ----- trees around the college (kept away from the walls so they don't block the view) -----
+    // (all at least 34 away, beyond where the camera can zoom out to: see cameraMaxDistance)
+    const trees = [[-30, -20, 1.1], [-31, -26, 1.2], [22, -31, 1.1], [31, -20, 1.0], [-27, 23, 1.0], [26, 24, 1.1],
+      [-35, 12, 1.2], [35, -8, 1.0], [17, -33, 0.9], [-30, -42, 1.2], [18, -44, 1.1]];
     trees.forEach(([x, z, s], i) => roundTree(root, x, z, s, i % 4 === 2 ? [0xff9ec7, 0xffc3dc] : [0x5cc84a, 0x7fdc5c], i % 5 === 1 ? 0xff4b3a : null));
     for (const [x, z] of [[-20, 13], [19.5, 14], [-25, -12], [24, -24]]) bush(root, x, z, 1, 0x4fbf47, 0xff6fa5);
 
@@ -1471,7 +1525,7 @@
     });
     const keepOut = (x, z) => (Math.abs(Math.hypot(x, z) - ROAD) < 6) ||
       (x > -30 && x < 40 && z > -50 && z < 28) || (x > -28 && x < 16 && z > -52);
-    farTown(root, { seed: 21, houses: [55, 66, 115], trees: [170, 30, 125], hills: [24, 175], keepOut });
+    farTown(root, { seed: 21, houses: [55, 66, 115], trees: [170, 36, 125], hills: [24, 175], keepOut });
     const blocks = [];
     const br = seeded(33);
     for (let i = 0; i < 26; i++) {
@@ -2084,11 +2138,13 @@
     }
 
     // ---------- scenery all around: park trees, hills, the city and a ferris wheel ----------
-    const near = [[-20, -14, 1.2], [-24, -2, 1.0], [-21, 10, 1.1], [21, -15, 1.1], [24, -3, 1.0], [22, 11, 1.2], [-8, -17, 1.0], [7, -18, 1.1], [-30, -20, 1.3], [30, 18, 1.1], [-15, 20, 1.0], [14, 21, 1.0]];
+    // (pushed out to at least 31 away, beyond where the camera can zoom out to: see cameraMaxDistance)
+    const near = [[-20, -14, 1.2], [-24, -2, 1.0], [-21, 10, 1.1], [21, -15, 1.1], [24, -3, 1.0], [22, 11, 1.2], [-8, -17, 1.0], [7, -18, 1.1], [-30, -20, 1.3], [30, 18, 1.1], [-15, 20, 1.0], [14, 21, 1.0]]
+      .map(([x, z, s]) => { const d = Math.hypot(x, z), k = Math.max(1, 31 / d); return [x * k, z * k, s]; });
     near.forEach(([x, z, s], i) => roundTree(root, x, z, s, i % 4 === 1 ? [0xff9ec7, 0xffc3dc] : [0x5fb84a, 0x86d65e]));
     for (const [x, z] of [[-18.5, -9], [18.6, 6], [-19, 4], [19.5, -9.5]]) bush(root, x, z, 1, 0x4fbf47, 0xff6fa5);
     farTown(root, {
-      seed: 5, trees: [200, 28, 90], hills: [26, 160], dim: 0.95,
+      seed: 5, trees: [200, 33, 90], hills: [26, 160], dim: 0.95,
       treeColors: [0x5fb84a, 0x4fa843, 0x77c95a, 0xff9ec7, 0xffb84d],
       keepOut: (x, z) => Math.abs(x) < 26 && z > -24 && z < 26,
     });
@@ -2152,6 +2208,7 @@
       background: 0xffb88a,
       fog: [0xffc8a0, 95, 320],
       cameraTilt: 0.44,
+      cameraMaxDistance: 27, // (stays inside the ring of park trees)
       cameraTargetY: 1.6,
       bounds: { minX: -17, maxX: 17, minZ: -10.4, maxZ: 10 },
       water: [],
@@ -2218,6 +2275,6 @@
     };
   }
 
-  root.World3D.addPlace({ id: "school", name: "School", icon: "🏫" }, buildSchool);
+  root.World3D.addPlace({ id: "school", name: "College", icon: "🎓" }, buildSchool);
   root.World3D.addPlace({ id: "stage", name: "Concert Stage", icon: "🎤" }, buildStage);
 })(typeof self !== "undefined" ? self : this);

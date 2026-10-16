@@ -95,5 +95,38 @@ assert(prog.weatherText().length > 0);
 const pages = prog.stickerPages();
 assert(pages.length >= 6 && pages.every((p) => p.stickers.length > 0));
 assert(Object.keys(prog.state.stickers).length > 0, "some stickers are earned by now");
+// furniture wishes only ask for things the Mii can actually get: never for a slot
+// where it already owns everything that's for sale
+{
+  const sam = records.get("m3");
+  sam.wish = null;
+  const all = H.ITEMS.filter((it) => !it.starter).map((it) => it.id);
+  sam.home.owned = Array.from(new Set(sam.home.owned.concat(all)));
+  for (const s of H.SLOTS) assert.strictEqual(prog.newFor(sam, s.id).length, 0, "nothing new left for " + s.id);
+  for (let i = 0; i < 400; i++) {
+    const w = prog.makeWish(sam);
+    assert(!w || (w.type !== "furniture" && w.type !== "style"), "impossible furniture wish: " + (w && w.text));
+  }
+  // one plant left to buy (and in the shop today): furniture wishes are only for plants
+  const plant = prog.shopItems("plant").find((it) => !it.starter);
+  assert(plant, "some plant is for sale today");
+  sam.home.owned = sam.home.owned.filter((id) => id !== plant.id);
+  let furn = 0;
+  for (let i = 0; i < 600; i++) {
+    const w = prog.makeWish(sam);
+    if (w && w.type === "furniture") { furn++; assert.strictEqual(w.slot, "plant", "only the plant slot has something new"); }
+    assert(!w || w.type !== "style", "walls and floor are all owned");
+  }
+  assert(furn > 0, "a furniture wish can still happen when there's something new");
+  // ...and the wish goes away by itself if the Mii gets the last one some other way
+  sam.wish = { type: "furniture", slot: "plant", icon: "🪴", text: "I want a new plant!", left: 480 };
+  sam.home.owned.push(plant.id);
+  prog.tick(0.1);
+  assert(!sam.wish || sam.wish.type !== "furniture", "an impossible furniture wish is dropped");
+  // a Mii that owns only starter things can wish for anything that's for sale
+  const fresh = { id: "m9", name: "Kai", place: "park", personality: { energy: 50, social: 50, chatty: 50, humor: 50, kindness: 50 } };
+  H.ensureHome(fresh);
+  assert(H.SLOTS.every((s) => prog.newFor(fresh, s.id).every((it) => !fresh.home.owned.includes(it.id))));
+}
 assert(saved, "progress is saved");
 console.log("All progress tests passed. Town level " + prog.state.level + ", " + Object.keys(prog.state.stickers).length + " stickers, " + wishing.length + " wishes after 400 s.");

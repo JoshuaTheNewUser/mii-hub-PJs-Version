@@ -105,15 +105,31 @@
   }
 
   // ---------- scene buttons ----------
+  // (a drop-down so the places don't take up the whole top bar)
   const tabs = $("sceneTabs");
+  const placeBtn = document.createElement("button");
+  placeBtn.className = "place-pick";
+  placeBtn.setAttribute("aria-haspopup", "true");
+  placeBtn.setAttribute("aria-expanded", "false");
+  const placeMenu = document.createElement("div");
+  placeMenu.className = "place-menu";
+  placeMenu.hidden = true;
   for (const scene of window.World3D.list) {
     const b = document.createElement("button");
-    b.className = "scene-tab";
-    b.innerHTML = scene.icon + " " + scene.name + ' <span class="tab-count"></span>';
+    b.className = "place-item";
+    b.innerHTML = '<span class="pi-icon">' + scene.icon + '</span><span class="pi-name">' + scene.name + '</span><span class="tab-count"></span>';
     b.dataset.scene = scene.id;
-    b.addEventListener("click", () => goToScene(scene.id));
-    tabs.appendChild(b);
+    b.addEventListener("click", () => { showPlaceMenu(false); goToScene(scene.id); });
+    placeMenu.appendChild(b);
   }
+  tabs.append(placeBtn, placeMenu);
+  function showPlaceMenu(show) {
+    placeMenu.hidden = !show;
+    placeBtn.setAttribute("aria-expanded", String(show));
+  }
+  placeBtn.addEventListener("click", () => showPlaceMenu(placeMenu.hidden));
+  document.addEventListener("pointerdown", (e) => { if (!placeMenu.hidden && !tabs.contains(e.target)) showPlaceMenu(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !placeMenu.hidden) showPlaceMenu(false); });
   function goToScene(id) {
     hub.setScene(id);
     if (progress) progress.event({ type: "view", place: id });
@@ -133,6 +149,12 @@
       const meta = window.World3D.list.find((l) => l.id === b.dataset.scene);
       if (meta) b.title = meta.name + " (" + n + " Mii" + (n === 1 ? "" : "s") + " here)";
     }
+    // the drop-down button shows where you are
+    const meta = window.World3D.list.find((l) => l.id === current);
+    const n = meta ? counts[meta.id] || 0 : 0;
+    placeBtn.innerHTML = meta
+      ? '<span class="pi-icon">' + meta.icon + '</span><span class="pi-name">' + meta.name + '</span>' + (n ? '<span class="tab-count">' + n + "</span>" : "") + '<span class="caret">▾</span>'
+      : '<span class="pi-icon">🏠</span><span class="pi-name">Visiting a home</span><span class="caret">▾</span>';
   }
 
   function saveSettings() {
@@ -411,6 +433,7 @@
     }
     return portraits.get(rec.id).url;
   }
+  if (window.MiiHomes3D) window.MiiHomes3D.portraitFor = portraitFor; // the self-portrait painting in a Mii's home
 
   function sortedRecords() {
     return Array.from(records.values()).sort((a, b) => (a.added || 0) - (b.added || 0));
@@ -445,7 +468,7 @@
       const meta = document.createElement("div");
       meta.className = "meta";
       meta.innerHTML = '<span class="coins" data-coins="' + rec.id + '">🪙 ' + (rec.coins || 0) + "</span> · " +
-        escapeHtml(D.personalityLabel(rec.personality)) + '<div class="where" data-where="' + rec.id + '">' + escapeHtml(town.whereText(rec)) + "</div>";
+        escapeHtml(D.personalityLabel(rec.personality)) + '<div class="where" data-where="' + rec.id + '">' + escapeHtml(whereNow(rec)) + "</div>";
       if (w && !w.inst.rig.canAnimate) {
         // e.g. a "head only" export: it can't walk properly
         const warn = document.createElement("div");
@@ -569,11 +592,21 @@
     renderFeed();
     updateTabs();
   }
+  // where a Mii is, for the side panel (or who they're on the phone with)
+  function whereNow(rec) {
+    const call = hub.calls && hub.calls.get(rec.id);
+    if (call) {
+      const other = [call.a, call.b, call.caller, call.callee].map((x) => (x && x.id) || x).find((id) => typeof id === "string" && id !== rec.id);
+      const o = other && records.get(other);
+      return "📱 On the phone" + (o ? " with " + nameOf(o) : "");
+    }
+    return town.whereText(rec);
+  }
   // Every second: who's where (cheap updates, no rebuilding the lists).
   function refreshLight() {
     for (const el of document.querySelectorAll("[data-where]")) {
       const rec = records.get(el.dataset.where);
-      if (rec) el.textContent = town.whereText(rec);
+      if (rec) el.textContent = whereNow(rec);
     }
     updateResidents();
     updateTabs();
@@ -1079,12 +1112,18 @@
         return true;
       }
       if (wa || wb) return false; // one of them is on screen: wait until they meet properly
-      hub.offscreenHangout(A, B, A.place === "home" ? "apartments" : A.place);
-      return true;
+      return hub.offscreenHangout(A, B, A.place === "home" ? "apartments" : A.place) !== false; // false: one is on the phone
     },
   });
   for (const r of records.values()) progress.ensure(r);
   hub.relation = (a, b) => progress.context(a, b);
+  // Miis on the phone stay where they are until they hang up; one that sets off anyway (or is gone) ends the call
+  hub.callHold = (rec) => {
+    if (!records.has(rec.id) || town.isTravelling(rec)) return false;
+    const r = town.info(rec);
+    r.stay = Math.max(r.stay, 4);
+    return true;
+  };
   hub.onHangout = (e) => progress.event(Object.assign({ type: "hangout" }, e));
   hub.onPerform = (w, kind) => progress.event({ type: "perform", id: w.id, kind });
   hub.onPoke = (w) => progress.event({ type: "poke", id: w.id });
@@ -1104,7 +1143,7 @@
         if (hub.isBusy(wa) || hub.isBusy(wb) || wa.appear < 1 || wb.appear < 1) continue;
         hub.startInteraction(wa, wb);
       } else if (!wa && !wb) {
-        hub.offscreenHangout(A, B, A.place === "home" ? "apartments" : A.place);
+        if (hub.offscreenHangout(A, B, A.place === "home" ? "apartments" : A.place) === false) continue; // on the phone
       } else continue;
       meetUps.splice(i, 1);
     }
@@ -1139,15 +1178,18 @@
   // ---------- town level, weather and buttons in the top bar ----------
   const townBar = document.createElement("div");
   townBar.className = "town-bar";
-  townBar.innerHTML = '<div class="town-level" title="Town level: grant wishes to make the town grow"><b>🏙️ Lv <span id="townLv"></span></b><div class="xp"><div class="xp-fill" id="townXp"></div></div></div>' +
+  townBar.innerHTML = '<div class="town-level" role="button" tabindex="0" title="Town level: click to see what each level gives"><b>🏙️ Lv <span id="townLv"></span></b><div class="xp"><div class="xp-fill" id="townXp"></div></div></div>' +
     '<div class="weather" id="weatherText"></div>' +
     '<button class="tb-btn" id="dailyBtn">📅 Daily <span id="dailyCount"></span></button>' +
     '<button class="tb-btn" id="bookBtn">📖 Book</button>' +
-    '<button class="tb-btn pb" id="paintballBtn" title="Paintball: a first-person 1v1 against one of your Miis">🎯 Paintball</button>';
+    '<button class="tb-btn pb" id="paintballBtn" title="Paintball: a first-person 1v1 against one of your Miis">🎯 Paintball</button>' +
+    '<button class="tb-btn chess" id="chessBtn" title="Chess: play one of your Miis, or someone online">♟️ Chess</button>';
   document.querySelector(".topbar").appendChild(townBar);
   $("dailyBtn").addEventListener("click", openDaily);
+  townBar.querySelector(".town-level").addEventListener("click", openTownLevels);
   $("bookBtn").addEventListener("click", openBook);
   $("paintballBtn").addEventListener("click", () => openPaintball());
+  $("chessBtn").addEventListener("click", () => openChessLobby());
 
   function renderTownBar() {
     const st = progress.state;
@@ -1295,6 +1337,15 @@
     const g = window.MiniGames.GAMES[gameId];
     closeMiiMenu();
     if (gameId === "paintball") { openPaintball({ opponent: rec }); return g; }
+    if (gameId === "chess") {
+      window.ChessUI.playMii({
+        walker: w, hub, stage: $("stage"),
+        portrait: portraitFor(rec), stats: gameStats(rec, "chess"),
+        onSave: () => saveSoon(rec),
+        onFinish: (result) => progress.event({ type: "game", id: rec.id, game: "chess", result }),
+      });
+      return g;
+    }
     window.MiiGamesUI.open({
       walker: w, game: gameId, hub, stage: $("stage"),
       portrait: portraitFor(rec), stats: gameStats(rec, gameId),
@@ -1349,6 +1400,23 @@
       },
       onClose: () => { hub.paused = false; },
       opponent: o.opponent, player: o.player,
+    });
+  }
+
+  // ---------- Chess lobby (VS a Mii, or online) ----------
+  // your colour online: a random Mii's shirt, or a Mii file's favourite colour
+  function favColorOf(rec) {
+    if (rec.look && rec.look.shirt) return rec.look.shirt;
+    const fav = (infos.get(rec.id) || {}).favoriteColor;
+    return (M.FAVORITE_COLORS[fav] || M.FAVORITE_COLORS[5]).hex;
+  }
+  function openChessLobby() {
+    closeMiiMenu();
+    window.ChessUI.openLobby({
+      records: sortedRecords(), stage: $("stage"),
+      portraitFor, nameOf, colorFor: favColorOf,
+      statsFor: (r) => gameStats(r, "chess"),
+      onPlay: (r) => withWalker(r, (ww) => openGame(ww, "chess")),
     });
   }
 
@@ -1410,6 +1478,72 @@
     back.appendChild(card);
     back.addEventListener("pointerdown", (e) => { if (e.target === back) close(); });
     $("stage").appendChild(back);
+  }
+
+  // ---------- side panels fold up (click a heading), remembered between visits ----------
+  const PANELS_KEY = "mii-hub-panels";
+  let foldedPanels = {};
+  try { foldedPanels = JSON.parse(localStorage.getItem(PANELS_KEY) || "{}") || {}; } catch (e) { foldedPanels = {}; }
+  const panelKey = (panel) => { const h = panel.querySelector("h2"); return h ? (h.firstChild && h.firstChild.textContent || h.textContent).trim().toLowerCase() : ""; };
+  function setupPanels() {
+    for (const panel of document.querySelectorAll(".sidebar .panel")) {
+      const h = panel.querySelector("h2");
+      if (!h || h.dataset.fold) continue;
+      h.dataset.fold = "1";
+      h.classList.add("fold-head");
+      h.setAttribute("role", "button");
+      h.tabIndex = 0;
+      const key = panelKey(panel);
+      const set = (folded) => {
+        panel.classList.toggle("folded", folded);
+        h.setAttribute("aria-expanded", String(!folded));
+        foldedPanels[key] = folded;
+        try { localStorage.setItem(PANELS_KEY, JSON.stringify(foldedPanels)); } catch (e) { /* private window */ }
+      };
+      panel.classList.toggle("folded", !!foldedPanels[key]);
+      h.setAttribute("aria-expanded", String(!foldedPanels[key]));
+      h.addEventListener("click", (e) => { if (e.target.closest("button, a, input")) return; set(!panel.classList.contains("folded")); });
+      h.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); set(!panel.classList.contains("folded")); } });
+    }
+  }
+  setupPanels();
+  new MutationObserver(setupPanels).observe(document.querySelector(".sidebar"), { childList: true });
+  townBar.querySelector(".town-level").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTownLevels(); } });
+
+  // ---------- town levels: what you've got so far, and what's next ----------
+  function openTownLevels() {
+    const st = progress.state;
+    const U = window.MiiProgress.UNLOCKS;
+    const last = Math.max(st.level + 2, U.reduce((m, u) => Math.max(m, u.level), 2));
+    const back = document.createElement("div");
+    back.className = "choice-modal";
+    const card = document.createElement("div");
+    card.className = "choice-card big town-levels";
+    const close = () => back.remove();
+    const need = progress.xpNeeded(st.level);
+    card.innerHTML = "<h3>🏙️ Town level " + st.level + "</h3><p>Grant your Miis' wishes (and finish daily goals) to earn town XP. Every new level gives each Mii 🪙 10 coins, and some unlock new things.</p>" +
+      '<div class="tl-now"><div class="xp"><div class="xp-fill" style="width:' + Math.min(100, (st.xp / need) * 100) + '%"></div></div><small>' + st.xp + " / " + need + " XP to level " + (st.level + 1) + "</small></div>";
+    const list = document.createElement("div");
+    list.className = "tl-list";
+    for (let lv = 2; lv <= last; lv++) {
+      const got = lv <= st.level, next = lv === st.level + 1;
+      const row = document.createElement("div");
+      row.className = "tl-row" + (got ? " got" : "") + (next ? " next" : "");
+      const items = U.filter((u) => u.level === lv).map((u) => "<li>" + u.icon + " " + escapeHtml(u.text) + "</li>").join("") + "<li>🪙 10 coins for every Mii</li>";
+      row.innerHTML = '<div class="tl-badge">' + (got ? "✓" : next ? "▶" : "🔒") + '</div><div class="tl-body"><b>Level ' + lv + (next ? " · next" : got ? "" : "") + "</b><ul>" + items + "</ul></div>";
+      list.appendChild(row);
+    }
+    card.appendChild(list);
+    const ok = document.createElement("button");
+    ok.className = "choice-btn plain";
+    ok.textContent = "Close";
+    ok.addEventListener("click", close);
+    card.appendChild(ok);
+    back.appendChild(card);
+    back.addEventListener("pointerdown", (e) => { if (e.target === back) close(); });
+    $("stage").appendChild(back);
+    const nx = list.querySelector(".next");
+    if (nx) nx.scrollIntoView({ block: "center" });
   }
 
   // ---------- sticker book ----------

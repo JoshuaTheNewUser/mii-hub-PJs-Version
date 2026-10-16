@@ -391,7 +391,7 @@
       return [
         { who: "A", say: pick(["*dials*", "*ring ring*"]), dur: 1.4 },
         { who: "B", say: points === 0 ? "Hello? Who is this?" : pick(["Hello?", "Oh hey, {A}!", "{A}! What's up?"]), dur: 1.8 },
-        { who: "A", say: points === 0 ? "Hi! It's {A}! I can see you from over here!" : pick(["Hey {B}! It's me!", "Hiya! Got a minute?"]), dur: 2.2 },
+        { who: "A", say: points === 0 ? "Hi! It's {A}! A friend gave me your number!" : pick(["Hey {B}! It's me!", "Hiya! Got a minute?"]), dur: 2.2 },
       ];
     }
     return [

@@ -29,7 +29,7 @@ On first launch you'll see a few randomly generated Miis. Add your own with **Ch
 
 ### How the installers are made
 
-Every time code is pushed, GitHub Actions (`.github/workflows/desktop.yml`) builds the Windows, Mac and Linux versions on GitHub's computers and publishes them as a new release.
+Every time code is pushed, GitHub Actions (`.github/workflows/desktop.yml`) builds the Windows, Mac and Linux versions on GitHub's computers and publishes them as a new release. The version number comes from `"version"` in package.json: bigger updates change the middle number (1.1.0 → 1.2.0) and small ones the last (1.1.0 → 1.1.1). A version can only be released once.
 
 To run or build the desktop app yourself, install [Node.js](https://nodejs.org), then:
 
@@ -57,7 +57,7 @@ Your Miis always look exactly like they do in Mii Creator. To change how a Mii l
 
 ## What you can do
 
-- **Look at a place:** use the **🌳 Park**, **🏢 Office**, **🚀 Outer Space**, **🏘️ Apartments**, **🏖️ Beach**, **☕ Café Street**, **🏫 School** and **🎤 Concert Stage** buttons at the top. The number on each button is how many Miis are there right now. Switching places only moves *you*: the Miis stay where they are (see *Miis live their own lives* below).
+- **Look at a place:** pick one from the places drop-down at the top left: **🌳 Park**, **🏢 Office**, **🚀 Outer Space**, **🏘️ Courtyard**, **🏖️ Beach**, **☕ Café Street**, **🎓 College** or **🎤 Concert Stage**. The number next to each is how many Miis are there right now. Switching places only moves *you*: the Miis stay where they are (see *Miis live their own lives* below).
 - **Full screen:** click **⛶** in the corner of the scene (or press **F**) to make the scene fill your screen. Small place buttons stay in the corner. Press **F** or **Esc**, or click **✕**, to go back. In the desktop app, **F11** makes the whole window full screen.
 - **Move the camera:** drag the background to spin all the way around, and scroll (or pinch) to zoom. Every place has scenery all the way round. In the office and in homes, the wall between you and the room hides itself, like a dollhouse.
 - **Click a Mii** (left button) to make it jump and say hi. **Drag a Mii** to pick it up and carry it. Let go and it drops back down.
@@ -77,11 +77,11 @@ Your Miis, their homes, coins, friendships and the place you picked are saved, s
 
 ## Homes and coins
 
-Every Mii has its own apartment in the **🏘️ Apartments**. You can see its name by its door, and its windows light up when it's home. The building starts with 3 floors of 4 apartments. When every apartment is taken, it gets a new floor (up to 10 floors, so 40 homes). A Mii who doesn't have an apartment yet can still be visited from its menu.
+Every Mii has its own apartment in the building by the **🏘️ Courtyard**. You can see its name by its door, and its windows light up when it's home. The building starts with 3 floors of 4 apartments. When every apartment is taken, it gets a new floor (up to 10 floors, so 40 homes). A Mii who doesn't have an apartment yet can still be visited from its menu.
 
-- **🏠 Send home:** the Mii says goodbye and walks home (in the Apartments, it walks to its own front door). Nothing is lost: it keeps its friends, coins and everything else. Use **🚪 Invite out** in the *Residents* list to bring it out to the place you're looking at.
-- **Through the windows:** in the Apartments, the windows of Miis who are home are open, and you can see them inside doing their thing: napping, watching TV, playing games...
-- **🏡 Visit:** go inside a Mii's home (from its menu, the *Residents* list, or by clicking its apartment in the Apartments). It's just the Mii and its home: watch it nap in bed, watch TV, play games or water its plants, and it'll come over to chat with you. Click **← Leave** to go back outside.
+- **🏠 Send home:** the Mii says goodbye and walks home (in the Courtyard, it walks to its own front door). Nothing is lost: it keeps its friends, coins and everything else. Use **🚪 Invite out** in the *Residents* list to bring it out to the place you're looking at.
+- **Through the windows:** in the Courtyard, the windows of Miis who are home are open, and you can see them inside doing their thing: napping, watching TV, playing games...
+- **🏡 Visit:** go inside a Mii's home (from its menu, the *Residents* list, or by clicking its apartment in the Courtyard). It's just the Mii and its home: watch it nap in bed, watch TV, play games or water its plants, and it'll come over to chat with you. Click **← Leave** to go back outside.
 - **🛋️ Decorate:** while you visit, buy furniture with **the Mii's own coins**: beds, seats, tables, a TV or game console, rugs, lamps, plants, wall art, special things (like a fish tank or drum kit), wallpaper and flooring. Things you've bought stay owned, so you can swap back for free. Each Mii likes different things depending on its personality, and it tells you what it thinks.
 - **🍙 Give food:** every Mii has a favourite food and one it can't stand. Try things and see!
 - **📦 Move away:** removes a Mii from your world for good. Everyone else reacts depending on how close they were: best friends are heartbroken, friends are sad, and strangers might not even notice.
@@ -116,7 +116,7 @@ Each Mii decides for itself where to be. It stays somewhere for a few minutes, t
 - **Apartment courtyard:** friendly neighbours hang out in front of the building.
 - **Beach:** fun-loving, energetic Miis (especially on sunny days).
 - **Café Street:** chatty, sociable Miis.
-- **School:** curious, studious Miis.
+- **College:** curious, studious Miis.
 - **Concert Stage:** silly, energetic performers.
 - **Couples** like to be in the same place, and **bad weather** keeps Miis indoors.
 
@@ -157,12 +157,16 @@ Right-click a Mii and pick a game from **Play a game** in its menu:
 | ✊ Rock Paper Scissors | Best of 5 (first to 3) |
 | ⭕ Tic-Tac-Toe | Best of 3 (first to 2) |
 | 🔴 Connect 4 | One game, winner takes all |
+| ♟️ Chess | One game (also from the **♟️ Chess** button at the top) |
 
 Every Mii has a **skill meter** for each game, from *Beginner* to *Master*. **The more you play a game with a Mii, the better it gets**, and it learns a bit more from losing. Skill changes how it plays:
 
 - **Rock Paper Scissors:** beginners pick almost at random and overuse a favourite move. Skilled Miis notice your habits and play whatever beats your next move.
 - **Tic-Tac-Toe:** beginners play anywhere. Better Miis take wins and block yours. A *Master* plays perfectly and can't be beaten (only drawn).
 - **Connect 4:** beginners drop pieces almost anywhere. Better Miis take wins, block yours, and think up to six moves ahead.
+- **Chess:** a new Mii is a total beginner that hangs pieces. It gets better with every finished game (Master after about 20). A Master is knowledgeable with few blunders, but beatable: it's no Stockfish.
+
+**♟️ Chess** at the top opens the chess window: play one of your Miis, or go **🌐 Online** to play other people through the same server as online Paintball. Host a game (optional password, a clock from bullet to classical, and your colour) or join one. The server checks every move and runs the clocks. You can offer a draw, resign, or ask for a rematch.
 
 While you play, the Mii stops what it's doing and faces you. It chats during the game in its own personality, and celebrates or sulks afterwards.
 
@@ -184,7 +188,8 @@ A first-person shooter on **Shipment** (from Call of Duty 4), made to feel like 
 - **Weapons:** a paintball gun shaped like an **AK-47** and a **butterfly knife**.
   - The gun works like CS:GO's AK: 600 shots a minute, a 30-round magazine, a 2.43-second reload. **One headshot splats a Mii.** It takes 3 chest shots or 4 leg shots.
   - Stand still and your first few shots go right where you aim. Running makes you very inaccurate, and holding the trigger follows the AK's spray pattern: up, then left, then right. Counter-strafe (tap the opposite key) to stop quickly before you shoot.
-  - **Loadouts:** before you spawn (and whenever you press **B**) pick **1 · Rifler** (Paint AK + knife) or **2 · Sniper** (Paint AWP + knife). Before the match or round starts you switch right away. Otherwise you get it on your next spawn.
+  - **🦅 Paint Deagle** (key **2**): a sidearm in both classes, like CS:GO's Desert Eagle. One shot per click, 7 shots then a 2.2-second reload, and it loses damage over distance. Up close a headshot splats a Mii and two chest shots do. Wait a moment between shots, standing still, for the first one to be dead-on.
+  - **Loadouts:** before you spawn (and whenever you press **B**) pick **1 · Rifler** (Paint AK + Deagle + knife) or **2 · Sniper** (Paint AWP + Deagle + knife). Before the match or round starts you switch right away. Otherwise you get it on your next spawn.
   - The **AWP** works like CS:GO's: right click zooms in (twice, then out), one shot to the chest or head splats a Mii, 10 shots then a 3.7-second reload, and a bolt pull after every shot (about 1.5 s) that takes you out of the scope. Shooting without scoping ("no-scoping") is very inaccurate. You move slower with it, and even slower scoped in.
   - **Moving shots miss, like CS:** running or jumping with the AK sends your shots almost anywhere in a wide circle. With the AWP scoped in, moving at all makes it inaccurate and blurs the scope; stand still for a clean shot.
   - **Crates & Locker** (in the Paintball lobby): earn 🎨 credits by playing (kills, headshots, round wins, finishing and winning matches; new players start with 200) and open a **Splat Case** for 100. There are 50 skins inspired by CS, from Mil-Spec (blue, 79.92%) through Restricted (purple), Classified (pink) and Covert (red) to Rare Special (gold, 0.26%), which is always a Butterfly Knife. Trade up 10 of the same skin for one from the next tier. Equip skins in the Locker. Other players see your skins online.
@@ -201,14 +206,15 @@ A first-person shooter on **Shipment** (from Call of Duty 4), made to feel like 
 | Shift | walk (quiet) |
 | Ctrl or C | crouch |
 | R | reload |
-| 1 / 3, Q, mouse wheel | gun / knife, switch weapons |
+| 1 / 2 / 3 | gun / Deagle / knife |
+| Q, mouse wheel | switch weapons (Q: back to your last one) |
 | Right click (AWP) | zoom the scope |
 | B | loadout (1 Rifler · 2 Sniper) |
 | F | inspect your weapon |
 | Tab | scoreboard |
 | Esc | pause |
 
-- **Apartments:** a courtyard in front of the apartment building, where every Mii has a home.
+- **Courtyard:** a courtyard in front of the apartment building, where every Mii has a home.
 
 ## About the random Miis
 
@@ -273,6 +279,9 @@ js/paintball/         Paintball (only loaded when you open it):
   pb-models.js          the paint AK and AWP, the butterfly knife, your Mii hands and how skins are drawn
   pb-skins.js           the skin catalog (rarities, odds, trade-ups)
   pb-crates.js          credits, crates, the opening reel and the Locker
+js/chess.js           chess rules and the Mii chess brain
+js/chessUI.js         the chess board and windows
+js/chessOnline.js     online chess (through the Paintball server)
   pb-audio.js           sound effects
   pb-game.js            the lobby, the match, the HUD and the scoreboard
   pb-online.js          online play: Find Lobby, Host Lobby, passwords

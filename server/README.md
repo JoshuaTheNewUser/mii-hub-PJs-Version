@@ -5,6 +5,8 @@ host them (**Host Lobby**). Players never open ports or type addresses: the serv
 into Mii Hub. Only the server itself has to be reachable from the internet, and with **Tailscale
 Funnel** (below) even that needs no router changes.
 
+It also hosts **online chess** games (see `chess-rooms.js`; it uses the chess rules in `../js/chess.js`, so run it from a full copy of the repository).
+
 It's tiny: almost no processor or memory, and about 20–40 KB/s of internet per player in a match.
 
 **Two ways to run it** (pick one):

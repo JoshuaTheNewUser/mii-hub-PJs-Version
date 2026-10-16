@@ -237,6 +237,18 @@
     const placeName = (id) => (T ? T.placeInfo(id).name : id);
     const others = (rec) => Array.from(records.values()).filter((r) => r !== rec);
 
+    // Furniture a Mii could still get for a slot: things in the shop today that it
+    // doesn't own yet (what it owns includes what's placed). A Mii only wishes for a
+    // new thing in a slot when there's actually something new to buy for it.
+    const STYLE_SLOTS = ["wallpaper", "floor"];
+    const FURNITURE_SLOTS = H.SLOTS.map((s) => s.id).filter((id) => !STYLE_SLOTS.includes(id));
+    function newFor(rec, slot) {
+      const owned = (rec.home && rec.home.owned) || [];
+      const placed = (rec.home && rec.home.items) || {};
+      return shopItems(slot).filter((it) => !it.starter && it.price > 0 && !owned.includes(it.id) && placed[slot] !== it.id);
+    }
+    const wishSlots = (rec, ids) => H.SLOTS.filter((s) => ids.includes(s.id) && newFor(rec, s.id).length > 0);
+
     // Each kind of wish: when it can happen, what the Mii says, and what grants it.
     const WISH_TYPES = [
       { type: "hungry", icon: "🍙", w: 1.6, make(rec) {
@@ -250,13 +262,12 @@
       { type: "newFood", icon: "😋", w: 0.7, make(rec) {
         return { text: pick(["I want to try a food I've never had!", "Surprise me with something new to eat!"]) };
       } },
-      { type: "furniture", icon: "🛋️", w: 1.1, make(rec) {
-        const slots = H.SLOTS.filter((s) => s.id !== "wallpaper" && s.id !== "floor");
-        const s = pick(slots);
+      { type: "furniture", icon: "🛋️", w: 1.1, can: (rec) => wishSlots(rec, FURNITURE_SLOTS).length > 0, make(rec) {
+        const s = pick(wishSlots(rec, FURNITURE_SLOTS));
         return { text: pick(["My " + s.name.toLowerCase() + " is so boring... can I get a new one?", "I want a new " + s.name.toLowerCase() + "!", "I've been dreaming of a new " + s.name.toLowerCase() + "."]), slot: s.id, icon: s.icon };
       } },
-      { type: "style", icon: "🎨", w: 0.6, make(rec) {
-        const s = pick(["wallpaper", "floor"]);
+      { type: "style", icon: "🎨", w: 0.6, can: (rec) => wishSlots(rec, STYLE_SLOTS).length > 0, make(rec) {
+        const s = pick(wishSlots(rec, STYLE_SLOTS)).id;
         return { text: s === "wallpaper" ? "My walls need a makeover!" : "I'm tired of my floor...", slot: s, icon: s === "wallpaper" ? "🧱" : "🟧" };
       } },
       { type: "game", icon: "🎮", w: 1.2, make(rec) {
@@ -672,6 +683,14 @@
         ensure(rec);
         const r = info(rec);
         if (rec.wish) {
+          // (a furniture wish that can't come true any more, e.g. it got the last one as a gift, goes away quietly)
+          if ((rec.wish.type === "furniture" || rec.wish.type === "style") && rec.wish.slot && !newFor(rec, rec.wish.slot).length) {
+            rec.wish = null;
+            r.wishIn = rnd(20, 60);
+            opts.saveMii(rec);
+            changed();
+            continue;
+          }
           rec.wish.left -= dt;
           if (rec.wish.left <= 0) {
             emit("event", { type: "wishExpired", rec, wish: rec.wish });
@@ -718,9 +737,9 @@
     rollWeather(false);
 
     return {
-      state: st, on, tick, event, ensure, happyNeeded, addHappy, applyGift, wishOf, wishActions, grant, dismiss,
+      state: st, on, tick, event, ensure, happyNeeded, addHappy, applyGift, makeWish, wishOf, wishActions, grant, dismiss,
       startMakeUp, startConfession, bringTogether, context, partnerOf, claim, rollDaily, weather, weatherText, weatherLine,
-      placeMood, stickerPages, shopFoods, shopItems, deals, priceOf, lockedTier, unlockLevelForTier, tierOf, allFoods,
+      placeMood, stickerPages, shopFoods, shopItems, newFor, deals, priceOf, lockedTier, unlockLevelForTier, tierOf, allFoods,
       xpNeeded, unlocked, forget, pair, MOVES, SONGS, UNLOCKS, FESTIVALS,
     };
   }

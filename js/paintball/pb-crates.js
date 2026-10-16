@@ -23,7 +23,7 @@
   const START_CREDITS = 200;
   // what playing earns you (a case is 100: about one case every match or two)
   const EARN = { kill: 5, headshot: 2, roundWin: 5, matchPlayed: 20, matchWin: 40 };
-  const WEAPONS = ["ak", "awp", "knife"];
+  const WEAPONS = ["ak", "awp", "deagle", "knife"];
   const ICON = { ak: "🔫", awp: "🎯", knife: "🔪" };
   const CREDIT = "🎨";
   const SOUNDS = ["crateTick", "crateOpen", "reveal_blue", "reveal_purple", "reveal_pink", "reveal_red", "reveal_gold", "tradeUp", "uiClick"];
@@ -35,7 +35,7 @@
   // Storage
   // ---------------------------------------------------------------------
   function fresh() {
-    return { v: 1, credits: START_CREDITS, items: {}, equipped: { ak: null, awp: null, knife: null },
+    return { v: 1, credits: START_CREDITS, items: {}, equipped: { ak: null, awp: null, deagle: null, knife: null },
       stats: { opened: 0, tradeUps: 0, earned: 0, spent: 0, best: null, history: [] } };
   }
   function normalize(d) {
@@ -657,10 +657,12 @@
         stage.innerHTML = "";
         const reel = el("div", "pbc-reel");
         const strip = el("div", "pbc-strip");
+        // like CS: a gold (★) card only ever shows up in the reel when it's the one you're getting
+        const filler = () => { let s; do s = P.roll(); while (s.tier === "gold"); return s; };
         const N = 50, WIN = 42 + Math.floor(Math.random() * 3) - 1;
         const cards = [];
         for (let i = 0; i < N; i++) {
-          const c = cardFor(i === WIN ? win : P.roll());
+          const c = cardFor(i === WIN ? win : filler());
           cards.push(c); strip.appendChild(c);
         }
         reel.append(strip, el("div", "pbc-marker"));
@@ -763,7 +765,7 @@
       wrap.appendChild(lo);
 
       const fl = el("div", "pbc-filter");
-      for (const [id, label] of [["all", "All"], ["ak", P.WEAPON_NAMES.ak], ["awp", P.WEAPON_NAMES.awp], ["knife", "★ " + P.WEAPON_NAMES.knife]]) {
+      for (const [id, label] of [["all", "All"], ["ak", P.WEAPON_NAMES.ak], ["awp", P.WEAPON_NAMES.awp], ["deagle", P.WEAPON_NAMES.deagle], ["knife", "★ " + P.WEAPON_NAMES.knife]]) {
         const b = el("button", filter === id ? "on" : null, label);
         b.addEventListener("click", () => { filter = id; render(); });
         fl.appendChild(b);

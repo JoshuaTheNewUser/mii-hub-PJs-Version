@@ -11,7 +11,24 @@
 
   const NOTES = [
     {
-      v: null, date: "2026-10-15", title: "Paintball: crates, skins and CS-style accuracy",
+      v: null, date: "2026-10-16", title: "Chess, the Deagle, and a big Mii Hub update",
+      notes: [
+        "♟️ Chess! Play any Mii from its menu or the new Chess button. Miis start as beginners and get better with every finished game (Master after about 20), but even a Master is beatable.",
+        "🌐 Online chess against other people through the same server as Paintball: host or join a game, with an optional password, a clock (bullet to classical), draw offers, resigning and rematches.",
+        "🦅 Paintball: the Desert Eagle is now a sidearm in both classes (key 2), working like CS:GO's: one shot per click, 7-round mag, headshots splat up close. 18 new Deagle skins in the Splat Case, like Blaze, Printstream and Golden Koi.",
+        "Paintball: both of your Mii's hands now hold the guns in first person.",
+        "Crates: a gold ★ only shows up in the spinning reel when you're actually getting one (like CS).",
+        "The places are now a drop-down menu at the top, and the side panels (Wishes, Add Miis, Friendships...) fold up when you click their titles.",
+        "Click the town level to see what every level has given you, and what's coming next.",
+        "The School is now a College (the Miis are all grown-ups!), and the Apartments are now called the Courtyard.",
+        "Phone calls are real on both ends: both Miis are on the phone for the whole call, wherever you look, and neither can chat in person until it's over.",
+        "Self-portraits now show the Mii who owns them, the Sky blue wallpaper is fixed, and there are 30 new pieces of furniture, wallpapers and floors.",
+        "Miis no longer ask for furniture you can't get them (when they already own everything of that kind).",
+        "The camera can no longer end up behind buildings on Café Street (and a few other places).",
+      ],
+    },
+    {
+      v: "1.0.25", date: "2026-10-15", title: "Paintball: crates, skins and CS-style accuracy",
       notes: [
         "Crates! Earn 🎨 credits by playing (kills, headshots, round wins, finishing and winning matches) and open Splat Cases in the new Crates & Locker screen, with a CS-style spinning reel and sounds.",
         "50 skins inspired by CS: Mil-Spec (blue), Restricted (purple), Classified (pink), Covert (red) and Rare Special (gold) with CS's odds. Gold is always a Butterfly Knife (Fade, Doppler, Marble Fade, Tiger Tooth and more).",

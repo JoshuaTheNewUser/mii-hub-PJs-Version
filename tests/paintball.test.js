@@ -109,6 +109,23 @@ assert(E.damageFor("leg", 20, "awp") < 100, "AWP leg shot doesn't kill");
   assert(aw.maxSpeed() === E.CFG.speedKnife);
 }
 
+// the Deagle: a sidearm in both classes, with its own ammo
+{
+  const ar = new E.Arms("awp");
+  assert(ar.secondary === "deagle" && ar.primary === "awp", "sidearm");
+  ar.weapon = "deagle"; ar.lastGun = "deagle";
+  assert(ar.ammo === 7 && ar.reserve === 35, "Deagle mag 7 / 35");
+  ar.ammo = 3;
+  ar.weapon = "awp"; ar.lastGun = "awp";
+  assert(ar.ammo === 10, "the AWP keeps its own ammo");
+  ar.weapon = "deagle";
+  assert(ar.ammo === 3 && Math.abs(ar.maxSpeed() - 230 * E.U) < 1e-9, "Deagle ammo + speed");
+  assert(E.damageFor("head", 5, "deagle") >= 100, "Deagle headshot splats up close");
+  assert(E.damageFor("chest", 5, "deagle") < 100 && E.damageFor("chest", 5, "deagle") * 2 >= 100, "two to the chest");
+  assert(E.damageFor("chest", 30, "deagle") < E.damageFor("chest", 5, "deagle") * 0.8, "loses damage over distance");
+  assert(E.WEAPONS.deagle.semi && Math.abs(E.WEAPONS.deagle.cycle - 0.225) < 1e-9, "semi-automatic, 0.225 s");
+}
+
 // hit boxes
 const boxes = E.bodyBoxes({ x: 0, y: 0, z: -10 }, E.CFG.eyeStand, 0);
 let hb = E.rayHitboxes({ x: 0, y: 1.6, z: 0 }, { x: 0, y: 0, z: -1 }, boxes, 50);

@@ -237,6 +237,12 @@
   // ------------------------------------------------------------------
   // The hub
   // ------------------------------------------------------------------
+  // Camera limits for places that don't set their own (world.cameraMaxDistance,
+  // world.cameraAzimuth): the Courtyard's apartment block would hide everyone if
+  // the camera swung round behind it, and the houses across the road block the
+  // view when it's zoomed right out.
+  const CAMERA_LIMITS = { apartments: { maxDistance: 30, azimuth: [-1.5, 1.5] } };
+
   class Hub3D {
     constructor(canvas, overlay) {
       this.canvas = canvas;
@@ -267,6 +273,8 @@
       this.onHomeTalk = null;     // what a Mii says to you at home
       this.onApartmentClick = null;
       this.onLeftHome = null;
+      this.calls = new Map();     // id -> the phone call that Mii is on (both ends share one call)
+      this.callHold = null;       // record -> false if the Mii can't stay on the phone (it set off somewhere)
 
       this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
       this.renderer.outputEncoding = THREE.sRGBEncoding;
@@ -329,6 +337,15 @@
       this.controls.target.set(tx, ty, 0);
       this.controls.minDistance = this.world.isHome ? 6 : 8;
       this.controls.maxDistance = Math.max(this.world.isHome ? 28 : 45, dist * 1.4);
+      // a place can keep the camera from zooming out past its scenery (so spinning
+      // round never puts buildings between the camera and the Miis)
+      const lim = CAMERA_LIMITS[this.world.id] || {};
+      const maxD = this.world.cameraMaxDistance || lim.maxDistance;
+      if (maxD) this.controls.maxDistance = Math.max(dist, Math.min(this.controls.maxDistance, maxD));
+      // ...or keep it from swinging round behind a big building at the back
+      const az = this.world.cameraAzimuth || lim.azimuth;
+      this.controls.minAzimuthAngle = az ? az[0] : -Infinity;
+      this.controls.maxAzimuthAngle = az ? az[1] : Infinity;
       this.controls.update();
     }
 
@@ -349,7 +366,8 @@
       if (this.visiting) this.leaveHome();
       if (this.world && this.world.id === id) return;
       for (const w of this.walkers.slice()) if (w.leaving) this.finishLeaving(w);
-      for (const w of this.walkers) { this.endInteraction(w); w.remove(); }
+      // (phone calls carry on: they belong to both Miis, not to the place on screen)
+      for (const w of this.walkers) { if (!this.calls.has(w.id)) this.endInteraction(w); w.remove(); }
       this.walkers = [];
       this.dragging = null; this.hover = null;
       this.clearWindowMiis();
@@ -398,10 +416,11 @@
         const h = m.inst.holder, rig = m.inst.rig, t = this.time + m.t0;
         const style = r.record ? animStyle(D.traits(r.record)) : null;
         const lie = spot.pose === "lie", sit = spot.pose === "sit", run = spot.pose === "run";
+        const onCall = this.calls.has(r.id); // on the phone at home: hand to the ear
         rig.pose({
-          t, dt, style, arms: spot.arms || "down", lookUp: spot.lookUp || 0,
+          t, dt, style, arms: onCall ? "phone" : spot.arms || "down", lookUp: spot.lookUp || 0,
           sit, lie, run, walk: run ? 1 : 0, phase: t * 8.5, legsOut: sit && spot.legs === "out",
-          nod: lie ? 0 : 0, talking: false,
+          nod: lie ? 0 : 0, talking: onCall,
         });
         if (lie) {
           // on its back, head on the pillow
@@ -472,7 +491,7 @@
       }
       if (announce && this.world.capacity > before) {
         const floors = (this.world.capacity - before) / 4;
-        this.addFeed("The apartments got " + (floors > 1 ? floors + " new floors" : "a new floor") + " for the new neighbours! 🏗️");
+        this.addFeed("The apartment building got " + (floors > 1 ? floors + " new floors" : "a new floor") + " for the new neighbours! 🏗️");
         const w = this.walkers[Math.floor(Math.random() * this.walkers.length)];
         if (w) w.say(D.pick(["Whoa, the building got taller!", "A new floor! Hi, neighbours!", "Look, more apartments!"]), 2.6);
       }
@@ -522,6 +541,9 @@
         this.later(w, 0.9, () => w.say(D.pick(lines), 2.5));
         this.addFeed(opts && opts.feed ? opts.feed : look.name + " arrived! 👋");
       }
+      // still on the phone (you just switched to this place mid-call): pick the call back up
+      const call = this.calls.get(record.id);
+      if (call) this.joinCall(w, call, false);
       this.onChange();
       return w;
     }
@@ -548,6 +570,7 @@
       if (this.visiting) this.leaveHome();
       for (const w of this.walkers) w.remove();
       this.walkers = [];
+      this.calls.clear();
       this.friendships = {};
       this.feed = [];
       this.onChange();
@@ -617,7 +640,7 @@
       const pts = (o) => this.friendships[id < o.id ? id + "|" + o.id : o.id + "|" + id] || 0;
       let heartbroken = [];
       for (const o of this.walkers) {
-        if (o === gone || o.leaving || o.state === "playing") continue;
+        if (o === gone || o.leaving || o.state === "playing" || this.calls.has(o.id)) continue; // (not while on the phone)
         const p = pts(o);
         const react = () => {
           if (!this.walkers.includes(o)) return;
@@ -671,6 +694,7 @@
       if (this.visiting) this.leaveHome();
       if (this.dragging) { this.dragging.held = false; this.dragging = null; }
       this.hover = null;
+      if (this.calls.has(record.id)) this.endCall(this.calls.get(record.id), record.id); // you're here: they hang up
       this.mainWorld = this.world;
       this.mainNav = this.nav;
       this.mainCamera = { pos: this.camera.position.clone(), target: this.controls.target.clone() };
@@ -860,7 +884,7 @@
     }
 
     isBusy(w) {
-      return w.held || w.leaving || w.state === "interact" || w.state === "approach" || w.state === "waiting" || w.state === "perform" || w.state === "playing";
+      return this.calls.has(w.id) || w.held || w.leaving || w.state === "interact" || w.state === "approach" || w.state === "waiting" || w.state === "perform" || w.state === "playing";
     }
 
     // You started a mini-game with this Mii: it stops and faces you while you play.
@@ -925,6 +949,7 @@
     // A wants to talk to B: A walks over. If B is far away and A is the loud
     // type, A shouts for B to come over instead, and B walks to A.
     startInteraction(A, B) {
+      if (this.calls.has(A.id) || this.calls.has(B.id)) return false; // can't chat face to face while on the phone
       const plan = D.buildInteraction(A, B, this.world, this.points(A, B), { ctx: this.relation ? this.relation(A, B) : null });
       A.partner = B; B.partner = A;
       A.plan = plan; A.role = "A"; B.role = "B";
@@ -962,28 +987,14 @@
     // A Mii on screen talks on the phone with a Mii who's somewhere else.
     // role = "caller" (the one on screen phoned) or "callee" (they got a call)
     startPhone(A, otherRec, role) {
-      const g = this.ghost(otherRec, A);
-      const caller = role === "callee" ? g : A, callee = role === "callee" ? A : g;
-      // (they're in different places, so no talk about "the fountain over there")
-      const plan = D.buildInteraction(caller, callee, { id: "phone" }, this.points(A, g), { remote: "phone", ctx: this.relation ? this.relation(caller, callee) : null });
-      caller.plan = plan; caller.role = "A"; callee.role = "B";
-      A.partner = g; g.partner = A;
-      for (const m of [A, g]) { m.remote = "phone"; }
-      A.endInteractionLater = false;
-      A.state = "interact"; A.path = null; A.spot = null; A.anchor = null;
-      A.arms = "phone";
-      A.uiPhone.textContent = "📱 " + (role === "callee" ? "Call from " : "Calling ") + g.look.name;
-      A.uiPhone.classList.add("show");
-      caller.step = -1;
-      caller.stepTimer = 0.8;
-      if (role === "callee") { A.showEmote("📳", 1.4); A.hop(2); }
+      return role === "callee" ? this.startCall(otherRec, A.record) : this.startCall(A.record, otherRec);
     }
 
     // Stands in for a Mii who isn't on screen (the other end of a phone call):
     // what it says comes out of the phone of the Mii you can see.
     ghost(rec, onScreen) {
       const hub = this;
-      const name = rec.name || "?";
+      const name = rec.name || (this.residents.find((r) => r.id === rec.id) || {}).name || "?";
       return {
         ghost: true, id: rec.id, record: rec, look: { name },
         x: onScreen.x, z: onScreen.z, lift: 0, sizeScale: 1, state: "phone", cooldown: 0,
@@ -1001,9 +1012,164 @@
       };
     }
 
+    // ---------- phone calls ----------
+    // A call belongs to BOTH Miis for as long as it lasts, whichever place you're
+    // looking at: both are busy, and whichever end is on screen holds the phone
+    // and talks (the other end's words come out of its phone). The conversation
+    // runs on its own clock (runCall), so switching places mid-call shows the
+    // other end still on the phone, at the same point in the chat.
+    //   call = { a (caller record), b (callee record), plan, step, stepTimer, before }
+
+    // The Mii on screen for this record (not one that's leaving).
+    walkerFor(id) { return this.walkers.find((w) => w.id === id && !w.leaving) || null; }
+
+    // Is this Mii free to pick up (or make) a call?
+    canCall(rec) {
+      if (!rec || this.calls.has(rec.id)) return false;
+      if (this.visiting && this.visiting.record.id === rec.id) return false;
+      if (this.callHold && this.callHold(rec) === false) return false; // on its way somewhere
+      const w = this.walkers.find((x) => x.id === rec.id);
+      if (w && (this.isBusy(w) || w.appear < 1)) return false;
+      return true;
+    }
+
+    // recA phones recB. Returns false if either of them can't take a call right now.
+    startCall(recA, recB) {
+      if (!recA || !recB || recA.id === recB.id || !this.canCall(recA) || !this.canCall(recB)) return false;
+      const A = this.ghost(recA, { partner: null }), B = this.ghost(recB, { partner: null });
+      const ctx = this.relation ? this.relation(A, B) : null;
+      if (ctx) ctx.confess = null; // that's done face to face
+      const before = this.points(A, B);
+      // (they're in different places, so no talk about "the fountain over there")
+      const plan = D.buildInteraction(A, B, { id: "phone" }, before, { remote: "phone", ctx });
+      const call = { a: recA, b: recB, plan, step: -1, stepTimer: 1.2, before };
+      this.calls.set(recA.id, call);
+      this.calls.set(recB.id, call);
+      for (const rec of [recA, recB]) {
+        const w = this.walkerFor(rec.id);
+        if (w) this.joinCall(w, call, true);
+      }
+      this.onChange();
+      return true;
+    }
+
+    // Puts a Mii you can see on the phone (when the call starts, or when you
+    // switch to its place while it's still talking).
+    joinCall(w, call, ringing) {
+      const callee = call.b.id === w.id;
+      const other = callee ? call.a : call.b;
+      w.partner = this.ghost(other, w);
+      w.remote = "phone";
+      w.plan = null; w.role = null; w.endInteractionLater = false;
+      w.spot = null; w.anchor = null; w.path = null; w.target = null;
+      w.dance = false; w.laugh = false; w.sleep = false; w.nod = 0; w.shake = 0; w.bow = false;
+      w.state = "interact";
+      w.arms = "phone";
+      w.uiPhone.textContent = "📱 " + (callee ? "Call from " : "Calling ") + this.callName(other);
+      w.uiPhone.classList.add("show");
+      if (ringing && callee) { w.showEmote("📳", 1.4); w.hop(2); }
+    }
+
+    callName(rec) {
+      const w = this.walkers.find((x) => x.id === rec.id);
+      return w ? w.look.name : rec.name || (this.residents.find((r) => r.id === rec.id) || {}).name || "?";
+    }
+
+    // Hangs up for both ends. cutBy = the id of the Mii whose end was cut short
+    // (picked up, sent off, moved away...), or null when they said goodbye.
+    endCall(call, cutBy) {
+      if (this.calls.get(call.a.id) === call) this.calls.delete(call.a.id);
+      if (this.calls.get(call.b.id) === call) this.calls.delete(call.b.id);
+      for (const rec of [call.a, call.b]) {
+        const w = this.walkers.find((x) => x.id === rec.id);
+        if (!w || w.remote !== "phone") continue;
+        this.endInteraction(w);
+        // the other end got cut off
+        if (cutBy && cutBy !== rec.id && !w.leaving && !w.held) {
+          w.say(D.pick(["Hello? Hello?", "Huh, they hung up!", "Oh! The line went dead.", "I'll call back later!"]), 2);
+          w.showEmote("📵", 1.8);
+        }
+      }
+      this.onChange();
+    }
+
+    tickCalls(dt) {
+      if (!this.calls.size) return;
+      for (const call of new Set(this.calls.values())) {
+        // a Mii who sets off somewhere else (or is gone) hangs up
+        const gone = [call.a, call.b].find((rec) => this.callHold && this.callHold(rec) === false);
+        if (gone) { this.endCall(call, gone.id); continue; }
+        this.runCall(call, dt);
+      }
+    }
+
+    // One step of a phone call. Whoever is on screen acts it out; the far end's
+    // lines come out of the phone of the Mii you can see.
+    runCall(call, dt) {
+      call.stepTimer -= dt;
+      if (call.stepTimer > 0) return;
+      const wa = this.walkerFor(call.a.id), wb = this.walkerFor(call.b.id);
+      for (const w of [wa, wb]) if (w) { w.arms = "phone"; w.dance = false; w.laugh = false; w.sleep = false; w.nod = 0; w.shake = 0; }
+      call.step++;
+      const step = call.plan.steps[call.step];
+      if (!step) { this.finishCall(call); return; }
+      const nameA = this.callName(call.a), nameB = this.callName(call.b);
+      const line = step.say ? step.say.replace(/\{A\}/g, nameA).replace(/\{B\}/g, nameB) : null;
+      const dur = Math.max(step.dur + 0.4, 1.4);
+      const floaty = this.world && this.world.floaty;
+      const ends = [[call.a, wa, wb, nameA], [call.b, wb, wa, nameB]];
+      const actors = ends.filter((e, i) => step.who === "both" || step.who === (i === 0 ? "A" : "B"));
+      for (const [, w, other, name] of actors) {
+        if (w) {
+          if (line) w.say(line, dur);
+          if (step.emote) w.showEmote(step.emote, Math.max(step.dur, 1.5));
+          if (step.hop) w.hop(floaty ? 1.8 : 4.5);
+          if (step.expr === "laugh") w.laugh = true;
+          if (step.expr === "sad") w.nod = 0.35;
+          if (step.expr === "angry") w.shake = 1;
+          if (step.expr === "surprised") w.hop(floaty ? 1 : 2.5);
+        } else if (other && line && !/^\*.*\*$/.test(line) && !actors.some((e) => e[1] === other)) {
+          // (you can't hear "*dials*" down the phone)
+          other.say("📞 " + name + ": " + line, dur);
+          other.uiBubble.classList.add("phone-voice");
+        }
+      }
+      call.stepTimer = step.dur;
+    }
+
+    // They said goodbye: friendship, coins and the news feed, then both hang up.
+    finishCall(call) {
+      const wa = this.walkerFor(call.a.id), wb = this.walkerFor(call.b.id);
+      const A = wa || this.ghost(call.a, { partner: null }), B = wb || this.ghost(call.b, { partner: null });
+      const type = call.plan.type;
+      const key = this.pairKey(A, B);
+      const before = this.friendships[key] || 0;
+      const after = before + (D.FRIENDSHIP_GAIN[type] || 1);
+      this.friendships[key] = after;
+      const fight = call.plan.fight, success = call.plan.success;
+      const feed = (fight ? "{A} and {B} had a fight! 💢" : D.FEED_TEXT[type]).replace("{A}", A.look.name).replace("{B}", B.look.name).replace(/\.$/, "") + " on the phone. 📱";
+      this.addFeed(feed);
+      const oldLevel = D.levelFor(before), newLevel = D.levelFor(after);
+      if (newLevel !== oldLevel) {
+        this.addFeed(A.look.name + " and " + B.look.name + " are now " + newLevel.name + "! " + newLevel.emoji);
+        for (const w of [wa, wb]) if (w) w.showEmote(newLevel.emoji, 2.5);
+      }
+      for (const [m, o, role] of [[A, B, "A"], [B, A, "B"]]) {
+        const n = this.coinValue(m, o, type, role, before, "phone");
+        if (n > 0) this.awardCoins(m, n, type);
+        m.battery = clamp(m.battery - (0.22 + (1 - m.trait("social") / 100) * 0.2) * 0.6, 0, 1);
+      }
+      this.recent.push({ pair: key, type, a: A.id, b: B.id, t: this.time });
+      this.endCall(call, null);
+      if (this.onHangout) this.onHangout({ a: A.id, b: B.id, kind: type, before, after, visible: !!(wa || wb), where: "phone", fight, success });
+    }
+
     // Two Miis chat somewhere you're not looking (or on the phone between two
     // places you're not looking at). They still become friends and earn coins.
     offscreenHangout(recA, recB, where) {
+      if (where === "phone") return this.startCall(recA, recB);
+      // (no chatting face to face with someone who's on the phone)
+      if (!recA || !recB || this.calls.has(recA.id) || this.calls.has(recB.id)) return false;
       const A = this.ghost(recA, { partner: null }), B = this.ghost(recB, { partner: null });
       const phone = where === "phone";
       const points = this.points(A, B);
@@ -1026,9 +1192,12 @@
       }
       this.recent.push({ pair: key, type, a: A.id, b: B.id, t: this.time });
       if (this.onHangout) this.onHangout({ a: A.id, b: B.id, kind: type, before: points, after, visible: false, where, fight: plan.fight, success: plan.success });
+      return true;
     }
 
     endInteraction(w) {
+      // on the phone? Then the call ends for both ends (picked up, sent off, moved away...)
+      if (w && !w.ghost && this.calls.has(w.id)) { this.endCall(this.calls.get(w.id), w.id); return; }
       const p = w.partner;
       for (const m of [w, p]) {
         if (!m) continue;
@@ -1108,6 +1277,7 @@
       if (this.onTick) this.onTick(dt);
       if (this.world.windowSpot || this.windowMiis.size) this.syncWindowMiis(dt);
       this.runDirector(dt);
+      this.tickCalls(dt);
       const floaty = this.world.floaty;
       const gravity = floaty ? 3 : 22;
       const list = this.active();
@@ -1400,7 +1570,9 @@
           if (w.dance) w.targetYaw += Math.sin(this.time * 5) * 0.8;
           // the one who started runs the conversation (the far end of a phone call
           // isn't on screen, so then the Mii you can see runs it for both)
-          if (w.role === "A") this.runScript(w, dt);
+          // (a phone call runs on its own, see runCall, so both ends stay in step)
+          if (this.calls.has(w.id)) { /* nothing */ }
+          else if (w.role === "A") this.runScript(w, dt);
           else if (p && p.ghost) this.runScript(p, dt);
           if (w.dance && w.style.dance !== "sway" && w.lift <= this.baseLift(w) + 0.01) w.hop(this.world.floaty ? 1.5 : 2.5 + w.style.tempo);
           break;

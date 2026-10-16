@@ -15,6 +15,7 @@
  *   - passes everyone's movement, shots and sounds on to the others in the room
  *   - is the referee: it keeps everyone's HP and score, checks that hits are
  *     believable (damage numbers, fire rate), decides kills, respawns and who wins
+ *   - also hosts online chess games (see chess-rooms.js)
  *
  * Every message is a small JSON object with a type "t" (see PROTOCOL below).
  */
@@ -24,7 +25,7 @@ const http = require("http");
 const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
-const VERSION = 4; // (2: lobbies with warmup, modes and voting; 3: AWP loadout; 4: weapon skins)
+const VERSION = 5; // (2: lobbies with warmup, modes and voting; 3: AWP loadout; 4: weapon skins; 5: online chess)
 const PORT = parseInt(process.env.PORT || "8787", 10);
 const HOST = process.env.HOST || undefined; // e.g. 127.0.0.1 = only reachable through Tailscale Funnel
 const MAX_PLAYERS = Math.max(2, Math.min(16, parseInt(process.env.MAX_PLAYERS || "8", 10))); // most a host can pick
@@ -41,7 +42,7 @@ const SERVER_NAME = process.env.SERVER_NAME || "Admin Server"; // what players s
 const MAX_MII_BYTES = 6 * 1024 * 1024;
 const MAX_ROOMS = 200;
 
-// Damage rules (the same numbers as the game: CS:GO's AK, AWP and knife)
+// Damage rules (the same numbers as the game: CS:GO's AK, AWP, Deagle and knife)
 const AK_ZONES = { head: 4, chest: 1, arm: 1, stomach: 1.25, leg: 0.75 };
 const KNIFE_DAMAGE = [25, 40, 65, 90, 180];
 
@@ -49,14 +50,14 @@ const KNIFE_DAMAGE = [25, 40, 65, 90, 180];
  * PROTOCOL
  * client -> server
  *   hello  { v, name, color, mii, skins }  mii = { kind: "glb", b64, fileName } or { kind: "demo", look }
- *   skins  { s: { ak, awp, knife } }     the weapon skins you have equipped (skin ids or null)
+ *   skins  { s: { ak, awp, deagle, knife } }   the weapon skins you have equipped (skin ids or null)
  *   list   {}                            ask for the room list
  *   create { name, password, max }       host a lobby (password optional; max players 2..MAX_PLAYERS)
  *   join   { room, password }            join a lobby by id (password if it has one)
  *   leave  {}
  *   vote   { mode, map }                 during the 15 s intermission: what to play next
  *   st     { s: [x, y, z, vx, vz, yaw, pitch, duck, flags] }   your movement, ~30 times a second
- *   shot   { w, o: [x,y,z], e: [x,y,z], n: [nx,ny,nz] | null, m }  w = "ak" | "awp"  a paintball you fired (for everyone's screens)
+ *   shot   { w, o: [x,y,z], e: [x,y,z], n: [nx,ny,nz] | null, m }  w = "ak" | "awp" | "deagle"  a paintball you fired (for everyone's screens)
  *   ev     { k }                         a sound to play at your position (reload, deploy, land...)
  *   hit    { v, z, d, w, b }             you hit player v in zone z for d damage with weapon w (b = backstab)
  *   spawn  { x, z, yaw }                 you're back in after being splattered
@@ -160,7 +161,7 @@ function startMatch(room, mode) {
   for (const id of room.players) {
     const p = players.get(id);
     p.score = 0; p.deaths = 0; p.hp = 100; p.alive = false; p.diedAt = 0; p.inRound = false;
-    p.lastAk = 0; p.lastAwp = 0; p.lastKnife = 0;
+    p.lastAk = 0; p.lastAwp = 0; p.lastDeagle = 0; p.lastKnife = 0;
   }
   broadcast(room, { t: "start", in: COUNTDOWN_MS, mode: M.id, map: room.map, toWin: M.toWin, timeLimit: M.timeLimit });
   if (M.id === "respawn") room.timer = setTimeout(() => endMatch(room), COUNTDOWN_MS + TIME_LIMIT);
@@ -309,7 +310,7 @@ function doSpawn(p, sp) {
 
 // Equipped weapon skins: just short ids (or none)
 function cleanSkins(s) {
-  const out = { ak: null, awp: null, knife: null };
+  const out = { ak: null, awp: null, deagle: null, knife: null };
   if (s && typeof s === "object") for (const k of Object.keys(out)) if (typeof s[k] === "string" && /^[a-z0-9_]{1,32}$/.test(s[k])) out[k] = s[k];
   return out;
 }
@@ -317,16 +318,20 @@ function cleanSkins(s) {
 // Is this hit believable? (stops someone with a modified game from cheating)
 function validHit(p, v, msg, now) {
   const d = num(msg.d);
-  if (msg.w === "ak" || msg.w === "awp") {
-    const awp = msg.w === "awp";
+  if (msg.w === "ak" || msg.w === "awp" || msg.w === "deagle") {
+    const awp = msg.w === "awp", dg = msg.w === "deagle";
     const mult = AK_ZONES[msg.z];
     if (!mult) return false;
-    const base = awp ? 115 : 36;
-    const max = Math.round(base * mult), min = Math.floor(base * mult * 0.8);
+    const base = awp ? 115 : dg ? 63 : 36;
+    // (the Deagle loses a lot of damage over distance: 0.81 per 500 units)
+    const max = Math.round(base * mult), min = Math.floor(base * mult * (dg ? 0.5 : 0.8));
     if (d < min || d > max) return false;
     if (awp) {
       if (now - p.lastAwp < 1300) return false; // the bolt takes ~1.5 s
       p.lastAwp = now;
+    } else if (dg) {
+      if (now - p.lastDeagle < 190) return false; // 0.225 s between shots
+      p.lastDeagle = now;
     } else {
       if (now - p.lastAk < 85) return false; // faster than 600 shots a minute
       p.lastAk = now;
@@ -341,7 +346,11 @@ function validHit(p, v, msg, now) {
   return true;
 }
 
+// online chess lives in its own file (it shares the players and the connection)
+const chess = require("./chess-rooms.js")({ players, send, clean, num, log: (s) => log(s) });
+
 function onMessage(p, msg) {
+  if (chess.handle(p, msg)) return;
   const now = Date.now();
   const room = p.room ? rooms.get(p.room) : null;
   switch (msg.t) {
@@ -416,7 +425,7 @@ function onMessage(p, msg) {
     case "shot": {
       if (!room || (room.state !== "live" && room.state !== "warmup") || !p.alive) return;
       if (!Array.isArray(msg.o) || !Array.isArray(msg.e)) return;
-      broadcast(room, { t: "shot", id: p.id, o: msg.o.slice(0, 3).map(num), e: msg.e.slice(0, 3).map(num), n: Array.isArray(msg.n) ? msg.n.slice(0, 3).map(num) : null, m: clean(msg.m, 10), w: msg.w === "awp" ? "awp" : "ak" }, p.id);
+      broadcast(room, { t: "shot", id: p.id, o: msg.o.slice(0, 3).map(num), e: msg.e.slice(0, 3).map(num), n: Array.isArray(msg.n) ? msg.n.slice(0, 3).map(num) : null, m: clean(msg.m, 10), w: msg.w === "awp" || msg.w === "deagle" ? msg.w : "ak" }, p.id);
       break;
     }
     case "skins": {
@@ -480,7 +489,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server, maxPayload: MAX_MII_BYTES * 1.4 + 4096 });
 
 wss.on("connection", (ws, req) => {
-  const p = { id: "p" + (nextId++), ws, name: "Mii", color: "#ff3fa4", mii: null, skins: { ak: null, awp: null, knife: null }, room: null, ready: false, alive: false, hp: 100, score: 0, deaths: 0, lastSt: 0, lastAk: 0, lastKnife: 0, pos: null, isAlive: true };
+  const p = { id: "p" + (nextId++), ws, name: "Mii", color: "#ff3fa4", mii: null, skins: { ak: null, awp: null, deagle: null, knife: null }, room: null, ready: false, alive: false, hp: 100, score: 0, deaths: 0, lastSt: 0, lastAk: 0, lastKnife: 0, pos: null, isAlive: true };
   players.set(p.id, p);
   log("+ " + p.id + " connected from " + (req.socket.remoteAddress || "?") + " (" + players.size + " online)");
   ws.on("pong", () => { p.isAlive = true; });
@@ -493,6 +502,7 @@ wss.on("connection", (ws, req) => {
   });
   ws.on("close", () => {
     leaveRoom(p);
+    chess.leave(p);
     players.delete(p.id);
     log("- " + p.id + " (" + p.name + ") left (" + players.size + " online)");
   });
@@ -554,4 +564,4 @@ if (require.main === module) {
   }).catch((err) => { log("Couldn't start: " + err.message); process.exit(1); });
 }
 
-module.exports = { server, wss, VERSION, PORT, rooms, players, start, stop, running };
+module.exports = { server, wss, VERSION, PORT, rooms, players, chess, start, stop, running };

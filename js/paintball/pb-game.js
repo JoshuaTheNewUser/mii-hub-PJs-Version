@@ -358,7 +358,7 @@
     k.innerHTML = [
       "<kbd>W A S D</kbd> move", "<kbd>Mouse</kbd> aim", "<kbd>Left click</kbd> shoot / slash", "<kbd>Right click</kbd> AWP scope / stab",
       "<kbd>Space</kbd> jump", "<kbd>Shift</kbd> walk (quiet)", "<kbd>Ctrl</kbd> / <kbd>C</kbd> crouch", "<kbd>R</kbd> reload",
-      "<kbd>1</kbd> gun · <kbd>3</kbd> knife", "<kbd>B</kbd> loadout", "<kbd>Q</kbd> / wheel switch", "<kbd>F</kbd> inspect", "<kbd>Tab</kbd> scoreboard", "<kbd>Esc</kbd> menu",
+      "<kbd>1</kbd> gun · <kbd>2</kbd> Deagle · <kbd>3</kbd> knife", "<kbd>B</kbd> loadout", "<kbd>Q</kbd> / wheel switch", "<kbd>F</kbd> inspect", "<kbd>Tab</kbd> scoreboard", "<kbd>Esc</kbd> menu",
     ].map((s) => "<div>" + s + "</div>").join("");
     keys.appendChild(k);
     return keys;
@@ -651,7 +651,7 @@
       });
       this.vmScene.add(this.vm.group);
       // your equipped skins (from the crates locker), kept up to date if you change them mid-match
-      this.mySkins = root.PBCrates && PBCrates.equipped ? PBCrates.equipped() : { ak: null, awp: null, knife: null };
+      this.mySkins = root.PBCrates && PBCrates.equipped ? PBCrates.equipped() : { ak: null, awp: null, deagle: null, knife: null };
       if (this.vm.setSkins) this.vm.setSkins(this.mySkins);
       this.earned = 0;
       this.skinsOff = root.PBCrates && PBCrates.onChange ? PBCrates.onChange(() => {
@@ -743,13 +743,18 @@
       const sk = f.skins || {};
       f.gunAK = root.PBModels.createWorldGun(f.color, "ak", sk.ak || null);
       f.gunAWP = root.PBModels.createWorldGun(f.color, "awp", sk.awp || null);
-      for (const g of [f.gunAK, f.gunAWP]) { g.traverse((n) => { if (n.isMesh) n.castShadow = true; }); this.scene.add(g); g.visible = false; }
-      f.gun = f.arms && f.arms.primary === "awp" ? f.gunAWP : f.gunAK;
+      f.gunDG = root.PBModels.createWorldGun(f.color, "deagle", sk.deagle || null);
+      for (const g of [f.gunAK, f.gunAWP, f.gunDG]) { g.traverse((n) => { if (n.isMesh) n.castShadow = true; }); this.scene.add(g); g.visible = false; }
+      f.gun = this.worldGunFor(f);
+    }
+    worldGunFor(f) {
+      const id = f.arms ? f.arms.gunId() : "ak";
+      return id === "deagle" ? f.gunDG : id === "awp" ? f.gunAWP : f.gunAK;
     }
     reskinAvatar(f) {
       if (!f.inst || !f.gunAK) return;
       const vis = f.gun.visible;
-      f.gunAK.removeFromParent(); f.gunAWP.removeFromParent();
+      f.gunAK.removeFromParent(); f.gunAWP.removeFromParent(); f.gunDG.removeFromParent();
       this.buildWorldGuns(f);
       f.gun.visible = vis;
     }
@@ -776,7 +781,7 @@
       this.byNet.delete(id);
       this.fighters = this.fighters.filter((x) => x !== f);
       if (f.inst) { f.inst.holder.removeFromParent(); if (root.MiiModel.disposeObject) root.MiiModel.disposeObject(f.inst.holder); }
-      if (f.gun) { f.gunAK.removeFromParent(); f.gunAWP.removeFromParent(); }
+      if (f.gun) { f.gunAK.removeFromParent(); f.gunAWP.removeFromParent(); f.gunDG.removeFromParent(); }
       this.notice(f.name + " left");
       this.updateScore();
     }
@@ -836,8 +841,8 @@
       this.hudReload = el("span", "rl", "");
       ammo.append(this.hudReload, this.hudWpn, this.hudMag, this.hudRes);
       this.hudSlots = el("div", "pb-slots");
-      this.hudSlotAK = el("span", null, "1 · PAINT AK"); this.hudSlotKnife = el("span", null, "3 · BUTTERFLY KNIFE");
-      this.hudSlots.append(this.hudSlotAK, this.hudSlotKnife);
+      this.hudSlotAK = el("span", null, "1 · PAINT AK"); this.hudSlotDG = el("span", null, "2 · PAINT DEAGLE"); this.hudSlotKnife = el("span", null, "3 · BUTTERFLY KNIFE");
+      this.hudSlots.append(this.hudSlotAK, this.hudSlotDG, this.hudSlotKnife);
       this.hudHurt = el("div", "pb-hurt");
       this.hudDir = el("div", "pb-dir"); this.hudDirArc = el("i"); this.hudDir.appendChild(this.hudDirArc);
       this.hudSplats = el("div", "pb-splats");
@@ -941,7 +946,7 @@
       const k = el("div", "pb-kill" + (killer === this.you || victim === this.you ? " mine" : ""));
       const a = el("span", null, killer.name); a.style.color = killer.color;
       const v = el("span", null, victim.name); v.style.color = victim.color;
-      k.append(a, el("span", "wpn", (weapon === "knife" ? "🔪" : weapon === "awp" ? "🔭 AWP" : "🔫") + (head && weapon !== "knife" ? " 🎯" : "")), v);
+      k.append(a, el("span", "wpn", (weapon === "knife" ? "🔪" : weapon === "awp" ? "🔭 AWP" : weapon === "deagle" ? "🦅 Deagle" : "🔫") + (head && weapon !== "knife" ? " 🎯" : "")), v);
       this.hudFeed.appendChild(k);
       setTimeout(() => k.remove(), 6000);
       while (this.hudFeed.children.length > 6) this.hudFeed.firstChild.remove();
@@ -1037,8 +1042,10 @@
         if (code === "Space") this.jumpQueued = true;
         if (code === "KeyR") this.wantReload = true;
         if (code === "Digit1") this.wantSwitch = "primary";
-        if (code === "Digit3" || code === "Digit2") this.wantSwitch = "knife";
-        if (code === "KeyQ") this.wantSwitch = this.you.arms.weapon === "knife" ? "primary" : "knife";
+        if (code === "Digit2") this.wantSwitch = "secondary";
+        if (code === "Digit3") this.wantSwitch = "knife";
+        // Q: back to whatever you had out before (like CS)
+        if (code === "KeyQ") this.wantSwitch = this.you.arms.last || "knife";
         if (code === "KeyF") this.wantInspect = true;
       };
       const onKeyUp = (e) => {
@@ -1048,7 +1055,10 @@
       const onWheel = (e) => {
         if (!this.locked()) return;
         e.preventDefault();
-        this.wantSwitch = this.you.arms.weapon === "knife" ? "primary" : "knife";
+        // the wheel goes through gun -> Deagle -> knife
+        const order = ["primary", "secondary", "knife"], a = this.you.arms;
+        const cur = a.weapon === "knife" ? 2 : a.weapon === a.secondary ? 1 : 0;
+        this.wantSwitch = order[(cur + (e.deltaY > 0 ? 1 : 2)) % 3];
       };
       const noMenu = (e) => e.preventDefault();
       document.addEventListener("pointerlockchange", onLock);
@@ -1086,7 +1096,7 @@
           if (!f) return;
           const o = { x: m.o[0], y: m.o[1], z: m.o[2] }, e = { x: m.e[0], y: m.e[1], z: m.e[2] };
           const d = Math.hypot(o.x - this.camera.position.x, o.z - this.camera.position.z);
-          const gw = m.w === "awp" ? "awp" : "ak";
+          const gw = m.w === "awp" || m.w === "deagle" ? m.w : "ak";
           this.playAt(gw + (d > 18 ? "Far" : ""), o, 0.9, 0.95 + Math.random() * 0.1);
           this.launchBall(new THREE.Vector3(o.x, o.y, o.z), e, f.color);
           if (m.n) {
@@ -1100,7 +1110,7 @@
         ev: (m) => {
           const f = fOf(m.id);
           if (!f || !f.alive) return;
-          const sounds = { step: ["step", 0.9], land: ["land", 0.8], magOut: ["magOut", 0.6], magIn: ["magIn", 0.6], awpMagOut: ["awpMagOut", 0.6], awpMagIn: ["awpMagIn", 0.6], awpBolt: ["awpBolt", 0.6], deploy: ["deploy", 0.5], knifeDeploy: ["knifeDeploy", 0.5], slash: ["slash", 0.7], stab: ["stab", 0.7] };
+          const sounds = { step: ["step", 0.9], land: ["land", 0.8], magOut: ["magOut", 0.6], magIn: ["magIn", 0.6], awpMagOut: ["awpMagOut", 0.6], awpMagIn: ["awpMagIn", 0.6], awpBolt: ["awpBolt", 0.6], deagleMagOut: ["deagleMagOut", 0.6], deagleMagIn: ["deagleMagIn", 0.6], deagleSlide: ["deagleSlide", 0.6], deploy: ["deploy", 0.5], knifeDeploy: ["knifeDeploy", 0.5], slash: ["slash", 0.7], stab: ["stab", 0.7] };
           const s = sounds[m.k];
           if (s) this.playAt(s[0], f.mover.pos, s[1], 0.92 + Math.random() * 0.16);
           if (m.k === "knife" || m.k === "ak") f.arms.weapon = m.k;
@@ -1531,7 +1541,7 @@
           this.sendT = 1 / 30;
           const m = y.mover, a = y.arms;
           const r3 = (v) => Math.round(v * 1000) / 1000;
-          const flags = (m.onGround ? 1 : 0) | (a.weapon === "knife" ? 2 : 0) | (a.reloading(now) ? 4 : 0) | (y.alive ? 8 : 0) | (a.primary === "awp" ? 16 : 0);
+          const flags = (m.onGround ? 1 : 0) | (a.weapon === "knife" ? 2 : 0) | (a.reloading(now) ? 4 : 0) | (y.alive ? 8 : 0) | (a.primary === "awp" ? 16 : 0) | (a.weapon === "deagle" ? 32 : 0);
           this.net.send({ t: "st", s: [r3(m.pos.x), r3(m.pos.y), r3(m.pos.z), r3(m.vel.x), r3(m.vel.z), r3(y.yaw), r3(y.pitch), r3(m.duck), flags] });
         }
       }
@@ -1561,7 +1571,7 @@
       f.yaw = s[5]; f.pitch = s[6]; m.duck = s[7];
       m.onGround = !!(s[8] & 1);
       f.arms.primary = s[8] & 16 ? "awp" : "ak";
-      f.arms.weapon = s[8] & 2 ? "knife" : f.arms.primary;
+      f.arms.weapon = s[8] & 2 ? "knife" : s[8] & 32 ? "deagle" : f.arms.primary;
       if (!f.inst || !f.useBones) this.updateTargetInfo(f);
     }
 
@@ -1616,20 +1626,23 @@
     // ------------------------------------------------------------------
     useWeapons(f, want, dt) {
       const a = f.arms, now = this.now, me = f === this.you;
-      const W = a.gun();
       E.updateArms(a, f.mover, dt, now);
       // switching: "primary" (the AK or the AWP) or "knife"
       let to = want.switchTo;
       if (to === "primary" || to === "ak" || to === "awp") to = a.primary;
+      if (to === "secondary") to = a.secondary;
       if (to && to !== a.weapon) {
         a.last = a.weapon;
         a.weapon = to;
+        if (to !== "knife") a.lastGun = to;
+        const W = a.gun();
         a.reloadEnd = 0;
         this.setZoom(f, 0); a.resumeZoom = 0;
         a.ready = now + (to === "knife" ? KNIFE.deploy : W.deploy);
         if (me) {
           this.vm.setWeapon(to);
           this.audio.play(to === "knife" ? "knifeDeploy" : "deploy", { vol: 0.6 });
+          if (to === "deagle") this.later(0.55, () => { if (a.weapon === "deagle") this.audio.play("deagleSlide", { vol: 0.6 }); });
           if (this.online) this.net.send({ t: "ev", k: to === "knife" ? "knifeDeploy" : "deploy" });
         }
       }
@@ -1638,6 +1651,7 @@
       if (want.zoom && a.weapon === "awp" && !a.reloading(now)) { this.setZoom(f, (a.zoom + 1) % 3); a.resumeZoom = 0; }
       // after working the bolt, the scope comes back by itself (like CS)
       if (a.resumeZoom && now >= a.ready && a.weapon === "awp" && !a.reloading(now)) { this.setZoom(f, a.resumeZoom); a.resumeZoom = 0; }
+      const W = a.gun();
       // reloading
       const startReload = () => {
         if (a.weapon === "knife" || a.reloading(now) || a.ammo >= W.mag || a.reserve <= 0) return;
@@ -1646,12 +1660,13 @@
         a.reloadEnd = now + W.reload;
         a.ready = Math.max(a.ready, a.reloadEnd);
         const k = W.reload / AK.reload; // sounds spaced out to match the gun's reload
-        const mo = a.primary === "awp" ? "awpMagOut" : "magOut", mi = a.primary === "awp" ? "awpMagIn" : "magIn";
+        const gid = a.gunId();
+        const mo = gid === "awp" ? "awpMagOut" : gid === "deagle" ? "deagleMagOut" : "magOut", mi = gid === "awp" ? "awpMagIn" : gid === "deagle" ? "deagleMagIn" : "magIn";
         if (me) {
           this.vm.reload(empty);
           this.later(0.35 * k, () => { this.audio.play(mo, { vol: 0.7 }); if (this.online) this.net.send({ t: "ev", k: mo }); });
           this.later(1.45 * k, () => { this.audio.play(mi, { vol: 0.7 }); if (this.online) this.net.send({ t: "ev", k: mi }); });
-          if (empty) this.later(2.05 * k, () => this.audio.play(a.primary === "awp" ? "awpBolt" : "bolt", { vol: 0.7 }));
+          if (empty) this.later(2.05 * k, () => this.audio.play(gid === "awp" ? "awpBolt" : gid === "deagle" ? "deagleSlide" : "bolt", { vol: 0.7 }));
         } else {
           this.later(0.35 * k, () => this.playAt(mo, f.mover.pos, 0.6));
           this.later(1.45 * k, () => this.playAt(mi, f.mover.pos, 0.6));
@@ -1659,7 +1674,8 @@
       };
       if (want.reload) startReload();
       if (a.weapon !== "knife") {
-        if (want.fire && now >= a.ready && !a.reloading(now)) {
+        // semi-automatic guns (the Deagle): one shot per click
+        if (want.fire && now >= a.ready && !a.reloading(now) && !(W.semi && a.triggerHeld)) {
           if (a.ammo > 0) {
             a.ammo--;
             // keep an exact fire rate while the trigger is held (600 a minute for the AK)
@@ -1681,6 +1697,7 @@
       } else if ((want.fire || want.alt) && now >= a.ready) {
         this.knife(f, !!want.alt && !want.fire);
       }
+      a.triggerHeld = !!want.fire;
     }
 
     // ---- the AWP's scope ----
@@ -1775,20 +1792,20 @@
         this.camera.updateMatrixWorld();
         from = v.applyMatrix4(this.camera.matrixWorld);
         this.vm.fire();
-        this.audio.play(f.arms.primary, { vol: 0.8, rate: 0.96 + Math.random() * 0.08 });
+        this.audio.play(f.arms.gunId(), { vol: 0.8, rate: 0.96 + Math.random() * 0.08 });
       } else {
         from = this.muzzleOf(f);
         const d = Math.hypot(eye.x - this.camera.position.x, eye.z - this.camera.position.z);
-        this.playAt(f.arms.primary + (d > 18 ? "Far" : ""), eye, 0.9, 0.95 + Math.random() * 0.1);
+        this.playAt(f.arms.gunId() + (d > 18 ? "Far" : ""), eye, 0.9, 0.95 + Math.random() * 0.1);
       }
       this.launchBall(from, end, f.color);
       if (me) this.botHears(eye, 999, true);
       if (me && this.online) {
         const r2 = (v) => Math.round(v * 100) / 100;
-        this.net.send({ t: "shot", w: f.arms.primary, o: [r2(from.x), r2(from.y), r2(from.z)], e: [r2(end.x), r2(end.y), r2(end.z)], n: !hb && wh ? [r2(wh.nx), r2(wh.ny), r2(wh.nz)] : null, m: wh && !hb ? wh.mat : "" });
+        this.net.send({ t: "shot", w: f.arms.gunId(), o: [r2(from.x), r2(from.y), r2(from.z)], e: [r2(end.x), r2(end.y), r2(end.z)], n: !hb && wh ? [r2(wh.nx), r2(wh.ny), r2(wh.nz)] : null, m: wh && !hb ? wh.mat : "" });
       }
       if (hb) {
-        this.hit(f, hb.target, hb.zone, E.damageFor(hb.zone, hb.t, f.arms.primary), end, dir, f.arms.primary, hb.box);
+        this.hit(f, hb.target, hb.zone, E.damageFor(hb.zone, hb.t, f.arms.gunId()), end, dir, f.arms.gunId(), hb.box);
       } else if (wh) {
         this.later(endT / 140, () => {
           this.splat(end, { x: wh.nx, y: wh.ny, z: wh.nz }, f.color, 0.22 + Math.random() * 0.14);
@@ -2154,7 +2171,7 @@
       h.updateMatrixWorld(true);
       if (f.alive) this.boneHitboxes(f);
       // the gun sits in the right hand, pointing where the Mii aims
-      const want = f.arms.primary === "awp" ? f.gunAWP : f.gunAK;
+      const want = this.worldGunFor(f);
       if (f.gun !== want) { f.gun.visible = false; f.gun = want; }
       f.gun.visible = f.alive && !knife;
       if (f.gun.visible) {
@@ -2242,7 +2259,7 @@
         this.hudHPBar.style.width = y.hp + "%";
       }
       const ak = a.weapon !== "knife";
-      const slot1 = "1 · " + a.gun().name.toUpperCase();
+      const slot1 = "1 · " + E.WEAPONS[a.primary].name.toUpperCase();
       if (this.hudSlotAK.textContent !== slot1) this.hudSlotAK.textContent = slot1;
       const mag = ak ? String(a.ammo) : "–";
       if (this.hudMag.textContent !== mag) { this.hudMag.textContent = mag; this.hudMag.classList.toggle("low", ak && a.ammo <= Math.ceil(a.gun().mag / 6)); }
@@ -2252,7 +2269,8 @@
       if (this.hudWpn.textContent !== wn) this.hudWpn.textContent = wn;
       const rl = a.reloading(now) ? "RELOADING" : ak && a.ammo === 0 && a.reserve === 0 ? "NO PAINT" : "";
       if (this.hudReload.textContent !== rl) this.hudReload.textContent = rl;
-      this.hudSlotAK.classList.toggle("on", ak);
+      this.hudSlotAK.classList.toggle("on", a.weapon === a.primary);
+      this.hudSlotDG.classList.toggle("on", a.weapon === a.secondary);
       this.hudSlotKnife.classList.toggle("on", !ak);
       if (this.settings.xhStyle === "dynamic") this.drawCrosshair(ak ? E.inaccuracy(y.mover, a) : 0);
       this.hudXH.style.display = y.alive && !a.zoom && !this.hudBoard.classList.contains("show") ? "" : "none";

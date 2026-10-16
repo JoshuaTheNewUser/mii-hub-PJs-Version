@@ -68,7 +68,17 @@
     zoomFov: [90, 40, 10],
     kick: 3.2, // degrees the shot throws your aim up
   };
-  const WEAPONS = { ak: AK, awp: AWP };
+  // The Desert Eagle (CS:GO numbers): a sidearm in both classes. One click, one shot
+  // (semi-automatic). The first shot is dead on when you're still and give it a moment;
+  // spamming it or moving throws it everywhere. One headshot splats a Mii up close.
+  const DEAGLE = {
+    id: "deagle", name: "Paint Deagle", speed: 230, semi: true, pistol: true,
+    damage: 63, rangeMod: 0.81, cycle: 0.225, mag: 7, reserve: 35, reload: 2.2, deploy: 1.0,
+    spread: 0.002, stand: 0.0074, crouch: 0.0049, move: 0.34, air: 0.4, land: 0.1,
+    fire: 0.065, recoverStand: 0.81, recoverCrouch: 0.6,
+    kick: 2.6,
+  };
+  const WEAPONS = { ak: AK, awp: AWP, deagle: DEAGLE };
   const KNIFE = {
     deploy: 1.0,
     slash: { first: 40, next: 25, back: 90, range: 1.35, miss: 0.4, hit: 0.5 },
@@ -77,8 +87,8 @@
   const ZONE_MULT = { head: 4, chest: 1, arm: 1, stomach: 1.25, leg: 0.75 };
   // the classes you can pick before spawning
   const LOADOUTS = {
-    ak: { id: "ak", name: "Rifler", primary: "ak", desc: "Paint AK + Butterfly Knife" },
-    awp: { id: "awp", name: "Sniper", primary: "awp", desc: "Paint AWP + Butterfly Knife" },
+    ak: { id: "ak", name: "Rifler", primary: "ak", secondary: "deagle", desc: "Paint AK + Deagle + Butterfly Knife" },
+    awp: { id: "awp", name: "Sniper", primary: "awp", secondary: "deagle", desc: "Paint AWP + Deagle + Butterfly Knife" },
   };
 
   // The AK spray pattern: where bullet N goes, in degrees away from where you
@@ -505,10 +515,12 @@
   class Arms {
     constructor(primary) { this.reset(primary); }
     reset(primary) {
-      this.primary = WEAPONS[primary] ? primary : (this.primary || "ak");
-      const W = WEAPONS[this.primary];
-      this.weapon = this.primary; this.last = "knife";
-      this.ammo = W.mag; this.reserve = W.reserve;
+      this.primary = WEAPONS[primary] && primary !== "deagle" ? primary : (this.primary || "ak");
+      this.secondary = "deagle";
+      this.weapon = this.primary; this.last = "knife"; this.lastGun = this.primary;
+      // each gun keeps its own ammo
+      this.mags = {};
+      for (const id of [this.primary, this.secondary]) this.mags[id] = { ammo: WEAPONS[id].mag, reserve: WEAPONS[id].reserve };
       this.zoom = 0; this.resumeZoom = 0; // AWP scope: 0 = not scoped, 1, 2
       this.ready = 0;            // time when you can attack again
       this.reloadEnd = 0;        // time the reload finishes (0 = not reloading)
@@ -517,7 +529,13 @@
       this.lastSlash = -9; this.slashAlt = 0;
     }
     reloading(now) { return this.reloadEnd > 0 && now < this.reloadEnd; }
-    gun() { return WEAPONS[this.primary]; }
+    // the gun in your hands (with the knife out: the last gun you held)
+    gunId() { return this.weapon !== "knife" && WEAPONS[this.weapon] ? this.weapon : (this.lastGun || this.primary); }
+    gun() { return WEAPONS[this.gunId()]; }
+    get ammo() { const m = this.mags && this.mags[this.gunId()]; return m ? m.ammo : 0; }
+    set ammo(v) { const m = this.mags && this.mags[this.gunId()]; if (m) m.ammo = v; }
+    get reserve() { const m = this.mags && this.mags[this.gunId()]; return m ? m.reserve : 0; }
+    set reserve(v) { const m = this.mags && this.mags[this.gunId()]; if (m) m.reserve = v; }
     // how fast you can run with what's in your hands
     maxSpeed() {
       if (this.weapon === "knife") return CFG.speedKnife;
@@ -848,7 +866,7 @@
   }
 
   root.PBEngine = {
-    U, DEG, CFG, AK, AWP, WEAPONS, LOADOUTS, KNIFE, PATTERN, ZONE_MULT,
+    U, DEG, CFG, AK, AWP, DEAGLE, WEAPONS, LOADOUTS, KNIFE, PATTERN, ZONE_MULT,
     World, Mover, Arms, BotBrain,
     forward, anglesTo, wrapAngle, clamp, lerp,
     raySphere, rayCapsule, rayHitboxes, bodyBoxes,

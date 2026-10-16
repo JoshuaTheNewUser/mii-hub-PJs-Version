@@ -40,6 +40,12 @@
       use: { activity: "napping in the race car bed", emoji: "🏁", lie: true, lines: ["Vroom... zzz...", "Dreaming of the finish line!", "Zzz... pit stop..."] } },
     { id: "bed-hammock", slot: "bed", name: "Hammock", icon: "🌴", price: 30, tags: ["nature", "cozy"],
       use: { activity: "swinging in the hammock", emoji: "🌴", lie: true, lines: ["Swing... swing...", "Just like a beach holiday.", "Ahh, so relaxing."] } },
+    { id: "bed-cloud", slot: "bed", name: "Fluffy cloud bed", icon: "☁️", price: 38, tags: ["cute", "cozy"],
+      use: { activity: "dozing on a cloud", emoji: "☁️", lie: true, lines: ["Floating away... zzz...", "Like sleeping in the sky!", "So puffy..."] } },
+    { id: "bed-futon", slot: "bed", name: "Futon", icon: "🎎", price: 22, tags: ["cozy", "nature"],
+      use: { activity: "resting on the futon", emoji: "💤", lie: true, lines: ["Nice and low.", "Zzz... tatami smell...", "*yawn* So calm."] } },
+    { id: "bed-pirate", slot: "bed", name: "Pirate ship bed", icon: "🏴‍☠️", price: 55, tags: ["silly", "sporty"],
+      use: { activity: "sailing off to dreamland", emoji: "⚓", lie: true, lines: ["Yo ho... zzz...", "Land ho! ...Five more minutes.", "*snore* Arrr..."] } },
 
     // seats
     { id: "sofa-basic", slot: "sofa", name: "Little armchair", icon: "🪑", price: 0, tags: [], starter: true,
@@ -50,6 +56,12 @@
       use: { activity: "flopping on the bean bag", emoji: "🫘", sit: true, lines: ["*flop*", "It's eating me!", "Wheee, squish!"] } },
     { id: "sofa-throne", slot: "sofa", name: "Golden throne", icon: "🏆", price: 60, tags: ["fancy", "silly"],
       use: { activity: "ruling from the throne", emoji: "👑", sit: true, lines: ["Bring me snacks!", "I am the ruler of this room.", "Bow before me! ...Please?"] } },
+    { id: "sofa-rocking", slot: "sofa", name: "Rocking chair", icon: "🪑", price: 25, tags: ["cozy", "nature"],
+      use: { activity: "rocking in the chair", emoji: "🪑", sit: true, lines: ["Back and forth...", "Just like Grandma's.", "Ahh, peaceful."] } },
+    { id: "sofa-egg", slot: "sofa", name: "Hanging egg chair", icon: "🥚", price: 48, tags: ["fancy", "cute"],
+      use: { activity: "curling up in the egg chair", emoji: "🥚", sit: true, lines: ["My cosy little nest!", "I could stay here all day.", "Hatching a plan..."] } },
+    { id: "sofa-gaming", slot: "sofa", name: "Gaming chair", icon: "🎮", price: 42, tags: ["techy", "sporty"],
+      use: { activity: "lounging in the gaming chair", emoji: "🎮", sit: true, lines: ["Pro gamer mode: ON.", "So much lumbar support!", "GG, everyone."] } },
 
     // tables
     { id: "table-basic", slot: "table", name: "Small table", icon: "🍽️", price: 0, tags: [], starter: true,
@@ -60,6 +72,10 @@
       use: { activity: "using the computer", emoji: "🖥️", arms: "type", lines: ["*click clack*", "Just one more video...", "Who wrote this code?!"] } },
     { id: "table-tea", slot: "table", name: "Fancy tea table", icon: "🫖", price: 45, tags: ["fancy", "cozy"],
       use: { activity: "having tea", emoji: "🫖", lines: ["Tea, darling?", "Pinkies up!", "Mmm, Earl Grey."] } },
+    { id: "table-kitchen", slot: "table", name: "Kitchen island", icon: "🍳", price: 50, tags: ["cozy", "fancy"],
+      use: { activity: "cooking", emoji: "🍳", arms: "type", lines: ["Something smells good!", "A pinch of salt...", "Don't burn it, don't burn it!"] } },
+    { id: "table-pingpong", slot: "table", name: "Ping-pong table", icon: "🏓", price: 44, tags: ["sporty", "silly"],
+      use: { activity: "practising ping-pong", emoji: "🏓", arms: "punch", lines: ["Ping! Pong!", "Smash!", "My serve!"] } },
 
     // fun
     { id: "tv-none", slot: "tv", name: "Radio", icon: "📻", price: 0, tags: [], starter: true,
@@ -72,12 +88,21 @@
       use: { activity: "running on the treadmill", emoji: "🏃", run: true, lines: ["Feel the burn!", "*huff puff*", "Ten more minutes!"] } },
     { id: "tv-piano", slot: "tv", name: "Piano", icon: "🎹", price: 55, tags: ["fancy"],
       use: { activity: "playing the piano", emoji: "🎹", arms: "type", lines: ["♪ Plink plonk ♪", "Chopsticks, anyone?", "I've been practising!"] } },
+    { id: "tv-arcade", slot: "tv", name: "Arcade machine", icon: "🕹️", price: 58, tags: ["techy", "silly"],
+      use: { activity: "playing the arcade machine", emoji: "🕹️", arms: "type", lines: ["New high score!", "Insert coin!", "Pew pew pew!"] } },
+    { id: "tv-bookshelf", slot: "tv", name: "Bookshelf", icon: "📚", price: 28, tags: ["cozy", "fancy"],
+      use: { activity: "reading a book", emoji: "📖", arms: "type", lines: ["Just one more chapter...", "Ooh, a plot twist!", "*turns page*"] } },
+    { id: "tv-flatscreen", slot: "tv", name: "Big flat-screen TV", icon: "🖥️", price: 46, tags: ["techy", "cozy"],
+      use: { activity: "watching a movie", emoji: "🍿", lines: ["Movie night!", "Pass the popcorn!", "Whoa, so sharp!"] } },
 
     // rugs
     { id: "rug-none", slot: "rug", name: "No rug", icon: "⬜", price: 0, tags: [], starter: true },
     { id: "rug-round", slot: "rug", name: "Round rug", icon: "🟠", price: 12, tags: ["cozy"] },
     { id: "rug-stripes", slot: "rug", name: "Rainbow rug", icon: "🌈", price: 18, tags: ["silly", "cute"] },
     { id: "rug-fancy", slot: "rug", name: "Royal carpet", icon: "🟥", price: 25, tags: ["fancy"] },
+    { id: "rug-shag", slot: "rug", name: "Fluffy pink rug", icon: "🩷", price: 16, tags: ["cute", "cozy"] },
+    { id: "rug-space", slot: "rug", name: "Galaxy rug", icon: "🌌", price: 20, tags: ["techy"] },
+    { id: "rug-leaf", slot: "rug", name: "Leaf rug", icon: "🍃", price: 14, tags: ["nature"] },
 
     // lamps
     { id: "lamp-basic", slot: "lamp", name: "Floor lamp", icon: "💡", price: 0, tags: [], starter: true },
@@ -85,6 +110,10 @@
       use: { activity: "staring at the lava lamp", emoji: "🫧", lines: ["So groovy...", "Blob... blob...", "Hypnotising!"] } },
     { id: "lamp-chandelier", slot: "lamp", name: "Chandelier", icon: "🕯️", price: 40, tags: ["fancy"],
       use: { activity: "admiring the chandelier", emoji: "✨", lookUp: 0.5, lines: ["So sparkly!", "Very elegant.", "Don't fall on me!"] } },
+    { id: "lamp-moon", slot: "lamp", name: "Moon lamp", icon: "🌙", price: 18, tags: ["cute", "cozy"],
+      use: { activity: "gazing at the moon lamp", emoji: "🌙", lines: ["Goodnight, moon.", "So soft and glowy...", "Reach for the moon!"] } },
+    { id: "lamp-disco", slot: "lamp", name: "Disco ball", icon: "🪩", price: 36, tags: ["silly", "fancy"],
+      use: { activity: "dancing under the disco ball", emoji: "🪩", arms: "cheer", lookUp: 0.35, lines: ["Disco time!", "Saturday night fever!", "Look at those lights!"] } },
 
     // plants
     { id: "plant-none", slot: "plant", name: "No plant", icon: "⬜", price: 0, tags: [], starter: true },
@@ -94,6 +123,10 @@
       use: { activity: "talking to the cactus", emoji: "🌵", lines: ["Don't be so prickly!", "Ouch!", "You and me, buddy."] } },
     { id: "plant-tree", slot: "plant", name: "Little indoor tree", icon: "🌳", price: 28, tags: ["nature", "cozy"],
       use: { activity: "relaxing under the tree", emoji: "🌳", lines: ["A tree in my house!", "So fresh!", "Smells like the park."] } },
+    { id: "plant-sunflower", slot: "plant", name: "Sunflowers", icon: "🌻", price: 14, tags: ["nature", "cute"],
+      use: { activity: "smelling the sunflowers", emoji: "🌻", lines: ["Sunny and happy!", "They're taller than me!", "Mmm, summer."] } },
+    { id: "plant-bonsai", slot: "plant", name: "Bonsai tree", icon: "🌲", price: 34, tags: ["nature", "fancy"],
+      use: { activity: "trimming the bonsai", emoji: "✂️", arms: "type", lines: ["Snip... snip...", "Patience is everything.", "A tiny, perfect tree."] } },
 
     // wall art
     { id: "art-none", slot: "art", name: "Bare wall", icon: "⬜", price: 0, tags: [], starter: true },
@@ -103,6 +136,12 @@
       use: { activity: "looking at the poster", emoji: "⚽", lines: ["My hero!", "GOOOAL!", "One day that'll be me."] } },
     { id: "art-portrait", slot: "art", name: "Self-portrait", icon: "🖼️", price: 30, tags: ["fancy", "silly"],
       use: { activity: "admiring their own portrait", emoji: "😎", lines: ["Looking good!", "What a handsome face.", "The artist got my best side."] } },
+    { id: "art-starry", slot: "art", name: "Starry sky painting", icon: "🌌", price: 26, tags: ["fancy", "nature"],
+      use: { activity: "admiring the starry painting", emoji: "✨", lines: ["So swirly!", "I could look at it for hours.", "A masterpiece."] } },
+    { id: "art-guitar", slot: "art", name: "Wall guitar", icon: "🎸", price: 32, tags: ["sporty", "silly"],
+      use: { activity: "looking at the guitar", emoji: "🎸", lines: ["One day I'll learn to play.", "ROCK AND ROLL!", "*air guitar*"] } },
+    { id: "art-photos", slot: "art", name: "Photo wall", icon: "📸", price: 12, tags: ["cute", "cozy"],
+      use: { activity: "looking at old photos", emoji: "📸", lines: ["Good times!", "Look how little I was!", "I remember that day."] } },
 
     // special
     { id: "special-none", slot: "special", name: "Nothing", icon: "⬜", price: 0, tags: [], starter: true },
@@ -116,6 +155,12 @@
       use: { activity: "hugging the plushies", emoji: "🧸", lines: ["So fluffy!", "This one's Mr. Snuggles.", "Group hug!"] } },
     { id: "special-punchbag", slot: "special", name: "Punching bag", icon: "🥊", price: 30, tags: ["sporty"],
       use: { activity: "punching the punching bag", emoji: "🥊", arms: "punch", lines: ["Hyah!", "Take that!", "Float like a butterfly!"] } },
+    { id: "special-fridge", slot: "special", name: "Big fridge", icon: "🧊", price: 32, tags: ["cozy", "silly"],
+      use: { activity: "raiding the fridge", emoji: "🧊", arms: "eat", lines: ["Midnight snack!", "Who ate my pudding?!", "*munch munch*"] } },
+    { id: "special-easel", slot: "special", name: "Painting easel", icon: "🎨", price: 28, tags: ["fancy", "cute"],
+      use: { activity: "painting a picture", emoji: "🎨", arms: "type", lines: ["A happy little tree...", "It's abstract!", "Art takes time."] } },
+    { id: "special-robot", slot: "special", name: "Robot buddy", icon: "🤖", price: 60, tags: ["techy", "silly"],
+      use: { activity: "chatting with the robot", emoji: "🤖", arms: "up", lines: ["BEEP BOOP!", "High five, buddy!", "Do robots dream?"] } },
 
     // wallpaper and floor (colours used by homes3d.js)
     { id: "wall-cream", slot: "wallpaper", name: "Cream", icon: "🟨", price: 0, tags: [], starter: true, color: "#f6ead2", accent: "#e8d6b2" },
@@ -124,11 +169,17 @@
     { id: "wall-blue", slot: "wallpaper", name: "Sky blue", icon: "🟦", price: 10, tags: ["cozy"], color: "#cfe6ff", accent: "#a9cff7", pattern: "clouds" },
     { id: "wall-dark", slot: "wallpaper", name: "Gamer neon", icon: "🟪", price: 15, tags: ["techy"], color: "#2d2a4a", accent: "#ff4fd8", pattern: "grid" },
     { id: "wall-gold", slot: "wallpaper", name: "Royal damask", icon: "🟫", price: 18, tags: ["fancy"], color: "#7a1f2b", accent: "#d9a441", pattern: "damask" },
+    { id: "wall-stars", slot: "wallpaper", name: "Starry night", icon: "🌃", price: 16, tags: ["techy", "cute"], color: "#1f2a5a", accent: "#ffe08a", pattern: "stars" },
+    { id: "wall-leaves", slot: "wallpaper", name: "Jungle leaves", icon: "🌿", price: 14, tags: ["nature"], color: "#e6f4dc", accent: "#5fae5a", pattern: "leaves" },
+    { id: "wall-brick", slot: "wallpaper", name: "Red brick", icon: "🧱", price: 12, tags: ["sporty", "cozy"], color: "#b9553f", accent: "#e9dccb", pattern: "brick" },
     { id: "floor-wood", slot: "floor", name: "Wooden floor", icon: "🟫", price: 0, tags: [], starter: true, color: "#c98a52", accent: "#b57843", pattern: "planks" },
     { id: "floor-tiles", slot: "floor", name: "Checker tiles", icon: "🏁", price: 12, tags: ["silly"], color: "#ffffff", accent: "#ff6b6b", pattern: "checker" },
     { id: "floor-carpet", slot: "floor", name: "Soft carpet", icon: "🟦", price: 12, tags: ["cozy"], color: "#8fb3d9", accent: "#7ea2c8", pattern: "plain" },
     { id: "floor-marble", slot: "floor", name: "Marble", icon: "⬜", price: 20, tags: ["fancy"], color: "#eeeef2", accent: "#cfd0da", pattern: "marble" },
     { id: "floor-grass", slot: "floor", name: "Fake grass", icon: "🟩", price: 15, tags: ["nature", "sporty"], color: "#6fcf4f", accent: "#5cb840", pattern: "plain" },
+    { id: "floor-tatami", slot: "floor", name: "Tatami mats", icon: "🟨", price: 16, tags: ["cozy", "nature"], color: "#d8d39a", accent: "#4a6a3a", pattern: "tatami" },
+    { id: "floor-hex", slot: "floor", name: "Honeycomb tiles", icon: "🍯", price: 14, tags: ["cute", "silly"], color: "#ffd77a", accent: "#f0b545", pattern: "hex" },
+    { id: "floor-parquet", slot: "floor", name: "Chevron parquet", icon: "🪵", price: 24, tags: ["fancy"], color: "#a8683a", accent: "#7a4a26", pattern: "chevron" },
   ];
 
   const FOODS = [
@@ -251,7 +302,14 @@
     const lines = [];
     const name = record.name || "";
     if (record.mood >= 70) lines.push("I love my home!", "Thanks for visiting!", "Make yourself at home!");
-    if (record.mood < 40) lines.push("It's a bit boring in here...", "Got any snacks?", "I could use a new " + pick(["sofa", "rug", "plant", "poster"]) + ".");
+    if (record.mood < 40) {
+      lines.push("It's a bit boring in here...", "Got any snacks?");
+      // (only asks for a kind of thing it doesn't already have every one of)
+      const owned = (record.home && record.home.owned) || [];
+      const wants = [["sofa", "sofa"], ["rug", "rug"], ["plant", "plant"], ["art", "picture"]]
+        .filter(([slot]) => ITEMS.some((it) => it.slot === slot && !it.starter && !owned.includes(it.id)));
+      if (wants.length) lines.push("I could use a new " + pick(wants)[1] + ".");
+    }
     if (latestGift) lines.push("I really like the " + latestGift.toLowerCase() + "!", "Have you seen my " + latestGift.toLowerCase() + "?");
     if (p.social >= 65) lines.push("Want to hang out?", "Visitors! Yay!", "Did you bring friends?");
     if (p.social <= 35) lines.push("Oh! H-hi... I didn't know you were coming.", "...It's nice and quiet here.");
