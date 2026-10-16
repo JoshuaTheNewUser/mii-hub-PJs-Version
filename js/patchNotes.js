@@ -10,7 +10,8 @@
   "use strict";
 
   const NOTES = [
-    { v: null, date: "2026-10-16", title: "Thicker arms", notes: ["Paintball: your Mii's arms in first person are a little thicker."] },
+    { v: null, date: "2026-10-16", title: "Music!", notes: ["🎵 Background music in the hub that loops smoothly (no jump where it repeats). It plays everywhere except Paintball. Turn it on or off with the 🎵 button at the top."] },
+    { v: "1.1.1", date: "2026-10-16", title: "Thicker arms", notes: ["Paintball: your Mii's arms in first person are a little thicker."] },
     {
       v: "1.1.0", date: "2026-10-16", title: "Chess, the Deagle, and a big Mii Hub update",
       notes: [

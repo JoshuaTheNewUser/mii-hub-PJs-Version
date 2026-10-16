@@ -1183,6 +1183,7 @@
     '<button class="tb-btn" id="dailyBtn">📅 Daily <span id="dailyCount"></span></button>' +
     '<button class="tb-btn" id="bookBtn">📖 Book</button>' +
     '<button class="tb-btn pb" id="paintballBtn" title="Paintball: a first-person 1v1 against one of your Miis">🎯 Paintball</button>' +
+    '<button class="tb-btn" id="musicBtn" title="Music on/off">🎵</button>' +
     '<button class="tb-btn chess" id="chessBtn" title="Chess: play one of your Miis, or someone online">♟️ Chess</button>';
   document.querySelector(".topbar").appendChild(townBar);
   $("dailyBtn").addEventListener("click", openDaily);
@@ -1190,6 +1191,14 @@
   $("bookBtn").addEventListener("click", openBook);
   $("paintballBtn").addEventListener("click", () => openPaintball());
   $("chessBtn").addEventListener("click", () => openChessLobby());
+  // background music (everywhere except Paintball)
+  if (window.MiiMusic) {
+    const mb = $("musicBtn");
+    MiiMusic.onChange = (on) => { mb.textContent = on ? "🎵" : "🔇"; mb.title = on ? "Music: on (click to turn off)" : "Music: off (click to turn on)"; };
+    MiiMusic.onChange(MiiMusic.isOn());
+    mb.addEventListener("click", () => MiiMusic.toggle());
+    MiiMusic.start();
+  } else $("musicBtn").hidden = true;
 
   function renderTownBar() {
     const st = progress.state;
@@ -1387,6 +1396,7 @@
     try { await loadPaintball(); } catch (err) { toast("Couldn't load Paintball: " + err.message); btn.disabled = false; btn.textContent = "🎯 Paintball"; return; }
     btn.disabled = false; btn.textContent = "🎯 Paintball";
     hub.paused = true; // the hub stops drawing while you play
+    if (window.MiiMusic) MiiMusic.pause(true); // no hub music during Paintball
     window.Paintball.open({
       records: sortedRecords(),
       templateFor, lookFor, portraitFor,
@@ -1398,7 +1408,7 @@
         progress.event({ type: "game", id: opp.id, game: "paintball", result });
         renderCoins();
       },
-      onClose: () => { hub.paused = false; },
+      onClose: () => { hub.paused = false; if (window.MiiMusic) MiiMusic.pause(false); },
       opponent: o.opponent, player: o.player,
     });
   }

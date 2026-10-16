@@ -75,6 +75,8 @@ Your Miis always look exactly like they do in Mii Creator. To change how a Mii l
 
 Your Miis, their homes, coins, friendships and the place you picked are saved, so they'll still be there next time.
 
+**🎵 Music:** a song plays in the background and loops smoothly (it plays everywhere except Paintball). The 🎵 button at the top turns it on or off.
+
 ## Homes and coins
 
 Every Mii has its own apartment in the building by the **🏘️ Courtyard**. You can see its name by its door, and its windows light up when it's home. The building starts with 3 floors of 4 apartments. When every apartment is taken, it gets a new floor (up to 10 floors, so 40 homes). A Mii who doesn't have an apartment yet can still be visited from its menu.
@@ -279,6 +281,7 @@ js/paintball/         Paintball (only loaded when you open it):
   pb-models.js          the paint AK and AWP, the butterfly knife, your Mii hands and how skins are drawn
   pb-skins.js           the skin catalog (rarities, odds, trade-ups)
   pb-crates.js          credits, crates, the opening reel and the Locker
+js/music.js           the background music (loops between exact points; the song is in js/hubMusic.js)
 js/chess.js           chess rules and the Mii chess brain
 js/chessUI.js         the chess board and windows
 js/chessOnline.js     online chess (through the Paintball server)
