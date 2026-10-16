@@ -129,7 +129,7 @@
     function pointer(e){if(e.target===canvas)eat(players[0]);}
     function closeGame(){if(closed)return;closed=true;if(raf)cancelAnimationFrame(raf);root.removeEventListener("keydown",key);canvas.removeEventListener("pointerdown",pointer);root.removeEventListener("resize",resize);players.forEach(p=>{setFull(p,0);p.walker.arms=p.oldArms||"down";p.walker.state=p.oldState==="playing"?"idle":p.oldState;M.disposeObject(p.inst.holder);if(p.scoreTex)p.scoreTex.dispose();});renderer.dispose();overlay.remove();if(active&&active.close===closeGame)active=null;}
     close.addEventListener("click",closeGame);canvas.addEventListener("pointerdown",pointer);root.addEventListener("keydown",key);root.addEventListener("resize",resize);overlay.tabIndex=0;overlay.focus();
-    function finish(){finished=true;const winner=players.slice().sort((a,b)=>b.score-a.score)[0];status.textContent="🏆 "+winner.name+" WINS!  •  "+winner.score+" bites";hint.textContent="PRESS SPACE / CLICK TO PLAY AGAIN";timerEl.textContent="FINISH";players.forEach(p=>{p.inst.rig.pose({t:clock,dt:.016,arms:p===winner?"cheer":"eat",dance:p===winner});});}
+    function finish(){finished=true;const winner=players.slice().sort((a,b)=>b.score-a.score)[0];status.textContent="🏆 "+winner.name+" WINS!  •  "+winner.score+" bites";hint.textContent="PRESS SPACE / CLICK TO PLAY AGAIN";timerEl.textContent="FINISH";players.forEach(p=>{p.inst.rig.pose({t:clock,dt:.016,arms:p===winner?"wave":"eat",dance:p===winner});});}
     function frame(now){
       if(closed)return;raf=requestAnimationFrame(frame);
       const dt=Math.min(.05,(now-last)/1000);last=now;clock+=dt;
@@ -147,7 +147,7 @@
         });
         if(left<=0)finish();
       } else {
-        players.forEach(p=>{p.inst.rig.pose({t:clock,dt,arms:p.score===Math.max(...players.map(q=>q.score))?"cheer":"eat",sit:true,dance:p.score===Math.max(...players.map(q=>q.score))});});
+        players.forEach(p=>{p.inst.rig.pose({t:clock,dt,arms:p.score===Math.max(...players.map(q=>q.score))?"wave":"eat",sit:true,dance:p.score===Math.max(...players.map(q=>q.score))});});
       }
       camera.position.x=Math.sin(clock*.12)*.65;camera.position.y=7.5+Math.sin(clock*.2)*.18;camera.lookAt(0,.95,0);
       renderer.render(scene,camera);
