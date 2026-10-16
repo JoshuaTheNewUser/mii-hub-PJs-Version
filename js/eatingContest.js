@@ -144,6 +144,23 @@
       finished=true;
       const ranked=players.slice().sort((a,b)=>b.score-a.score);
       const winner=ranked[0];
+      // Keep the real hub Mii bloated for five minutes after the contest.
+      players.forEach(p => {
+        const live = p.walker && p.walker.inst;
+        if (!live || !live.bellyMeshes) return;
+        if (p.walker._ecBloatTimeout) clearTimeout(p.walker._ecBloatTimeout);
+        const amount = p.fullness;
+        M.setEatingFullness(live, amount);
+        const baseScale = p.walker.sizeScale || 1;
+        live.holder.scale.setScalar(baseScale * (1 + amount * 0.08));
+        p.walker._ecBloatTimeout = setTimeout(() => {
+          if (p.walker && p.walker.inst === live) {
+            M.setEatingFullness(live, 0);
+            live.holder.scale.setScalar(p.walker.sizeScale || 1);
+          }
+          p.walker._ecBloatTimeout = null;
+        }, 5 * 60 * 1000);
+      });
       status.textContent="🏆 "+winner.name+" WINS!  •  "+winner.score+" bites";
       hint.textContent="RESULTS";
       timerEl.textContent="DONE";
@@ -157,12 +174,12 @@
         const place=document.createElement("strong");place.className="ec3d-result-place";place.textContent=["🥇","🥈","🥉","4️⃣"][index]||String(index+1);
         const info=document.createElement("div");info.className="ec3d-result-info";
         const name=document.createElement("strong");name.textContent=p.name;
-        const stats=document.createElement("span");stats.textContent=p.score+" bites  •  size change: +"+(p.sizePercent||0)+"%";
+        const stats=document.createElement("span");stats.textContent=p.score+" bites  •  belly: "+Math.round(p.fullness*100)+"%"+(p.fullness>=0.6?" — BLOATED!":"")+"  •  size change: +"+(p.sizePercent||0)+"%";
         const track=document.createElement("div");track.className="ec3d-result-track";
         const bar=document.createElement("span");bar.style.width=(Math.max(4,p.score/Math.max(1,ranked[0].score)*100))+"%";track.appendChild(bar);
         info.append(name,stats,track);row.append(place,info);finishScreen.appendChild(row);
       });
-      const note=document.createElement("p");note.className="ec3d-finish-note";note.textContent="Size change is a playful in-game effect, based on each Mii's fullness.";finishScreen.appendChild(note);
+      const note=document.createElement("p");note.className="ec3d-finish-note";note.textContent="Big meals cause cartoonishly bloated bellies. The belly effect lasts 5 minutes after the contest, then returns to normal.";finishScreen.appendChild(note);
       const again=document.createElement("button");again.className="ec3d-again";again.textContent="PLAY AGAIN";again.addEventListener("click",()=>{closeGame();open(opts);});finishScreen.appendChild(again);
       players.forEach(p=>{p.inst.rig.pose({t:clock,dt:.016,arms:p===winner?"wave":"eat",dance:p===winner});});
     }
